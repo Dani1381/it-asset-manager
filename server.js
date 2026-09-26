@@ -86,10 +86,10 @@ const MIME_TYPES = {
 // Call Gemini Vision to extract specs from photo
 async function extractSpecsWithGemini(base64Image, requestedModel) {
   const settings = queries.getSettings();
-  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || 'AIzaSyA7cdGnzMNWnjcwazo9VvI-ogWsiiFd5-s';
+  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || '';
   
   if (!apiKey) {
-    throw new Error('Gemini API key is not configured. Please set it in Settings.');
+    throw new Error('Gemini API key is not configured. Please enter your new free Gemini API key in ⚙️ Settings.');
   }
 
   // Model cascade: try requested model first, then fallback to others if busy
@@ -364,6 +364,12 @@ const server = http.createServer(async (req, res) => {
     // -------------------------------------------------------------
     // API ROUTES
     // -------------------------------------------------------------
+
+    // GET /api/suggestions (Autocomplete memory for models, CPUs, RAMs, storage, etc.)
+    if (method === 'GET' && (pathname === '/api/suggestions' || pathname === 'api/suggestions')) {
+      const suggestions = queries.getSuggestions();
+      return sendJson(res, 200, suggestions);
+    }
 
     // GET /api/stats
     if (method === 'GET' && pathname === 'api/stats' || pathname === '/api/stats') {

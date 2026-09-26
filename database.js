@@ -75,7 +75,7 @@ function initDb() {
   insertSetting.run('asset_tag_prefix', 'AST-');
   insertSetting.run('bale_token', '');
   insertSetting.run('bale_chat_id', '');
-  insertSetting.run('gemini_api_key', 'AIzaSyA7cdGnzMNWnjcwazo9VvI-ogWsiiFd5-s');
+  insertSetting.run('gemini_api_key', '');
   insertSetting.run('gemini_model', 'gemini-3.6-flash');
 }
 
@@ -382,6 +382,31 @@ const queries = {
 
     db.prepare('DELETE FROM asset_photos WHERE id = ?').run(photoId);
     return true;
+  },
+
+  // Suggestions for autocomplete / learning memory
+  getSuggestions() {
+    const getDistinct = (column) => {
+      const rows = db.prepare(`
+        SELECT DISTINCT ${column} as val 
+        FROM assets 
+        WHERE ${column} IS NOT NULL AND TRIM(${column}) != '' 
+        ORDER BY updated_at DESC LIMIT 50
+      `).all();
+      return rows.map(r => r.val).filter(Boolean);
+    };
+
+    return {
+      models: getDistinct('manufacturer_model'),
+      cpus: getDistinct('cpu'),
+      rams: getDistinct('ram'),
+      storages: getDistinct('storage_drives'),
+      gpus: getDistinct('gpu'),
+      monitors: getDistinct('monitors'),
+      locations: getDistinct('location'),
+      departments: getDistinct('department'),
+      users: getDistinct('user_name')
+    };
   },
 
   // Dashboard Stats
