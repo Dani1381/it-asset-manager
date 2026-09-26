@@ -424,6 +424,10 @@ async function openSettingsModal() {
       const s = await res.json();
       document.getElementById('setting-company').value = s.company_name || '';
       document.getElementById('setting-prefix').value = s.asset_tag_prefix || 'AST-';
+      document.getElementById('setting-gemini-key').value = s.gemini_api_key || '';
+      if (document.getElementById('setting-gemini-model')) {
+        document.getElementById('setting-gemini-model').value = s.gemini_model || 'gemini-3.6-flash';
+      }
       document.getElementById('setting-bale-token').value = s.bale_token || '';
       document.getElementById('setting-bale-chat-id').value = s.bale_chat_id || '';
     }
@@ -443,6 +447,8 @@ async function saveSettings(event) {
   event.preventDefault();
   const company = document.getElementById('setting-company').value.trim();
   const prefix = document.getElementById('setting-prefix').value.trim();
+  const geminiKey = document.getElementById('setting-gemini-key') ? document.getElementById('setting-gemini-key').value.trim() : '';
+  const geminiModel = document.getElementById('setting-gemini-model') ? document.getElementById('setting-gemini-model').value : 'gemini-3.6-flash';
   const baleToken = document.getElementById('setting-bale-token').value.trim();
   const baleChatId = document.getElementById('setting-bale-chat-id').value.trim();
 
@@ -453,6 +459,8 @@ async function saveSettings(event) {
       body: JSON.stringify({
         company_name: company,
         asset_tag_prefix: prefix,
+        gemini_api_key: geminiKey,
+        gemini_model: geminiModel,
         bale_token: baleToken,
         bale_chat_id: baleChatId
       })

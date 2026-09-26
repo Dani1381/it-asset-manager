@@ -39,6 +39,7 @@
             <label class="form-label">📁 Category *</label>
             <select id="category" class="form-control" required>
               <option value="PC">🖥️ Desktop PC</option>
+              <option value="Single PC">💻 Single PC</option>
               <option value="Laptop">💻 Laptop</option>
               <option value="Monitor">📺 Monitor</option>
               <option value="Printer">🖨️ Printer / Scanner</option>
@@ -135,16 +136,26 @@
 
         <!-- Photo Upload -->
         <div class="form-group full-width" style="margin-bottom: 1.5rem;">
-          <label class="form-label" style="color: #60a5fa; margin-bottom: 0.6rem;">📷 Device Photos (Front, Serial Sticker, Ports, etc.)</label>
+          <label class="form-label" style="color: #a78bfa; margin-bottom: 0.6rem;">✨ AI Spec Scanner & Device Photos</label>
 
           <div class="photo-uploader" onclick="document.getElementById('photo-input').click()">
             <div style="font-size: 2.5rem;">📸</div>
             <div style="font-weight: 600;">Tap to take a photo or select files</div>
-            <div style="font-size: 0.82rem; color: var(--text-dim);">Works with your phone's camera. Photos are compressed automatically.</div>
+            <div style="font-size: 0.85rem; color: var(--text-dim);">Tip: photograph the device label / spec sticker for best AI results</div>
           </div>
           <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
 
           <div id="pending-photos" class="photo-gallery" style="margin-top: 1rem;"></div>
+
+          <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem; flex-wrap: wrap;">
+            <button type="button" id="ai-scan-btn" class="btn btn-ai" onclick="aiScanPhotos()" disabled>
+              ✨ Scan Photos with Gemini AI (Auto-Fill Specs)
+            </button>
+            <small id="ai-hint" style="color: var(--text-dim); align-self: center;">
+              Add at least one photo to enable AI scan
+            </small>
+          </div>
+          <div id="ai-status" style="margin-top: 0.75rem; font-size: 0.9rem; display: none;"></div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
@@ -190,12 +201,106 @@
 
     function renderPendingPhotos() {
       const container = document.getElementById('pending-photos');
+      const aiBtn = document.getElementById('ai-scan-btn');
+      const aiHint = document.getElementById('ai-hint');
+
+      if (pendingPhotos.length > 0) {
+        if (aiBtn) aiBtn.disabled = false;
+        if (aiHint) aiHint.textContent = `${pendingPhotos.length} photo(s) ready for AI analysis`;
+      } else {
+        if (aiBtn) aiBtn.disabled = true;
+        if (aiHint) aiHint.textContent = 'Add at least one photo to enable AI scan';
+      }
+
       container.innerHTML = pendingPhotos.map((p, idx) => `
         <div class="photo-thumb">
           <img src="${p.base64}" alt="${escapeHtml(p.original_name)}">
           <button type="button" class="photo-delete-btn" onclick="removePendingPhoto(${idx})">&times;</button>
         </div>
       `).join('');
+    }
+
+    async function aiScanPhotos() {
+      if (pendingPhotos.length === 0) return;
+      const btn = document.getElementById('ai-scan-btn');
+      const status = document.getElementById('ai-status');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Analyzing with Gemini AI...';
+      status.style.display = 'block';
+      status.style.color = '#a78bfa';
+      status.textContent = 'Analyzing image labels & hardware details...';
+
+      try {
+        // Use the first (or most recently added) photo for analysis
+        const photo = pendingPhotos[0];
+        const res = await fetch('/api/gemini/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: photo.base64 })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Gemini analysis failed');
+        }
+
+        const s = data.specs;
+        let filledCount = 0;
+
+        // Auto-fill fields if Gemini extracted them
+        if (s.category) {
+          const catSelect = document.getElementById('category');
+          for (let opt of catSelect.options) {
+            if (opt.value.toLowerCase() === s.category.toLowerCase()) {
+              catSelect.value = opt.value;
+              filledCount++;
+              break;
+            }
+          }
+        }
+        if (s.manufacturer_model) {
+          document.getElementById('manufacturer_model').value = s.manufacturer_model;
+          filledCount++;
+        }
+        if (s.serial_number) {
+          document.getElementById('serial_number').value = s.serial_number;
+          filledCount++;
+        }
+        if (s.cpu) {
+          document.getElementById('cpu').value = s.cpu;
+          filledCount++;
+        }
+        if (s.ram) {
+          document.getElementById('ram').value = s.ram;
+          filledCount++;
+        }
+        if (s.storage_drives) {
+          document.getElementById('storage_drives').value = s.storage_drives;
+          filledCount++;
+        }
+        if (s.gpu) {
+          document.getElementById('gpu').value = s.gpu;
+          filledCount++;
+        }
+        if (s.monitors) {
+          document.getElementById('monitors').value = s.monitors;
+          filledCount++;
+        }
+        if (s.notes) {
+          const notesEl = document.getElementById('notes');
+          notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `AI Note: ${s.notes}`;
+        }
+
+        status.style.color = 'var(--success)';
+        status.innerHTML = `✅ <strong>Auto-filled ${filledCount} field(s)</strong> using <em>${escapeHtml(data.model)}</em>! Check the values above and make any edits if needed.`;
+      } catch (err) {
+        status.style.color = 'var(--danger)';
+        status.textContent = `⚠️ AI Scan failed: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✨ Re-scan with Gemini AI';
+      }
     }
 
     function removePendingPhoto(index) {

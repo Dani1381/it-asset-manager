@@ -144,14 +144,20 @@
         <div>
           <!-- Photo Gallery Card -->
           <div class="form-card" style="margin: 0; max-width: 100%; margin-bottom: 1.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
               <h3 style="font-size: 1.15rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
                 <span>📷</span> Device Photos (<span id="photo-count-badge">0</span>)
               </h3>
-              <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
-                ➕ Add Photo
-              </button>
+              <div style="display: flex; gap: 0.4rem;">
+                <button onclick="aiAnalyzeExistingPhoto()" class="btn btn-ai btn-sm" id="ai-reanalyze-btn">
+                  ✨ AI Extract Specs
+                </button>
+                <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
+                  ➕ Add Photo
+                </button>
+              </div>
             </div>
+            <div id="ai-extract-status" style="margin-bottom: 0.75rem; font-size: 0.88rem; display: none;"></div>
 
             <div id="photo-gallery" class="photo-gallery"></div>
             <div id="no-photos-msg" style="text-align: center; padding: 2rem; color: var(--text-dim); display: none;">
@@ -211,6 +217,7 @@
                 <label class="form-label">Category</label>
                 <select id="edit-category" class="form-control">
                   <option value="PC">🖥️ Desktop PC</option>
+                  <option value="Single PC">💻 Single PC</option>
                   <option value="Laptop">💻 Laptop</option>
                   <option value="Monitor">📺 Monitor</option>
                   <option value="Printer">🖨️ Printer</option>
@@ -419,6 +426,93 @@
     }
 
     async function deletePhoto(photoId) {
+      if (!confirm('Delete this photo?')) return;
+      try {
+        const res = await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
+        if (res.ok) {
+          await loadAssetDetails();
+        } else {
+          alert('Failed to delete photo');
+        }
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function aiAnalyzeExistingPhoto() {
+      if (!currentAsset || !currentAsset.photos || currentAsset.photos.length === 0) {
+        alert('Please add a photo of the device or serial sticker first!');
+        return;
+      }
+      const btn = document.getElementById('ai-reanalyze-btn');
+      const status = document.getElementById('ai-extract-status');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Analyzing...';
+      status.style.display = 'block';
+      status.style.color = '#a78bfa';
+      status.textContent = 'Gemini AI is reading device labels and specs from your photo...';
+
+      try {
+        // Fetch first photo as base64
+        const photoUrl = `/uploads/${currentAsset.photos[0].file_name}`;
+        const imgRes = await fetch(photoUrl);
+        const blob = await imgRes.blob();
+
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        const res = await fetch('/api/gemini/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64 })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'AI analysis failed');
+        }
+
+        const s = data.specs;
+        // Update asset in db
+        const updatePayload = {};
+        if (s.category) updatePayload.category = s.category;
+        if (s.manufacturer_model) updatePayload.manufacturer_model = s.manufacturer_model;
+        if (s.serial_number) updatePayload.serial_number = s.serial_number;
+        if (s.cpu) updatePayload.cpu = s.cpu;
+        if (s.ram) updatePayload.ram = s.ram;
+        if (s.storage_drives) updatePayload.storage_drives = s.storage_drives;
+        if (s.gpu) updatePayload.gpu = s.gpu;
+        if (s.monitors) updatePayload.monitors = s.monitors;
+        if (s.notes) {
+          updatePayload.notes = (currentAsset.notes ? currentAsset.notes + '\n' : '') + `AI Note: ${s.notes}`;
+        }
+
+        const saveRes = await fetch(`/api/assets/${assetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatePayload)
+        });
+
+        if (saveRes.ok) {
+          status.style.color = 'var(--success)';
+          status.innerHTML = `✅ <strong>Specs updated automatically</strong> using <em>${escapeHtml(data.model)}</em>!`;
+          await loadAssetDetails();
+        } else {
+          throw new Error('Could not save updated specs');
+        }
+      } catch (err) {
+        status.style.color = 'var(--danger)';
+        status.textContent = `⚠️ AI Extraction failed: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✨ AI Extract Specs';
+      }
+    }
       if (!confirm('Delete this photo?')) return;
       try {
         const res = await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });

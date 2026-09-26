@@ -88,6 +88,7 @@
         <select id="category-filter" class="filter-select">
           <option value="all">📁 All Categories</option>
           <option value="PC">🖥️ Computers / Laptops</option>
+          <option value="Single PC">💻 Single PC</option>
           <option value="Monitor">📺 Monitors</option>
           <option value="Printer">🖨️ Printers</option>
           <option value="Network">🌐 Network / Switches</option>
@@ -190,6 +191,26 @@
         <div class="form-group" style="margin-bottom: 1rem;">
           <label class="form-label">Asset Tag Prefix</label>
           <input type="text" id="setting-prefix" class="form-control" placeholder="AST-" style="width: 140px;">
+        </div>
+
+        <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
+
+        <h4 style="font-size: 1rem; margin-bottom: 0.75rem; color: #a78bfa;">✨ Gemini Vision AI (Photo Auto-Fill)</h4>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">Gemini API Key</label>
+          <input type="text" id="setting-gemini-key" class="form-control" placeholder="AIzaSy...">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label">Default Gemini Model</label>
+          <select id="setting-gemini-model" class="form-control">
+            <option value="gemini-3.6-flash">gemini-3.6-flash (Fast & Highly Accurate - Recommended)</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Fast)</option>
+            <option value="gemini-3.7-flash">gemini-3.7-flash</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+          </select>
         </div>
 
         <hr style="border-color: var(--border-color); margin: 1.25rem 0;">

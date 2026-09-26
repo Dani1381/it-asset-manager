@@ -83,6 +83,109 @@ const MIME_TYPES = {
   '.csv': 'text/csv; charset=utf-8'
 };
 
+// Call Gemini Vision to extract specs from photo
+async function extractSpecsWithGemini(base64Image, requestedModel) {
+  const settings = queries.getSettings();
+  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || 'AIzaSyA7cdGnzMNWnjcwazo9VvI-ogWsiiFd5-s';
+  
+  if (!apiKey) {
+    throw new Error('Gemini API key is not configured. Please set it in Settings.');
+  }
+
+  // Model cascade: try requested model first, then fallback to others if busy
+  const candidateModels = [];
+  if (requestedModel) candidateModels.push(requestedModel);
+  // Default cascade order
+  const fallbacks = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+  for (const m of fallbacks) {
+    if (!candidateModels.includes(m)) candidateModels.push(m);
+  }
+
+  // Extract raw base64 and mime
+  let mimeType = 'image/jpeg';
+  let cleanB64 = base64Image;
+  const match = base64Image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+  if (match) {
+    mimeType = match[1];
+    cleanB64 = match[2];
+  }
+
+  const prompt = `
+You are an expert IT Asset & Hardware Inventory Analyst.
+Examine this image of an IT hardware device or its specification label/sticker very carefully.
+
+EXTRACT the following information as strictly structured JSON:
+{
+  "category": "PC" | "Single PC" | "Laptop" | "Monitor" | "Printer" | "Network" | "Other",
+  "manufacturer_model": "Full brand and model name, e.g. HP EliteDesk 800 G3 SFF or Samsung S27C31x",
+  "serial_number": "Serial number (S/N, Serial No, Service Tag) if visible, else null",
+  "cpu": "CPU / Processor details if mentioned, else null",
+  "ram": "RAM / Memory capacity if mentioned, else null",
+  "storage_drives": "Storage drive / SSD / HDD details if mentioned, else null",
+  "gpu": "Graphics card details if mentioned, else null",
+  "monitors": "Display size, resolution, or model if this is a monitor or connected display, else null",
+  "notes": "Any other helpful information observed (ports, condition, MAC address, power rating, asset numbers)"
+}
+
+Rules:
+1. If the device is a desktop tower / all-in-one / mini PC for one user, classify as "Single PC" or "PC".
+2. Read stickers and printed labels carefully for Serial Numbers and Models.
+3. If a field cannot be determined from the image, return null for that field.
+4. Output MUST be pure JSON with NO markdown code fences.
+`;
+
+  let lastError = null;
+
+  for (const model of candidateModels) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: cleanB64 } }
+          ]
+        }],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          temperature: 0.1
+        }
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        lastError = `Model ${model} returned HTTP ${res.status}: ${errText.slice(0, 150)}`;
+        console.warn(`Gemini ${model} failed, trying next candidate...`);
+        continue;
+      }
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) {
+        lastError = `Model ${model} returned empty response`;
+        continue;
+      }
+
+      // Parse JSON safely
+      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      parsed._used_model = model;
+      return parsed;
+    } catch (err) {
+      lastError = `Model ${model} error: ${err.message}`;
+      console.warn(lastError);
+    }
+  }
+
+  throw new Error(`All Gemini models failed. Last error: ${lastError}`);
+}
+
 // Send JSON response helper
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -274,6 +377,26 @@ const server = http.createServer(async (req, res) => {
         port: PORT,
         localIps: getLocalIpAddresses()
       });
+    }
+
+    // POST /api/gemini/analyze (Vision Spec Extraction from Photo)
+    if (method === 'POST' && pathname === '/api/gemini/analyze') {
+      const data = await parseRequestBody(req);
+      if (!data.image) {
+        return sendJson(res, 400, { error: 'No image provided for AI analysis' });
+      }
+
+      try {
+        const result = await extractSpecsWithGemini(data.image, data.model);
+        return sendJson(res, 200, {
+          success: true,
+          model: result._used_model,
+          specs: result
+        });
+      } catch (err) {
+        console.error('Gemini extraction failed:', err);
+        return sendJson(res, 500, { error: err.message });
+      }
     }
 
     // GET /api/assets/next-id

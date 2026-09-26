@@ -75,6 +75,8 @@ function initDb() {
   insertSetting.run('asset_tag_prefix', 'AST-');
   insertSetting.run('bale_token', '');
   insertSetting.run('bale_chat_id', '');
+  insertSetting.run('gemini_api_key', 'AIzaSyA7cdGnzMNWnjcwazo9VvI-ogWsiiFd5-s');
+  insertSetting.run('gemini_model', 'gemini-3.6-flash');
 }
 
 // Generate the next property ID (e.g. AST-0001, AST-0002)
