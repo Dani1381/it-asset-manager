@@ -2,12 +2,106 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ثبت دستگاه جدید - IT Asset Master</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
+  <style>
+    /* Wizard Steps Bar */
+    .wizard-steps {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      margin-bottom: 2rem;
+    }
+    .wizard-steps::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 10%;
+      right: 10%;
+      height: 3px;
+      background: var(--border-color);
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+    .wizard-step-item {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+    }
+    .step-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+      transition: all 0.25s ease;
+    }
+    .wizard-step-item.active .step-circle {
+      background: var(--primary);
+      border-color: #60a5fa;
+      color: white;
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+      transform: scale(1.08);
+    }
+    .wizard-step-item.completed .step-circle {
+      background: var(--success);
+      border-color: #34d399;
+      color: white;
+    }
+    .step-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .wizard-step-item.active .step-label {
+      color: #60a5fa;
+    }
+
+    /* Wizard Slide Container */
+    .wizard-step-panel {
+      display: none;
+      animation: fadeIn 0.25s ease-in-out;
+    }
+    .wizard-step-panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .wizard-nav-btns {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 2rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1.25rem;
+    }
+
+    /* Mobile fine-tuning */
+    @media (max-width: 600px) {
+      .step-label { font-size: 0.75rem; }
+      .step-circle { width: 36px; height: 36px; font-size: 0.95rem; }
+      .form-card { padding: 1.25rem; }
+    }
+  </style>
 </head>
 <body class="rtl">
 
@@ -22,173 +116,243 @@
     </div>
   </header>
 
-  <main class="container">
+  <main class="container" style="max-width: 800px;">
     <div class="form-card">
-      <h2 class="form-title" data-i18n="add_title">➕ ثبت مشخصات دستگاه / تجهیزات جدید</h2>
-      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.75rem;" data-i18n="add_subtitle">
-        برای ثبت مانیتورها، کیس‌های قدیمی، قطعات انبار و لوازمی که اسکریپت روی آن‌ها اجرا نمی‌شود.
-      </p>
+      
+      <!-- Wizard Progress Indicators -->
+      <div class="wizard-steps">
+        <div class="wizard-step-item active" id="step-nav-1" onclick="goToStep(1)">
+          <div class="step-circle">۱</div>
+          <div class="step-label">دستگاه و عکس</div>
+        </div>
+        <div class="wizard-step-item" id="step-nav-2" onclick="goToStep(2)">
+          <div class="step-circle">۲</div>
+          <div class="step-label">کاربر و مکان</div>
+        </div>
+        <div class="wizard-step-item" id="step-nav-3" onclick="goToStep(3)">
+          <div class="step-circle">۳</div>
+          <div class="step-label">سخت‌افزار</div>
+        </div>
+      </div>
 
       <form id="add-form" onsubmit="submitAsset(event)">
         
-        <!-- Gemini AI Photo Spec Extraction Uploader -->
-        <div class="form-group full-width" style="margin-bottom: 1.75rem;">
-          <label class="form-label" style="color: #a78bfa; margin-bottom: 0.6rem; font-size: 1.1rem; font-weight: 700;" data-i18n="ai_box_title">
-            ✨ تشخیص هوشمند مشخصات از عکس برچسب (Gemini Vision AI)
-          </label>
+        <!-- STEP 1: Basic Info, Model & Photos -->
+        <div class="wizard-step-panel active" id="step-panel-1">
+          <h3 style="color: #60a5fa; margin-bottom: 1.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📸</span> <span>مرحله اول: مدل دستگاه و تصاویر</span>
+          </h3>
 
-          <div class="photo-uploader" onclick="document.getElementById('photo-input').click()">
-            <div style="font-size: 2.8rem;">📸</div>
-            <div style="font-weight: 700; font-size: 1.05rem;" data-i18n="ai_uploader_text">برای عکس گرفتن یا انتخاب تصویر برچسب لمس کنید</div>
-            <div style="font-size: 0.88rem; color: var(--text-dim);" data-i18n="ai_uploader_sub">
-              از برچسب مشخصات یا پشت مانیتور/کیس عکس بگیرید تا هوش مصنوعی فیلدها را خودکار پر کند.
+          <!-- Photo Camera / Upload -->
+          <div class="form-group full-width" style="margin-bottom: 1.5rem;">
+            <div class="photo-uploader" onclick="document.getElementById('photo-input').click()" style="padding: 1.25rem;">
+              <div style="font-size: 2.2rem;">📸</div>
+              <div style="font-weight: 700; font-size: 1rem;">برای عکس گرفتن با دوربین گوشی لمس کنید</div>
+              <div style="font-size: 0.82rem; color: var(--text-dim);">
+                عکس برچسب سریال یا ظاهر دستگاه (اختیاری)
+              </div>
             </div>
-          </div>
-          <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
+            <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
 
-          <div id="pending-photos" class="photo-gallery" style="margin-top: 1rem;"></div>
+            <div id="pending-photos" class="photo-gallery" style="margin-top: 0.85rem;"></div>
 
-          <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem; flex-wrap: wrap;">
-            <button type="button" id="ai-scan-btn" class="btn btn-ai" onclick="aiScanPhotos()" disabled>
-              ✨ <span data-i18n="btn_ai_scan">اسکن هوشمند عکس با هوش مصنوعی (پر کردن خودکار)</span>
-            </button>
-            <small id="ai-hint" style="color: var(--text-dim); align-self: center;">
-              برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید
-            </small>
-          </div>
-          <div id="ai-status" style="margin-top: 0.75rem; font-size: 0.95rem; display: none;"></div>
-        </div>
-
-        <hr style="border-color: var(--border-color); margin: 1.75rem 0;">
-
-        <div class="form-grid">
-          
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_property_id">🏷️ شناسه / کد اموال *</label>
-            <input type="text" id="property_id" class="form-control" placeholder="AST-0001">
-            <small style="color: var(--text-dim); font-size: 0.82rem;" data-i18n="field_property_id_hint">در صورت خالی ماندن، خودکار تولید می‌شود</small>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_category">📁 دسته‌بندی *</label>
-            <select id="category" class="form-control" required>
-              <option value="PC" data-i18n="filter_pc">🖥️ کامپیوتر / کیس</option>
-              <option value="Single PC" data-i18n="filter_single_pc">💻 تک کیس / سیستم کاربر</option>
-              <option value="Laptop" data-i18n="filter_laptop">💻 لپ‌تاپ</option>
-              <option value="Monitor" data-i18n="filter_monitor">📺 مانیتور</option>
-              <option value="Printer" data-i18n="filter_printer">🖨️ پرینتر / اسکنر</option>
-              <option value="Network" data-i18n="filter_network">🌐 سوییچ و شبکه</option>
-              <option value="Other" data-i18n="filter_other">🔌 سایر قطعات</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_status">⚡ وضعیت دستگاه</label>
-            <select id="status" class="form-control">
-              <option value="active" data-i18n="status_active">🟢 در حال استفاده</option>
-              <option value="in_storage" data-i18n="status_in_storage">🟡 در انبار / یدکی</option>
-              <option value="repair" data-i18n="status_repair">🔴 نیازمند تعمیر</option>
-              <option value="retired" data-i18n="status_retired">⚪ اسقاط / خارج از رده</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_user">👤 کاربر / کارمند تحویل‌گیرنده</label>
-            <input type="text" id="user_name" class="form-control" placeholder="مثال: دانیال شایان">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_comp_name">💻 نام کامپیوتر</label>
-            <input type="text" id="computer_name" class="form-control" placeholder="DESKTOP-3PG4DDG">
-          </div>
-
-          <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-              <label class="form-label" style="margin-bottom: 0;" data-i18n="field_model">🏷️ سازنده / مدل دستگاه *</label>
-              <button type="button" id="online-lookup-btn" class="btn btn-sm btn-ai" onclick="lookupModelOnline()" style="font-size: 0.78rem; padding: 0.2rem 0.6rem;">
-                🌐 استعلام مشخصات از اینترنت
+            <!-- AI Scan trigger if photo exists -->
+            <div id="ai-scan-box" style="display: none; margin-top: 0.85rem;">
+              <button type="button" id="ai-scan-btn" class="btn btn-ai btn-sm" onclick="aiScanPhotos()" style="width: 100%;">
+                ✨ اسکن هوشمند عکس با هوش مصنوعی (پر کردن فرم)
               </button>
+              <div id="ai-status" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>
             </div>
-            <input type="text" id="manufacturer_model" class="form-control" placeholder="HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
-            <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_serial">🔑 شماره سریال</label>
-            <input type="text" id="serial_number" class="form-control" placeholder="2UA7361S32">
-            <div id="serial-dup-warn" style="color: var(--warning); font-size: 0.82rem; display: none;"></div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_property_id">🏷️ شناسه / کد اموال *</label>
+              <input type="text" id="property_id" class="form-control" placeholder="AST-0001">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_category">📁 دسته‌بندی *</label>
+              <select id="category" class="form-control" required>
+                <option value="PC">🖥️ کامپیوتر / کیس</option>
+                <option value="Single PC">💻 تک کیس / سیستم کاربر</option>
+                <option value="Laptop">💻 لپ‌تاپ</option>
+                <option value="Monitor">📺 مانیتور</option>
+                <option value="Printer">🖨️ پرینتر</option>
+                <option value="Network">🌐 سوییچ و شبکه</option>
+                <option value="Other">🔌 سایر قطعات</option>
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <label class="form-label" style="margin-bottom: 0;" data-i18n="field_model">🏷️ سازنده / مدل دستگاه *</label>
+                <button type="button" id="online-lookup-btn" class="btn btn-sm btn-ai" onclick="lookupModelOnline()" style="font-size: 0.78rem; padding: 0.2rem 0.6rem;">
+                  🌐 استعلام مشخصات از اینترنت
+                </button>
+              </div>
+              <input type="text" id="manufacturer_model" class="form-control" placeholder="HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
+              <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_serial">🔑 شماره سریال</label>
+              <input type="text" id="serial_number" class="form-control" placeholder="2UA7361S32">
+              <div id="serial-dup-warn" style="color: var(--warning); font-size: 0.82rem; display: none;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_status">⚡ وضعیت دستگاه</label>
+              <select id="status" class="form-control">
+                <option value="active">🟢 در حال استفاده</option>
+                <option value="in_storage">🟡 در انبار / یدکی</option>
+                <option value="repair">🔴 نیازمند تعمیر</option>
+                <option value="retired">⚪ اسقاط / خارج از رده</option>
+              </select>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_location">📍 محل استقرار / اتاق / انبار</label>
-            <input type="text" id="location" class="form-control" placeholder="انبار مرکزی / طبقه دوم / اتاق ۱۰۴">
+          <div class="wizard-nav-btns" style="justify-content: flex-end;">
+            <button type="button" class="btn btn-primary" onclick="goToStep(2)" style="min-width: 140px;">
+              مرحله بعد (کاربر و مکان) ➔
+            </button>
           </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_department">🏢 واحد / دپارتمان</label>
-            <input type="text" id="department" class="form-control" placeholder="پشتیبانی IT / حسابداری / فروش">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_purchase_date">🗓️ تاریخ خرید / تحویل</label>
-            <input type="date" id="purchase_date" class="form-control">
-          </div>
-
-          <!-- Hardware Specs Section -->
-          <div class="form-group full-width">
-            <label class="form-label" style="color: #60a5fa; margin-top: 0.75rem; font-size: 1.05rem;" data-i18n="tab_specs">
-              🔧 مشخصات فنی و سخت‌افزاری
-            </label>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_cpu">🖥️ پردازنده (CPU)</label>
-            <input type="text" id="cpu" class="form-control" placeholder="Intel Core i5-6500 @ 3.20GHz">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_ram">🧠 حافظه رم (RAM)</label>
-            <input type="text" id="ram" class="form-control" placeholder="16 GB">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_storage">💾 حافظه ذخیره‌سازی (SSD / HDD)</label>
-            <input type="text" id="storage_drives" class="form-control" placeholder="256GB NVMe SSD / 500GB HDD">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_gpu">🎮 کارت گرافیک (GPU)</label>
-            <input type="text" id="gpu" class="form-control" placeholder="Intel HD Graphics 530">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_monitors">📺 مانیتور / نمایشگر متصل</label>
-            <input type="text" id="monitors" class="form-control" placeholder="Samsung S27C31x / S22F350">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" data-i18n="field_ip">🌐 آدرس شبکه (IP)</label>
-            <input type="text" id="ip_address" class="form-control" placeholder="192.168.10.194">
-          </div>
-
-          <div class="form-group full-width">
-            <label class="form-label" data-i18n="field_notes">📝 توضیحات / وضعیت سلامت / گارانتی</label>
-            <textarea id="notes" class="form-control" data-i18n-placeholder="field_notes_placeholder" placeholder="مثال: دارای ۲ پورت HDMI، بدنه خط و خش دارد، گارانتی تا پایان سال..."></textarea>
-          </div>
-
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
-          <a href="/" class="btn btn-secondary" data-i18n="btn_cancel">انصراف</a>
-          <button type="submit" class="btn btn-primary" id="submit-btn" data-i18n="btn_save">💾 ذخیره دستگاه</button>
+        <!-- STEP 2: User, Location & Department -->
+        <div class="wizard-step-panel" id="step-panel-2">
+          <h3 style="color: #60a5fa; margin-bottom: 1.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>👤</span> <span>مرحله دوم: کاربر، مکان و واحد سازمانی</span>
+          </h3>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_user">👤 کاربر / کارمند تحویل‌گیرنده</label>
+              <input type="text" id="user_name" class="form-control" placeholder="مثال: دانیال شایان">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_comp_name">💻 نام کامپیوتر</label>
+              <input type="text" id="computer_name" class="form-control" placeholder="DESKTOP-3PG4DDG">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_location">📍 محل استقرار / اتاق / انبار</label>
+              <input type="text" id="location" class="form-control" placeholder="انبار مرکزی / طبقه دوم">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_department">🏢 واحد / دپارتمان</label>
+              <input type="text" id="department" class="form-control" placeholder="پشتیبانی IT / حسابداری">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_purchase_date">🗓️ تاریخ خرید / تحویل</label>
+              <input type="date" id="purchase_date" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_ip">🌐 آدرس شبکه (IP)</label>
+              <input type="text" id="ip_address" class="form-control" placeholder="192.168.10.194">
+            </div>
+          </div>
+
+          <div class="wizard-nav-btns">
+            <button type="button" class="btn btn-secondary" onclick="goToStep(1)">
+              ⬅ بازگشت به مرحله ۱
+            </button>
+            <button type="button" class="btn btn-primary" onclick="goToStep(3)" style="min-width: 140px;">
+              مرحله بعد (سخت‌افزار) ➔
+            </button>
+          </div>
         </div>
+
+        <!-- STEP 3: Hardware Specifications & Final Save -->
+        <div class="wizard-step-panel" id="step-panel-3">
+          <h3 style="color: #60a5fa; margin-bottom: 1.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🔧</span> <span>مرحله سوم: قطعات سخت‌افزاری و ذخیره نهایی</span>
+          </h3>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_cpu">🖥️ پردازنده (CPU)</label>
+              <input type="text" id="cpu" class="form-control" placeholder="Intel Core i5-6500 @ 3.20GHz">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_ram">🧠 حافظه رم (RAM)</label>
+              <input type="text" id="ram" class="form-control" placeholder="16 GB">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_storage">💾 حافظه ذخیره‌سازی (SSD / HDD)</label>
+              <input type="text" id="storage_drives" class="form-control" placeholder="256GB NVMe SSD / 500GB HDD">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_gpu">🎮 کارت گرافیک (GPU)</label>
+              <input type="text" id="gpu" class="form-control" placeholder="Intel HD Graphics 530">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" data-i18n="field_monitors">📺 مانیتور / نمایشگر متصل</label>
+              <input type="text" id="monitors" class="form-control" placeholder="Samsung S27C31x / S22F350">
+            </div>
+
+            <div class="form-group full-width">
+              <label class="form-label" data-i18n="field_notes">📝 توضیحات / وضعیت سلامت / گارانتی</label>
+              <textarea id="notes" class="form-control" placeholder="توضیحات تکمیلی..."></textarea>
+            </div>
+          </div>
+
+          <div class="wizard-nav-btns">
+            <button type="button" class="btn btn-secondary" onclick="goToStep(2)">
+              ⬅ بازگشت به مرحله ۲
+            </button>
+            <button type="submit" class="btn btn-success" id="submit-btn" style="min-width: 170px; font-size: 1.05rem;">
+              💾 ثبت نهایی دستگاه
+            </button>
+          </div>
+        </div>
+
       </form>
     </div>
   </main>
 
   <script>
+    let currentStep = 1;
     let pendingPhotos = [];
     let nextPropId = '';
+
+    function goToStep(step) {
+      if (step < 1 || step > 3) return;
+
+      // Validate Step 1 before proceeding
+      if (step > 1 && currentStep === 1) {
+        const model = document.getElementById('manufacturer_model').value.trim();
+        if (!model) {
+          alert('لطفاً فیلد سازنده / مدل دستگاه را وارد کنید.');
+          document.getElementById('manufacturer_model').focus();
+          return;
+        }
+      }
+
+      currentStep = step;
+
+      // Toggle Panels
+      document.querySelectorAll('.wizard-step-panel').forEach((panel, idx) => {
+        panel.classList.toggle('active', idx + 1 === step);
+      });
+
+      // Toggle Steps
+      document.querySelectorAll('.wizard-step-item').forEach((item, idx) => {
+        const stepNum = idx + 1;
+        item.classList.toggle('active', stepNum === step);
+        item.classList.toggle('completed', stepNum < step);
+      });
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
       try {
@@ -238,7 +402,6 @@
       const files = Array.from(event.target.files || []);
       for (const file of files) {
         try {
-          // Resize to max 1024x1024 at 0.75 quality for fast AI & upload
           const base64 = await resizeImageFile(file, 1024, 1024, 0.75);
           pendingPhotos.push({ base64, original_name: file.name });
         } catch (e) {
@@ -252,15 +415,12 @@
 
     function renderPendingPhotos() {
       const container = document.getElementById('pending-photos');
-      const aiBtn = document.getElementById('ai-scan-btn');
-      const aiHint = document.getElementById('ai-hint');
+      const aiBox = document.getElementById('ai-scan-box');
 
       if (pendingPhotos.length > 0) {
-        if (aiBtn) aiBtn.disabled = false;
-        if (aiHint) aiHint.textContent = `${pendingPhotos.length} عکس برای تحلیل هوش مصنوعی آماده است`;
+        if (aiBox) aiBox.style.display = 'block';
       } else {
-        if (aiBtn) aiBtn.disabled = true;
-        if (aiHint) aiHint.textContent = 'برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید';
+        if (aiBox) aiBox.style.display = 'none';
       }
 
       container.innerHTML = pendingPhotos.map((p, idx) => `
@@ -285,7 +445,7 @@
       btn.textContent = '⏳ در حال تحلیل هوش مصنوعی...';
       status.style.display = 'block';
       status.style.color = '#a78bfa';
-      status.textContent = getTranslation('ai_analyzing');
+      status.textContent = 'هوش مصنوعی جمینای در حال استخراج مشخصات از روی تصویر است...';
 
       try {
         const photo = pendingPhotos[0];
@@ -297,7 +457,7 @@
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.error || 'تحلیل عکس توسط جمینای ناموفق بود');
+          throw new Error(data.error || 'تحلیل عکس با خطا مواجه شد');
         }
 
         const s = data.specs;
@@ -348,13 +508,13 @@
         }
 
         status.style.color = 'var(--success)';
-        status.innerHTML = `✅ <strong>${filledCount} فیلد با موفقیت توسط مدل ${escapeHtml(data.model)} پر شد!</strong> اطلاعات را بررسی کنید و در صورت نیاز ویرایش نمایید.`;
+        status.innerHTML = `✅ <strong>${filledCount} فیلد با موفقیت توسط مدل ${escapeHtml(data.model)} پر شد!</strong>`;
       } catch (err) {
         status.style.color = 'var(--danger)';
         status.textContent = `⚠️ اسکن با خطا مواجه شد: ${err.message}`;
       } finally {
         btn.disabled = false;
-        btn.textContent = getTranslation('btn_ai_rescan');
+        btn.textContent = '✨ اسکن مجدد با هوش مصنوعی';
       }
     }
 
@@ -416,7 +576,7 @@
         window.location.href = `/asset.html?id=${created.id}`;
       } catch (e) {
         alert('خطا: ' + e.message);
-        btn.textContent = getTranslation('btn_save');
+        btn.textContent = '💾 ثبت نهایی دستگاه';
         btn.disabled = false;
       }
     }

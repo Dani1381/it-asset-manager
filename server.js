@@ -94,7 +94,15 @@ async function extractSpecsWithGemini(base64Image, requestedModel) {
 
   const candidateModels = [];
   if (requestedModel) candidateModels.push(requestedModel);
-  const fallbacks = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+  // Comprehensive model list with stable production fallbacks
+  const fallbacks = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-3.6-flash',
+    'gemini-1.5-pro',
+    'gemini-flash-latest'
+  ];
   for (const m of fallbacks) {
     if (!candidateModels.includes(m)) candidateModels.push(m);
   }
@@ -188,7 +196,15 @@ async function lookupSpecsByModelOnline(modelName) {
     throw new Error('برای استعلام آنلاین مشخصات، لطفاً کلید رایگان جمینای را در ⚙️ تنظیمات وارد نمایید.');
   }
 
-  const fallbacks = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+  // Comprehensive model list with stable production fallbacks
+  const fallbacks = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-3.6-flash',
+    'gemini-1.5-pro',
+    'gemini-flash-latest'
+  ];
   const prompt = `
 You are a master hardware database specialist.
 The user entered this device model: "${modelName}".
