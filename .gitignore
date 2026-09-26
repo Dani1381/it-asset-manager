@@ -1,0 +1,21 @@
+# Database
+inventory.db
+inventory.db-wal
+inventory.db-shm
+
+# User uploads (keep directory with .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

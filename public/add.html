@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add New Device - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/qrcode.js"></script>
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span>IT Asset Master</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="btn btn-secondary btn-sm">← Back to Inventory</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="form-card">
+      <h2 class="form-title">➕ Register New Device / Equipment</h2>
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.5rem;">
+        Use this for <strong>monitors, old PCs, spare parts, printers, or anything the .bat scanner cannot reach</strong>.
+        Fill in what you know, take photos of the physical sticker, and assign your Property ID.
+      </p>
+
+      <form id="add-form" onsubmit="submitAsset(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">🏷️ Property / Asset ID *</label>
+            <input type="text" id="property_id" class="form-control" placeholder="AST-0001" required>
+            <small style="color: var(--text-dim); font-size: 0.78rem;">Auto-generated if left blank</small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📁 Category *</label>
+            <select id="category" class="form-control" required>
+              <option value="PC">🖥️ Desktop PC</option>
+              <option value="Laptop">💻 Laptop</option>
+              <option value="Monitor">📺 Monitor</option>
+              <option value="Printer">🖨️ Printer / Scanner</option>
+              <option value="Network">🌐 Network / Switch / Router</option>
+              <option value="Other">🔌 Other Hardware</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">⚡ Status</label>
+            <select id="status" class="form-control">
+              <option value="active">🟢 Active in Use</option>
+              <option value="in_storage">🟡 In Storage / Spare</option>
+              <option value="repair">🔴 Needs Repair</option>
+              <option value="retired">⚪ Retired / Scrap</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">👤 Assigned User / Employee</label>
+            <input type="text" id="user_name" class="form-control" placeholder="e.g. Dani Shayan">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">💻 Computer / Device Name</label>
+            <input type="text" id="computer_name" class="form-control" placeholder="e.g. DESKTOP-3PG4DDG">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🏷️ Manufacturer / Model *</label>
+            <input type="text" id="manufacturer_model" class="form-control" placeholder="e.g. HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🔑 Serial Number</label>
+            <input type="text" id="serial_number" class="form-control" placeholder="e.g. 2UA7361S32">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📍 Location / Room</label>
+            <input type="text" id="location" class="form-control" placeholder="e.g. Warehouse A / Office Floor 2 / Room 104">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🏢 Department</label>
+            <input type="text" id="department" class="form-control" placeholder="e.g. Accounting / IT Support">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🗓️ Purchase / Receipt Date</label>
+            <input type="date" id="purchase_date" class="form-control">
+          </div>
+
+          <!-- Hardware Specs -->
+          <div class="form-group full-width">
+            <label class="form-label" style="color: #60a5fa; margin-top: 0.75rem;">🔧 Hardware Specs (if known)</label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🖥️ CPU / Processor</label>
+            <input type="text" id="cpu" class="form-control" placeholder="e.g. Intel Core i5-6500 @ 3.20GHz">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🧠 RAM (Memory)</label>
+            <input type="text" id="ram" class="form-control" placeholder="e.g. 16 GB">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">💾 Storage Drives</label>
+            <input type="text" id="storage_drives" class="form-control" placeholder="e.g. PC SN740 NVMe WD 256GB">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🎮 GPU / Graphics</label>
+            <input type="text" id="gpu" class="form-control" placeholder="e.g. Intel HD Graphics 530">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">📺 Monitor(s) / Display</label>
+            <input type="text" id="monitors" class="form-control" placeholder="e.g. Samsung S27C31x / S22F350">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">🌐 IP Address</label>
+            <input type="text" id="ip_address" class="form-control" placeholder="e.g. 192.168.10.194">
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label">📝 Notes / Warranty / Accessories</label>
+            <textarea id="notes" class="form-control" placeholder="e.g. Warranty expires 2024-10-10, mouse and keyboard included, missing remote..."></textarea>
+          </div>
+        </div>
+
+        <!-- Photo Upload -->
+        <div class="form-group full-width" style="margin-bottom: 1.5rem;">
+          <label class="form-label" style="color: #60a5fa; margin-bottom: 0.6rem;">📷 Device Photos (Front, Serial Sticker, Ports, etc.)</label>
+
+          <div class="photo-uploader" onclick="document.getElementById('photo-input').click()">
+            <div style="font-size: 2.5rem;">📸</div>
+            <div style="font-weight: 600;">Tap to take a photo or select files</div>
+            <div style="font-size: 0.82rem; color: var(--text-dim);">Works with your phone's camera. Photos are compressed automatically.</div>
+          </div>
+          <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
+
+          <div id="pending-photos" class="photo-gallery" style="margin-top: 1rem;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <a href="/" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary" id="submit-btn">💾 Save Device</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    let pendingPhotos = [];
+    let nextPropId = '';
+
+    // Load next Property ID suggestion on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const res = await fetch('/api/assets/next-id');
+        if (res.ok) {
+          const data = await res.json();
+          nextPropId = data.nextPropertyId;
+          document.getElementById('property_id').placeholder = nextPropId;
+        }
+      } catch (e) {
+        console.warn('Could not fetch next property id');
+      }
+    });
+
+    async function handlePhotoSelect(event) {
+      const files = Array.from(event.target.files || []);
+      for (const file of files) {
+        try {
+          const base64 = await resizeImageFile(file, 1600, 1600, 0.85);
+          pendingPhotos.push({ base64, original_name: file.name });
+        } catch (e) {
+          console.error('Failed to process image', e);
+        }
+      }
+
+      renderPendingPhotos();
+      event.target.value = '';
+    }
+
+    function renderPendingPhotos() {
+      const container = document.getElementById('pending-photos');
+      container.innerHTML = pendingPhotos.map((p, idx) => `
+        <div class="photo-thumb">
+          <img src="${p.base64}" alt="${escapeHtml(p.original_name)}">
+          <button type="button" class="photo-delete-btn" onclick="removePendingPhoto(${idx})">&times;</button>
+        </div>
+      `).join('');
+    }
+
+    function removePendingPhoto(index) {
+      pendingPhotos.splice(index, 1);
+      renderPendingPhotos();
+    }
+
+    async function resizeImageFile(file, maxWidth, maxHeight, quality) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(dataUrl);
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function submitAsset(event) {
+      event.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+
+      const payload = {
+        property_id: document.getElementById('property_id').value.trim() || undefined,
+        category: document.getElementById('category').value,
+        status: document.getElementById('status').value,
+        user_name: document.getElementById('user_name').value.trim(),
+        computer_name: document.getElementById('computer_name').value.trim(),
+        manufacturer_model: document.getElementById('manufacturer_model').value.trim(),
+        serial_number: document.getElementById('serial_number').value.trim(),
+        location: document.getElementById('location').value.trim(),
+        department: document.getElementById('department').value.trim(),
+        purchase_date: document.getElementById('purchase_date').value,
+        cpu: document.getElementById('cpu').value.trim(),
+        ram: document.getElementById('ram').value.trim(),
+        storage_drives: document.getElementById('storage_drives').value.trim(),
+        gpu: document.getElementById('gpu').value.trim(),
+        monitors: document.getElementById('monitors').value.trim(),
+        ip_address: document.getElementById('ip_address').value.trim(),
+        notes: document.getElementById('notes').value.trim(),
+        is_automated: 0
+      };
+
+      try {
+        const res = await fetch('/api/assets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Failed to save asset');
+        }
+
+        const created = await res.json();
+
+        // Upload pending photos
+        for (const p of pendingPhotos) {
+          await fetch(`/api/assets/${created.id}/photos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image: p.base64,
+              original_name: p.original_name,
+              caption: 'Device Photo'
+            })
+          });
+        }
+
+        alert('Device registered successfully! Property ID: ' + created.property_id);
+        window.location.href = `/asset.html?id=${created.id}`;
+      } catch (e) {
+        alert('Error: ' + e.message);
+        btn.textContent = '💾 Save Device';
+        btn.disabled = false;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>

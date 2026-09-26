@@ -1,0 +1,24 @@
+{
+  "name": "it-asset-manager",
+  "version": "1.0.0",
+  "description": "Lightweight, self-hosted IT Asset & Hardware Inventory Management System with Mobile Camera Photo Capture, Automated Windows Scanner, QR Stickers, and Bale Bot Alerts.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "it-asset-management",
+    "inventory",
+    "hardware",
+    "asset-tracking",
+    "qr-code",
+    "powershell",
+    "bale-bot"
+  ],
+  "author": "Dani1381",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

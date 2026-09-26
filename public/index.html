@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>IT Asset Master - Hardware & Inventory Manager</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/qrcode.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span>IT Asset Master</span>
+    </a>
+    <div class="nav-links">
+      <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="Scan with phone to open inventory on your mobile camera">
+        📱 Mobile Link
+      </button>
+      <button onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="Configure Bale Bot & Organization">
+        ⚙️ Settings
+      </button>
+      <a href="/api/export/csv" class="btn btn-secondary btn-sm" download title="Export Excel / CSV">
+        📥 CSV
+      </a>
+      <a href="/add.html" class="btn btn-primary btn-sm">
+        ➕ Add Device
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+    
+    <!-- Top Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-card-info">
+          <h4>Total Assets</h4>
+          <div class="stat-number" id="stat-total">0</div>
+        </div>
+        <div class="stat-icon icon-blue">📊</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-info">
+          <h4>Active PCs</h4>
+          <div class="stat-number" id="stat-pcs">0</div>
+        </div>
+        <div class="stat-icon icon-green">🖥️</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-info">
+          <h4>Monitors</h4>
+          <div class="stat-number" id="stat-monitors">0</div>
+        </div>
+        <div class="stat-icon icon-purple">📺</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-info">
+          <h4>In Storage (Old/Spare)</h4>
+          <div class="stat-number" id="stat-storage">0</div>
+        </div>
+        <div class="stat-icon icon-yellow">📦</div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-card-info">
+          <h4>Needs Photo</h4>
+          <div class="stat-number" id="stat-pending-photos">0</div>
+        </div>
+        <div class="stat-icon icon-red">📷</div>
+      </div>
+    </div>
+
+    <!-- Controls (Search & Filters) -->
+    <div class="controls-card">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Search by Property ID, Serial #, PC Name, User, CPU, Model...">
+      </div>
+
+      <div class="filters-row">
+        <select id="category-filter" class="filter-select">
+          <option value="all">📁 All Categories</option>
+          <option value="PC">🖥️ Computers / Laptops</option>
+          <option value="Monitor">📺 Monitors</option>
+          <option value="Printer">🖨️ Printers</option>
+          <option value="Network">🌐 Network / Switches</option>
+          <option value="Other">🔌 Other Hardware</option>
+        </select>
+
+        <select id="status-filter" class="filter-select">
+          <option value="all">⚡ All Statuses</option>
+          <option value="active">🟢 Active in Use</option>
+          <option value="in_storage">🟡 In Storage / Spare</option>
+          <option value="repair">🔴 Needs Repair</option>
+          <option value="retired">⚪ Retired / Scrap</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Assets Grid -->
+    <div id="assets-container" class="assets-grid">
+      <!-- Injected by app.js -->
+    </div>
+
+  </main>
+
+  <!-- Hidden Camera Input for Fast Photo Upload -->
+  <input type="file" id="global-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleGlobalCameraSelect(event)">
+
+  <!-- Print Asset Tag Modal -->
+  <div id="tag-modal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">🏷️ Printable Asset Sticker</h3>
+        <button class="modal-close" onclick="closePrintTagModal()">&times;</button>
+      </div>
+
+      <div style="background-color: #f1f5f9; padding: 20px; border-radius: 8px; margin-bottom: 1.5rem;">
+        <div id="printable-tag" class="asset-tag-sticker printable-area">
+          <div class="tag-header">
+            <span class="tag-company">IT ASSET MANAGEMENT</span>
+            <span class="tag-id" id="tag-modal-id">AST-0001</span>
+          </div>
+          <div class="tag-body">
+            <div id="tag-modal-qr" class="tag-qr"></div>
+            <div class="tag-details">
+              <div><strong>Model:</strong> <span id="tag-modal-model">HP EliteDesk</span></div>
+              <div><strong>Serial:</strong> <span id="tag-modal-serial">2UA7361S32</span></div>
+              <div><strong>User:</strong> <span id="tag-modal-user">Dani</span></div>
+              <div style="font-size: 8.5px; color: #555; margin-top: 3px;">Scan QR for full hardware specs</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="btn btn-secondary" onclick="closePrintTagModal()">Close</button>
+        <button class="btn btn-primary" onclick="printAssetTag()">🖨️ Print Label</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile LAN QR Modal -->
+  <div id="mobile-qr-modal" class="modal-backdrop">
+    <div class="modal-dialog" style="text-align: center;">
+      <div class="modal-header">
+        <h3 class="modal-title">📱 Open on Your Phone</h3>
+        <button class="modal-close" onclick="closeMobileQrModal()">&times;</button>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+        Point your phone camera at this QR code to access this web inventory from your phone. You can walk around the office or warehouse and snap device photos!
+      </p>
+
+      <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; display: inline-block; margin-bottom: 1rem;">
+        <div id="mobile-qr-code"></div>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <a id="mobile-qr-link" href="#" target="_blank" style="color: #60a5fa; word-break: break-all; font-weight: 600;"></a>
+        <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.4rem;">
+          (Make sure your phone is connected to the same Wi-Fi / LAN)
+        </div>
+      </div>
+
+      <button class="btn btn-secondary" onclick="closeMobileQrModal()" style="width: 100%;">Close</button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Inventory & Bale Bot Settings</h3>
+        <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+      </div>
+
+      <form onsubmit="saveSettings(event)">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">Company / Organization Name</label>
+          <input type="text" id="setting-company" class="form-control" placeholder="Company IT Asset Inventory">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">Asset Tag Prefix</label>
+          <input type="text" id="setting-prefix" class="form-control" placeholder="AST-" style="width: 140px;">
+        </div>
+
+        <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
+
+        <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: #60a5fa;">💬 Bale Messenger Bot Alerts</h4>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label">Bale Bot Token</label>
+          <input type="text" id="setting-bale-token" class="form-control" placeholder="545562353:ObCU_Jqc3GU6F6AUFSqc...">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+          <label class="form-label">Bale Chat ID</label>
+          <input type="text" id="setting-bale-chat-id" class="form-control" placeholder="414212991">
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" id="test-bale-btn" class="btn btn-secondary btn-sm" onclick="testBaleBot()">
+            🔔 Test Bale Notification
+          </button>
+
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
