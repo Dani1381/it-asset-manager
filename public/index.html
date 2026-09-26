@@ -22,6 +22,9 @@
     </a>
     <div class="nav-links">
       <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
+      <button onclick="openLogsModal()" class="btn btn-secondary btn-sm" title="مشاهده لاگ‌ها و رویدادهای سیستم">
+        📋 <span data-i18n="nav_logs">لاگ‌های سیستم</span>
+      </button>
       <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="اسکن با گوشی برای باز کردن پنل دوربین">
         📱 <span data-i18n="nav_mobile_link">اتصال موبایل</span>
       </button>
@@ -243,6 +246,34 @@
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- System Logs Modal -->
+  <div id="logs-modal" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 850px;">
+      <div class="modal-header">
+        <h3 class="modal-title">📋 <span data-i18n="logs_title">لاگ‌های زنده و رویدادهای سیستم</span></h3>
+        <button class="modal-close" onclick="closeLogsModal()">&times;</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="color: var(--text-muted); font-size: 0.88rem;">
+          ثبت درخواست‌های اسکنر، خطاهای هوش مصنوعی، و رویدادهای ورود
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="loadSystemLogs()">🔄 بروزرسانی</button>
+          <button class="btn btn-danger btn-sm" onclick="clearSystemLogs()">🗑️ پاک‌سازی لاگ‌ها</button>
+        </div>
+      </div>
+
+      <div id="logs-container" style="background-color: #060b18; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; line-height: 1.6; direction: ltr; text-align: left;">
+        Loading logs...
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+        <button class="btn btn-secondary" onclick="closeLogsModal()" data-i18n="btn_cancel">بستن</button>
+      </div>
     </div>
   </div>
 

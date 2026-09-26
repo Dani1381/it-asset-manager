@@ -65,6 +65,16 @@ function initDb() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS system_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      level TEXT NOT NULL DEFAULT 'INFO',
+      source TEXT NOT NULL DEFAULT 'SYSTEM',
+      message TEXT NOT NULL,
+      details TEXT,
+      ip TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Default settings
@@ -454,6 +464,29 @@ const queries = {
     for (const [key, value] of Object.entries(settingsMap)) {
       stmt.run(key, String(value));
     }
+    return true;
+  },
+
+  // System Logs
+  addLog(level, source, message, details = '', ip = '') {
+    try {
+      const now = new Date().toISOString();
+      const stmt = db.prepare(`
+        INSERT INTO system_logs (level, source, message, details, ip, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(level, source, message, String(details || ''), String(ip || ''), now);
+    } catch (e) {
+      console.error('Failed to write log:', e);
+    }
+  },
+
+  getLogs(limit = 100) {
+    return db.prepare('SELECT * FROM system_logs ORDER BY id DESC LIMIT ?').all(limit);
+  },
+
+  clearLogs() {
+    db.prepare('DELETE FROM system_logs').run();
     return true;
   }
 };

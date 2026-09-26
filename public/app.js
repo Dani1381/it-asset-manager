@@ -498,6 +498,66 @@ async function testBaleBot() {
   }
 }
 
+// System Logs Modal Functions
+function openLogsModal() {
+  document.getElementById('logs-modal').classList.add('active');
+  loadSystemLogs();
+}
+
+function closeLogsModal() {
+  document.getElementById('logs-modal').classList.remove('active');
+}
+
+async function loadSystemLogs() {
+  const container = document.getElementById('logs-container');
+  if (!container) return;
+  container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 1rem;">در حال دریافت لاگ‌ها...</div>';
+
+  try {
+    const res = await fetch('/api/logs?limit=200');
+    if (!res.ok) throw new Error('خطا در دریافت لاگ‌ها');
+    const logs = await res.json();
+
+    if (logs.length === 0) {
+      container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 1rem;">هیچ لاگی ثبت نشده است.</div>';
+      return;
+    }
+
+    container.innerHTML = logs.map(l => {
+      let color = '#94a3b8'; // Default
+      let badge = 'ℹ️ INFO';
+      if (l.level === 'SUCCESS') { color = '#34d399'; badge = '✅ SUCCESS'; }
+      else if (l.level === 'WARN') { color = '#fbbf24'; badge = '⚠️ WARN'; }
+      else if (l.level === 'ERROR') { color = '#f87171'; badge = '❌ ERROR'; }
+
+      const timeStr = new Date(l.created_at).toLocaleTimeString('fa-IR');
+      return `
+        <div style="border-bottom: 1px solid rgba(255,255,255,0.06); padding: 6px 0;">
+          <span style="color: #64748b;">[${timeStr}]</span>
+          <span style="color: ${color}; font-weight: bold;">[${badge}]</span>
+          <span style="color: #818cf8; font-weight: 600;">[${escapeHtml(l.source)}]</span>:
+          <span style="color: #f1f5f9;">${escapeHtml(l.message)}</span>
+          ${l.details ? `<div style="color: #94a3b8; font-size: 0.8rem; margin-top: 2px; padding-left: 12px;">↳ ${escapeHtml(l.details)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">⚠️ ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function clearSystemLogs() {
+  if (!confirm('آیا مطمئن هستید که تمام لاگ‌های سیستم پاک شوند؟')) return;
+  try {
+    const res = await fetch('/api/logs', { method: 'DELETE' });
+    if (res.ok) {
+      await loadSystemLogs();
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
 // Utility: Escape HTML
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';

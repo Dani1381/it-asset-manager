@@ -167,12 +167,15 @@ Rules:
       const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
       parsed._used_model = model;
+      queries.addLog('SUCCESS', 'GEMINI_VISION', `عکس با موفقیت توسط مدل ${model} تحلیل شد`, `مدل شناسایی شده: ${parsed.manufacturer_model || 'ناشناخته'}`);
       return parsed;
     } catch (err) {
       lastError = err.message;
+      queries.addLog('WARN', 'GEMINI_VISION', `خطا در مدل ${model}`, err.message);
     }
   }
 
+  queries.addLog('ERROR', 'GEMINI_VISION', 'تمام مدل‌های اسکن عکس با خطا مواجه شدند', lastError);
   throw new Error(`تمام مدل‌های جمینای با خطا مواجه شدند: ${lastError}`);
 }
 
@@ -404,12 +407,14 @@ const server = http.createServer(async (req, res) => {
       const pass = body.password || '';
       if (!AUTH_ENABLED || pass === SITE_PASSWORD) {
         const cookie = buildSessionCookie();
+        queries.addLog('SUCCESS', 'AUTH', 'ورود موفق به سیستم', '', req.socket?.remoteAddress || '');
         res.writeHead(200, {
           'Content-Type': 'application/json',
           'Set-Cookie': `iam_sess=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`
         });
         return res.end(JSON.stringify({ success: true }));
       }
+      queries.addLog('ERROR', 'AUTH', 'تلاش ناموفق برای ورود (رمز اشتباه)', '', req.socket?.remoteAddress || '');
       return sendJson(res, 401, { success: false, error: 'Incorrect password' });
     }
 
@@ -446,6 +451,19 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, stats);
     }
 
+    // GET /api/logs (System Live Logs for debugging)
+    if (method === 'GET' && pathname === '/api/logs') {
+      const limit = parseInt(parsedUrl.searchParams.get('limit') || '200', 10);
+      return sendJson(res, 200, queries.getLogs(limit));
+    }
+
+    // DELETE /api/logs (Clear all logs)
+    if (method === 'DELETE' && pathname === '/api/logs') {
+      queries.clearLogs();
+      queries.addLog('INFO', 'SYSTEM', 'لاگ‌های سیستم توسط مدیر پاک‌سازی شد');
+      return sendJson(res, 200, { success: true });
+    }
+
     // GET /api/network-info (shows IP for phone connection)
     if (method === 'GET' && pathname === '/api/network-info') {
       return sendJson(res, 200, {
@@ -458,8 +476,12 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/gemini/analyze') {
       const data = await parseRequestBody(req);
       if (!data.image) {
+        queries.addLog('ERROR', 'GEMINI_VISION', 'درخواست اسکن عکس بدون تصویر ارسال شد', '', req.socket?.remoteAddress || '');
         return sendJson(res, 400, { error: 'No image provided for AI analysis' });
       }
+
+      const imgSizeKB = Math.round((data.image.length * 0.75) / 1024);
+      queries.addLog('INFO', 'GEMINI_VISION', 'درخواست اسکن عکس با هوش مصنوعی دریافت شد', `حجم تقریبی عکس: ${imgSizeKB} KB`, req.socket?.remoteAddress || '');
 
       try {
         const result = await extractSpecsWithGemini(data.image, data.model);
@@ -470,6 +492,7 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         console.error('Gemini extraction failed:', err);
+        queries.addLog('ERROR', 'GEMINI_VISION', 'اسکن عکس ناموفق بود', err.message, req.socket?.remoteAddress || '');
         return sendJson(res, 500, { error: err.message });
       }
     }
@@ -483,6 +506,7 @@ const server = http.createServer(async (req, res) => {
 
       try {
         const result = await lookupSpecsByModelOnline(data.model);
+        queries.addLog('SUCCESS', 'GEMINI_LOOKUP', `مشخصات آنلاین مدل «${data.model}» استخراج شد`, `کانفیگ‌های CPU: ${Array.isArray(result.cpu_options) ? result.cpu_options.length : 0} عدد`, req.socket?.remoteAddress || '');
         return sendJson(res, 200, {
           success: true,
           model: result._used_model,
@@ -490,6 +514,7 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         console.error('Model lookup failed:', err);
+        queries.addLog('ERROR', 'GEMINI_LOOKUP', `استعلام مدل «${data.model}» ناموفق بود`, err.message, req.socket?.remoteAddress || '');
         return sendJson(res, 500, { error: err.message });
       }
     }
@@ -598,6 +623,12 @@ const server = http.createServer(async (req, res) => {
         gpu: data.gpu,
         monitors: data.monitors
       });
+
+      queries.addLog('SUCCESS', 'SCANNER', 
+        `${result.is_new ? 'دستگاه جدید ثبت شد' : 'مشخصات دستگاه بروزرسانی شد'}: ${compName || serialNum}`,
+        `شناسه: ${result.property_id}, کاربر: ${data.user_name || data.userName || 'ناشناخته'}`,
+        req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
+      );
 
       const asset = queries.getAssetById(result.id);
 
@@ -786,6 +817,8 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && pathname === '/api/settings') {
       const data = await parseRequestBody(req);
       queries.updateSettings(data);
+      const changedKeys = Object.keys(data).join(', ');
+      queries.addLog('INFO', 'SETTINGS', 'تنظیمات سیستم بروزرسانی شد', `فیلدها: ${changedKeys}`, req.socket?.remoteAddress || '');
       return sendJson(res, 200, { success: true, settings: queries.getSettings() });
     }
 

@@ -9,6 +9,8 @@ const TRANSLATIONS = {
     nav_add: "➕ افزودن دستگاه",
     nav_mobile_link: "📱 اتصال موبایل",
     nav_settings: "⚙️ تنظیمات",
+    nav_logs: "📋 لاگ‌های سیستم",
+    logs_title: "لاگ‌های زنده و رویدادهای سیستم",
     nav_csv: "📥 خروجی اکسل / CSV",
     nav_back: "← بازگشت به لیست",
     lang_toggle: "English",

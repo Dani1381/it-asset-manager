@@ -238,7 +238,8 @@
       const files = Array.from(event.target.files || []);
       for (const file of files) {
         try {
-          const base64 = await resizeImageFile(file, 1600, 1600, 0.85);
+          // Resize to max 1024x1024 at 0.75 quality for fast AI & upload
+          const base64 = await resizeImageFile(file, 1024, 1024, 0.75);
           pendingPhotos.push({ base64, original_name: file.name });
         } catch (e) {
           console.error('Failed to process image', e);
