@@ -3,11 +3,64 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const { queries, getNextPropertyId } = require('./database');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+
+// Optional password protection (set SITE_PASSWORD env var to enable)
+const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
+const AUTH_ENABLED = SITE_PASSWORD.length > 0;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const HMAC_KEY = crypto.createHash('sha256').update('iam:' + SITE_PASSWORD).digest();
+
+function signSession(expiresAt) {
+  return crypto.createHmac('sha256', HMAC_KEY).update(String(expiresAt)).digest('hex');
+}
+
+function buildSessionCookie() {
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  return `${expiresAt}.${signSession(expiresAt)}`;
+}
+
+function isValidSession(cookieValue) {
+  if (!cookieValue) return false;
+  const dotIdx = cookieValue.indexOf('.');
+  if (dotIdx < 0) return false;
+  const expiresAt = cookieValue.slice(0, dotIdx);
+  const sig = cookieValue.slice(dotIdx + 1);
+  if (!/^\d+$/.test(expiresAt)) return false;
+  if (Date.now() > Number(expiresAt)) return false;
+  const expected = signSession(expiresAt);
+  try {
+    return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+function getRequestCookie(req, name) {
+  const header = req.headers['cookie'];
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return v.join('=');
+  }
+  return null;
+}
+
+// Paths that are always reachable (login page + its assets + API key auth)
+const AUTH_WHITELIST = new Set(['/login.html', '/api/login', '/api/auth-status', '/style.css']);
+
+function isAuthorized(req) {
+  if (!AUTH_ENABLED) return true;
+  // API clients (scanner .bat) may pass the password as a header instead of a cookie
+  const apiKey = req.headers['x-iam-key'];
+  if (apiKey && apiKey === SITE_PASSWORD) return true;
+  return isValidSession(getRequestCookie(req, 'iam_sess'));
+}
 
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -164,6 +217,47 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
+    // -------------------------------------------------------------
+    // AUTHENTICATION GATE (when SITE_PASSWORD is set)
+    // -------------------------------------------------------------
+    if (pathname === '/api/auth-status') {
+      return sendJson(res, 200, {
+        authRequired: AUTH_ENABLED,
+        authenticated: isAuthorized(req)
+      });
+    }
+
+    if (method === 'POST' && pathname === '/api/login') {
+      const body = await parseRequestBody(req);
+      const pass = body.password || '';
+      if (!AUTH_ENABLED || pass === SITE_PASSWORD) {
+        const cookie = buildSessionCookie();
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Set-Cookie': `iam_sess=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`
+        });
+        return res.end(JSON.stringify({ success: true }));
+      }
+      return sendJson(res, 401, { success: false, error: 'Incorrect password' });
+    }
+
+    if (method === 'POST' && pathname === '/api/logout') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Set-Cookie': 'iam_sess=; Path=/; HttpOnly; Max-Age=0'
+      });
+      return res.end(JSON.stringify({ success: true }));
+    }
+
+    // Enforce auth if enabled and path isn't whitelisted
+    if (AUTH_ENABLED && !AUTH_WHITELIST.has(pathname) && !isAuthorized(req)) {
+      if (pathname.startsWith('/api/')) {
+        return sendJson(res, 401, { error: 'Authentication required' });
+      }
+      // Redirect browsers to /login.html
+      res.writeHead(302, { 'Location': `/login.html?next=${encodeURIComponent(pathname)}` });
+      return res.end();
+    }
     // -------------------------------------------------------------
     // API ROUTES
     // -------------------------------------------------------------
