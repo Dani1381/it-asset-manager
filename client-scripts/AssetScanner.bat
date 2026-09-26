@@ -23,7 +23,7 @@ exit /b
 # CONFIGURATION
 # Set your IT Asset Server address & API key
 # ========================================================
-$SERVER_URL = "http://143.246.138.167:3000"
+$SERVER_URL = "http://192.168.10.194:3000"
 $SERVER_KEY = "DaniAsset2026!"
 $BALE_TOKEN = "545562353:ObCU_Jqc3GU6F6AUFSqc9PncphRtSyAb49g"
 $BALE_CHAT_ID = "414212991"
