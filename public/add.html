@@ -30,38 +30,8 @@
       </p>
 
       <form id="add-form" onsubmit="submitAsset(event)">
-        
-        <!-- Photo Upload & AI Scan at the TOP for fast smartphone workflow -->
-        <div class="form-group full-width" style="margin-bottom: 1.75rem;">
-          <label class="form-label" style="color: #a78bfa; margin-bottom: 0.6rem; font-size: 1.1rem; font-weight: 700;" data-i18n="ai_box_title">
-            ✨ تشخیص هوشمند مشخصات با هوش مصنوعی جمینای (Gemini AI)
-          </label>
-
-          <div class="photo-uploader" onclick="document.getElementById('photo-input').click()">
-            <div style="font-size: 2.8rem;">📸</div>
-            <div style="font-weight: 700; font-size: 1.05rem;" data-i18n="ai_uploader_text">برای عکس گرفتن یا انتخاب تصویر برچسب لمس کنید</div>
-            <div style="font-size: 0.88rem; color: var(--text-dim);" data-i18n="ai_uploader_sub">
-              از برچسب مشخصات یا پشت مانیتور/کیس عکس بگیرید تا هوش مصنوعی فیلدها را خودکار پر کند.
-            </div>
-          </div>
-          <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
-
-          <div id="pending-photos" class="photo-gallery" style="margin-top: 1rem;"></div>
-
-          <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem; flex-wrap: wrap;">
-            <button type="button" id="ai-scan-btn" class="btn btn-ai" onclick="aiScanPhotos()" disabled>
-              ✨ <span data-i18n="btn_ai_scan">اسکن هوشمند عکس با هوش مصنوعی (پر کردن خودکار)</span>
-            </button>
-            <small id="ai-hint" style="color: var(--text-dim); align-self: center;">
-              برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید
-            </small>
-          </div>
-          <div id="ai-status" style="margin-top: 0.75rem; font-size: 0.95rem; display: none;"></div>
-        </div>
-
-        <hr style="border-color: var(--border-color); margin: 1.75rem 0;">
-
         <div class="form-grid">
+          
           <div class="form-group">
             <label class="form-label" data-i18n="field_property_id">🏷️ شناسه / کد اموال *</label>
             <input type="text" id="property_id" class="form-control" placeholder="AST-0001">
@@ -133,10 +103,10 @@
             <input type="date" id="purchase_date" class="form-control">
           </div>
 
-          <!-- Hardware Specs -->
+          <!-- Hardware Specs Section -->
           <div class="form-group full-width">
             <label class="form-label" style="color: #60a5fa; margin-top: 0.75rem; font-size: 1.05rem;" data-i18n="tab_specs">
-              🔧 مشخصات سخت‌افزاری (در صورت اطلاع)
+              🔧 مشخصات فنی و سخت‌افزاری
             </label>
           </div>
 
@@ -174,9 +144,28 @@
             <label class="form-label" data-i18n="field_notes">📝 توضیحات / وضعیت سلامت / گارانتی</label>
             <textarea id="notes" class="form-control" data-i18n-placeholder="field_notes_placeholder" placeholder="مثال: دارای ۲ پورت HDMI، بدنه خط و خش دارد، گارانتی تا پایان سال..."></textarea>
           </div>
+
+          <!-- Clean Device Photos Attachment -->
+          <div class="form-group full-width" style="margin-top: 1rem;">
+            <label class="form-label" style="color: #60a5fa; font-size: 1.05rem;">
+              📷 تصاویر دستگاه (دوربین گوشی / آپلود)
+            </label>
+
+            <div class="photo-uploader" onclick="document.getElementById('photo-input').click()" style="padding: 1.25rem;">
+              <div style="font-size: 2.2rem;">📸</div>
+              <div style="font-weight: 700; font-size: 1rem;">برای عکس گرفتن یا انتخاب تصویر لمس کنید</div>
+              <div style="font-size: 0.85rem; color: var(--text-dim);">
+                می‌توانید یک یا چند عکس از زوایای مختلف دستگاه ضمیمه کنید
+              </div>
+            </div>
+            <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
+
+            <div id="pending-photos" class="photo-gallery" style="margin-top: 1rem;"></div>
+          </div>
+
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
           <a href="/" class="btn btn-secondary" data-i18n="btn_cancel">انصراف</a>
           <button type="submit" class="btn btn-primary" id="submit-btn" data-i18n="btn_save">💾 ذخیره دستگاه</button>
         </div>
@@ -249,17 +238,6 @@
 
     function renderPendingPhotos() {
       const container = document.getElementById('pending-photos');
-      const aiBtn = document.getElementById('ai-scan-btn');
-      const aiHint = document.getElementById('ai-hint');
-
-      if (pendingPhotos.length > 0) {
-        if (aiBtn) aiBtn.disabled = false;
-        if (aiHint) aiHint.textContent = `${pendingPhotos.length} عکس برای تحلیل هوش مصنوعی آماده است`;
-      } else {
-        if (aiBtn) aiBtn.disabled = true;
-        if (aiHint) aiHint.textContent = 'برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید';
-      }
-
       container.innerHTML = pendingPhotos.map((p, idx) => `
         <div class="photo-thumb">
           <img src="${p.base64}" alt="${escapeHtml(p.original_name)}">
@@ -271,88 +249,6 @@
     function removePendingPhoto(index) {
       pendingPhotos.splice(index, 1);
       renderPendingPhotos();
-    }
-
-    async function aiScanPhotos() {
-      if (pendingPhotos.length === 0) return;
-      const btn = document.getElementById('ai-scan-btn');
-      const status = document.getElementById('ai-status');
-
-      btn.disabled = true;
-      btn.textContent = '⏳ در حال تحلیل هوش مصنوعی...';
-      status.style.display = 'block';
-      status.style.color = '#a78bfa';
-      status.textContent = getTranslation('ai_analyzing');
-
-      try {
-        const photo = pendingPhotos[0];
-        const res = await fetch('/api/gemini/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: photo.base64 })
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'تحلیل عکس توسط جمینای ناموفق بود');
-        }
-
-        const s = data.specs;
-        let filledCount = 0;
-
-        if (s.category) {
-          const catSelect = document.getElementById('category');
-          for (let opt of catSelect.options) {
-            if (opt.value.toLowerCase() === s.category.toLowerCase()) {
-              catSelect.value = opt.value;
-              filledCount++;
-              break;
-            }
-          }
-        }
-        if (s.manufacturer_model) {
-          document.getElementById('manufacturer_model').value = s.manufacturer_model;
-          filledCount++;
-        }
-        if (s.serial_number) {
-          document.getElementById('serial_number').value = s.serial_number;
-          filledCount++;
-          checkSerialDuplicate();
-        }
-        if (s.cpu) {
-          document.getElementById('cpu').value = s.cpu;
-          filledCount++;
-        }
-        if (s.ram) {
-          document.getElementById('ram').value = s.ram;
-          filledCount++;
-        }
-        if (s.storage_drives) {
-          document.getElementById('storage_drives').value = s.storage_drives;
-          filledCount++;
-        }
-        if (s.gpu) {
-          document.getElementById('gpu').value = s.gpu;
-          filledCount++;
-        }
-        if (s.monitors) {
-          document.getElementById('monitors').value = s.monitors;
-          filledCount++;
-        }
-        if (s.notes) {
-          const notesEl = document.getElementById('notes');
-          notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `AI Note: ${s.notes}`;
-        }
-
-        status.style.color = 'var(--success)';
-        status.innerHTML = `✅ <strong>${filledCount} فیلد با موفقیت توسط مدل ${escapeHtml(data.model)} پر شد!</strong> اطلاعات را بررسی کنید و در صورت نیاز ویرایش نمایید.`;
-      } catch (err) {
-        status.style.color = 'var(--danger)';
-        status.textContent = `⚠️ اسکن با خطا مواجه شد: ${err.message}`;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = getTranslation('btn_ai_rescan');
-      }
     }
 
     async function submitAsset(event) {
@@ -418,7 +314,7 @@
       }
     }
 
-    async function resizeImageFile(file, maxWidth, maxHeight, quality) {
+    function resizeImageFile(file, maxWidth, maxHeight, quality) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = function(e) {
