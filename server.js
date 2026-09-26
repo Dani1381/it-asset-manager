@@ -186,6 +186,85 @@ Rules:
   throw new Error(`All Gemini models failed. Last error: ${lastError}`);
 }
 
+// Online Hardware Spec Search by Model name using AI Knowledge Base
+async function lookupSpecsByModelOnline(modelName) {
+  const settings = queries.getSettings();
+  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || '';
+
+  if (!apiKey) {
+    throw new Error('برای استعلام آنلاین مشخصات، لطفاً کلید رایگان جمینای را در ⚙️ تنظیمات وارد نمایید.');
+  }
+
+  const fallbacks = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+  const prompt = `
+You are a master hardware database specialist.
+The user entered this device model: "${modelName}".
+
+Identify this computer, laptop, monitor, or hardware device and return its official standard technical specifications and common factory CPU/RAM/GPU configurations.
+
+Return STRICT JSON ONLY:
+{
+  "recognized": true,
+  "canonical_name": "Full clean model name (e.g. HP EliteDesk 800 G3 Small Form Factor)",
+  "category": "PC" | "Single PC" | "Laptop" | "Monitor" | "Printer" | "Network" | "Other",
+  "default_cpu": "Most common standard CPU for this model (e.g. Intel Core i5-6500 CPU @ 3.20GHz)",
+  "cpu_options": ["Intel Core i5-6500 @ 3.20GHz", "Intel Core i7-6700 @ 3.40GHz", "Intel Core i3-6100 @ 3.70GHz"],
+  "default_ram": "Standard factory RAM (e.g. 8 GB DDR4 or 16 GB)",
+  "ram_options": ["8 GB", "16 GB", "32 GB", "4 GB"],
+  "default_storage": "Standard storage (e.g. 256GB NVMe SSD or 500GB HDD)",
+  "storage_options": ["256GB NVMe SSD", "512GB NVMe SSD", "500GB HDD", "1TB HDD"],
+  "gpu": "Standard GPU / Graphics (e.g. Intel HD Graphics 530)",
+  "monitors": "Display specs if this is a monitor or laptop screen (e.g. 27\\" IPS Full HD 75Hz), else null",
+  "notes": "Brief 1-line note about form factor, ports, or chipset"
+}
+
+Rules:
+1. If the model is recognized, provide accurate, clean hardware names.
+2. If it is unknown, set "recognized": false.
+3. Output MUST be valid JSON with NO markdown formatting.
+`;
+
+  let lastError = null;
+  for (const model of fallbacks) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          temperature: 0.1
+        }
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+        continue;
+      }
+
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) continue;
+
+      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      parsed._used_model = model;
+      return parsed;
+    } catch (err) {
+      lastError = err.message;
+    }
+  }
+
+  throw new Error(`خطا در ارتباط با سرور هوش مصنوعی: ${lastError}`);
+}
+
 // Send JSON response helper
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -401,6 +480,26 @@ const server = http.createServer(async (req, res) => {
         });
       } catch (err) {
         console.error('Gemini extraction failed:', err);
+        return sendJson(res, 500, { error: err.message });
+      }
+    }
+
+    // POST /api/gemini/lookup-model (Online hardware specs lookup from model name)
+    if (method === 'POST' && pathname === '/api/gemini/lookup-model') {
+      const data = await parseRequestBody(req);
+      if (!data.model) {
+        return sendJson(res, 400, { error: 'Model name is required' });
+      }
+
+      try {
+        const result = await lookupSpecsByModelOnline(data.model);
+        return sendJson(res, 200, {
+          success: true,
+          model: result._used_model,
+          specs: result
+        });
+      } catch (err) {
+        console.error('Model lookup failed:', err);
         return sendJson(res, 500, { error: err.message });
       }
     }

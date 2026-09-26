@@ -102,9 +102,14 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label" data-i18n="field_model">🏷️ سازنده / مدل دستگاه *</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+              <label class="form-label" style="margin-bottom: 0;" data-i18n="field_model">🏷️ سازنده / مدل دستگاه *</label>
+              <button type="button" id="online-lookup-btn" class="btn btn-sm btn-ai" onclick="lookupModelOnline()" style="font-size: 0.78rem; padding: 0.2rem 0.6rem;">
+                🌐 استعلام مشخصات از اینترنت
+              </button>
+            </div>
             <input type="text" id="manufacturer_model" class="form-control" placeholder="HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
-            <small style="color: var(--text-dim); font-size: 0.8rem;">نکته: میانبر تایپی مثل hp 800 g3 یا sam 27 کار می‌کند</small>
+            <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
           </div>
 
           <div class="form-group">

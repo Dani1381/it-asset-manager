@@ -203,8 +203,14 @@
               </div>
 
               <div class="form-group">
-                <label class="form-label" data-i18n="field_model">مدل / سازنده</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                  <label class="form-label" style="margin-bottom: 0;" data-i18n="field_model">مدل / سازنده</label>
+                  <button type="button" id="online-lookup-btn" class="btn btn-sm btn-ai" onclick="lookupModelOnline()" style="font-size: 0.78rem; padding: 0.2rem 0.6rem;">
+                    🌐 استعلام از اینترنت
+                  </button>
+                </div>
                 <input type="text" id="edit-model" class="form-control">
+                <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
               </div>
 
               <div class="form-group">

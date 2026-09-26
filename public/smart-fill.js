@@ -359,6 +359,127 @@ function setupShorthand(inputId, rules, afterHook) {
   });
 }
 
+// Online Spec Search via AI / Internet
+async function lookupModelOnline() {
+  const modelInput = document.getElementById('manufacturer_model') || document.getElementById('edit-model');
+  if (!modelInput || !modelInput.value.trim()) {
+    alert('لطفاً ابتدا نام یا مدل دستگاه را در کادر بنویسید (مثال: HP EliteDesk 800 G3)');
+    if (modelInput) modelInput.focus();
+    return;
+  }
+
+  const modelName = modelInput.value.trim();
+  const btn = document.getElementById('online-lookup-btn');
+  const status = document.getElementById('model-lookup-status');
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ در حال استعلام مشخصات...';
+  }
+  if (status) {
+    status.style.display = 'block';
+    status.style.color = '#a78bfa';
+    status.textContent = 'در حال جستجو و استخراج کانفیگ‌های رسمی این مدل...';
+  }
+
+  try {
+    const res = await fetch('/api/gemini/lookup-model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'استعلام با خطا مواجه شد');
+    }
+
+    const s = data.specs;
+    if (s.canonical_name) modelInput.value = s.canonical_name;
+
+    // Category
+    if (s.category) {
+      const cat = document.getElementById('category') || document.getElementById('edit-category');
+      if (cat) cat.value = s.category;
+    }
+
+    // Default CPU
+    const cpuInput = document.getElementById('cpu') || document.getElementById('edit-cpu');
+    if (cpuInput && s.default_cpu) {
+      cpuInput.value = s.default_cpu;
+      cpuInput.style.borderColor = '#10b981';
+      setTimeout(() => { cpuInput.style.borderColor = ''; }, 1000);
+    }
+
+    // Generate CPU Chips from discovered CPU options!
+    if (Array.isArray(s.cpu_options) && s.cpu_options.length > 0) {
+      const cpuChips = s.cpu_options.map(opt => ({ label: `⚡ ${opt}`, value: opt }));
+      setupFieldChips('cpu', cpuChips, []);
+      setupFieldChips('edit-cpu', cpuChips, []);
+    }
+
+    // Default RAM
+    const ramInput = document.getElementById('ram') || document.getElementById('edit-ram');
+    if (ramInput && s.default_ram) {
+      ramInput.value = s.default_ram;
+      ramInput.style.borderColor = '#10b981';
+      setTimeout(() => { ramInput.style.borderColor = ''; }, 1000);
+    }
+
+    // Generate RAM Chips from discovered RAM options!
+    if (Array.isArray(s.ram_options) && s.ram_options.length > 0) {
+      const ramChips = s.ram_options.map(opt => ({ label: `🧠 ${opt}`, value: opt }));
+      setupFieldChips('ram', ramChips, []);
+      setupFieldChips('edit-ram', ramChips, []);
+    }
+
+    // Default Storage
+    const storageInput = document.getElementById('storage_drives') || document.getElementById('edit-storage');
+    if (storageInput && s.default_storage) {
+      storageInput.value = s.default_storage;
+      storageInput.style.borderColor = '#10b981';
+      setTimeout(() => { storageInput.style.borderColor = ''; }, 1000);
+    }
+
+    // Generate Storage Chips
+    if (Array.isArray(s.storage_options) && s.storage_options.length > 0) {
+      const storChips = s.storage_options.map(opt => ({ label: `💾 ${opt}`, value: opt }));
+      setupFieldChips('storage_drives', storChips, []);
+      setupFieldChips('edit-storage', storChips, []);
+    }
+
+    // GPU & Monitors
+    const gpuInput = document.getElementById('gpu');
+    if (gpuInput && s.gpu) gpuInput.value = s.gpu;
+
+    const monInput = document.getElementById('monitors') || document.getElementById('edit-monitors');
+    if (monInput && s.monitors) monInput.value = s.monitors;
+
+    // Notes
+    if (s.notes) {
+      const notesInput = document.getElementById('notes') || document.getElementById('edit-notes');
+      if (notesInput) {
+        notesInput.value = (notesInput.value ? notesInput.value + '\n' : '') + `💡 ${s.notes}`;
+      }
+    }
+
+    if (status) {
+      status.style.color = 'var(--success)';
+      status.innerHTML = `✅ <strong>مشخصات استاندارد این مدل یافت شد!</strong> پردازنده‌ها و گزینه‌های پیشنهادی به صورت دکمه زیر فیلدها اضافه شدند.`;
+    }
+  } catch (err) {
+    if (status) {
+      status.style.color = 'var(--danger)';
+      status.textContent = `⚠️ ${err.message}`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🌐 استعلام مجدد مشخصات';
+    }
+  }
+}
+
 // Auto-run
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initSmartFill);
