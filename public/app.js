@@ -158,10 +158,10 @@ function renderAssets(assets) {
   if (assets.length === 0) {
     container.innerHTML = `
       <div style="grid-column: 1/-1; text-align: center; padding: 4rem 1rem; color: var(--text-dim);">
-        <div style="font-size: 3rem; margin-bottom: 1rem;">📦</div>
-        <h3 style="color: var(--text-main); margin-bottom: 0.5rem;">No devices found</h3>
-        <p style="margin-bottom: 1.5rem;">Run the .bat scanner on a PC or click "+ Add Device" to add old equipment manually.</p>
-        <a href="/add.html" class="btn btn-primary">➕ Add First Device</a>
+        <div style="font-size: 3.5rem; margin-bottom: 1rem;">📦</div>
+        <h3 style="color: var(--text-main); margin-bottom: 0.5rem;" data-i18n="no_assets_title">${getTranslation('no_assets_title')}</h3>
+        <p style="margin-bottom: 1.5rem;" data-i18n="no_assets_desc">${getTranslation('no_assets_desc')}</p>
+        <a href="/add.html" class="btn btn-primary" data-i18n="btn_add_first">${getTranslation('btn_add_first')}</a>
       </div>
     `;
     return;
@@ -173,14 +173,16 @@ function renderAssets(assets) {
     
     // Category Icon
     let catIcon = '🖥️';
-    if (asset.category === 'Laptop') catIcon = '💻';
+    if (asset.category === 'Single PC') catIcon = '💻';
+    else if (asset.category === 'Laptop') catIcon = '💻';
     else if (asset.category === 'Monitor') catIcon = '📺';
     else if (asset.category === 'Printer') catIcon = '🖨️';
     else if (asset.category === 'Network') catIcon = '🌐';
     else if (asset.category === 'Other') catIcon = '🔌';
 
     const statusBadgeClass = `badge-${asset.status || 'active'}`;
-    const statusText = (asset.status || 'active').replace('_', ' ');
+    const statusText = getTranslation(`status_${asset.status || 'active'}`) || (asset.status || 'active').replace('_', ' ');
+    const categoryName = getTranslation(`filter_${(asset.category || 'pc').toLowerCase().replace(' ', '_')}`) || asset.category || 'PC';
 
     return `
       <div class="asset-card" data-id="${asset.id}">
@@ -190,7 +192,7 @@ function renderAssets(assets) {
           ` : `
             <div class="no-photo">
               <span class="no-photo-icon">${catIcon}</span>
-              <span>No photo attached</span>
+              <span data-i18n="stat_pending_photos">${getTranslation('stat_pending_photos')}</span>
             </div>
           `}
           <div class="asset-tag-badge">${escapeHtml(asset.property_id)}</div>
@@ -202,54 +204,54 @@ function renderAssets(assets) {
             ${escapeHtml(asset.manufacturer_model || asset.computer_name || 'Device')}
           </div>
           <div class="asset-subtitle">
-            ${catIcon} ${escapeHtml(asset.category || 'PC')} • 
-            User: <strong>${escapeHtml(asset.user_name || 'Unassigned')}</strong>
+            ${catIcon} ${escapeHtml(categoryName)} • 
+            ${getTranslation('user_label')} <strong>${escapeHtml(asset.user_name || getTranslation('unassigned'))}</strong>
           </div>
 
           <div class="asset-specs-list">
             <div class="spec-item">
-              <span class="spec-label">Serial:</span>
-              <span class="spec-value" style="font-family: monospace;">${escapeHtml(asset.serial_number || 'N/A')}</span>
+              <span class="spec-label">${getTranslation('serial_label')}</span>
+              <span class="spec-value" style="font-family: monospace;">${escapeHtml(asset.serial_number || '-')}</span>
             </div>
             ${asset.cpu ? `
               <div class="spec-item">
-                <span class="spec-label">CPU:</span>
+                <span class="spec-label">${getTranslation('cpu_label')}</span>
                 <span class="spec-value" title="${escapeHtml(asset.cpu)}">${escapeHtml(asset.cpu)}</span>
               </div>
             ` : ''}
             ${asset.ram ? `
               <div class="spec-item">
-                <span class="spec-label">RAM:</span>
+                <span class="spec-label">${getTranslation('ram_label')}</span>
                 <span class="spec-value">${escapeHtml(asset.ram)}</span>
               </div>
             ` : ''}
             ${asset.monitors ? `
               <div class="spec-item">
-                <span class="spec-label">Monitors:</span>
+                <span class="spec-label">${getTranslation('monitors_label')}</span>
                 <span class="spec-value" title="${escapeHtml(asset.monitors)}">📺 ${escapeHtml(asset.monitors)}</span>
               </div>
             ` : ''}
             ${asset.location ? `
               <div class="spec-item">
-                <span class="spec-label">Location:</span>
+                <span class="spec-label">${getTranslation('location_label')}</span>
                 <span class="spec-value">📍 ${escapeHtml(asset.location)}</span>
               </div>
             ` : ''}
           </div>
 
           <div class="asset-footer">
-            <div style="font-size: 0.78rem; color: var(--text-dim);">
-              📷 ${asset.photo_count || 0} photo(s)
+            <div style="font-size: 0.85rem; color: var(--text-dim);">
+              📷 ${asset.photo_count || 0} ${getTranslation('photos_count')}
             </div>
             <div style="display: flex; gap: 0.4rem;">
-              <button onclick="quickCameraUpload(${asset.id})" class="btn btn-secondary btn-sm" title="Snap Photo from Phone">
+              <button onclick="quickCameraUpload(${asset.id})" class="btn btn-secondary btn-sm" title="${getTranslation('btn_snap')}">
                 📷
               </button>
-              <button onclick="openPrintTagModal(${asset.id})" class="btn btn-secondary btn-sm" title="Print Asset Tag Sticker">
-                🏷️ Tag
+              <button onclick="openPrintTagModal(${asset.id})" class="btn btn-secondary btn-sm" title="${getTranslation('btn_tag')}">
+                🏷️
               </button>
               <a href="/asset.html?id=${asset.id}" class="btn btn-primary btn-sm">
-                Details &rarr;
+                ${getTranslation('btn_details')}
               </a>
             </div>
           </div>

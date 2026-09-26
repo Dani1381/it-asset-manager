@@ -1,5 +1,52 @@
 // smart-fill.js - Intelligent Autocomplete, Memory & Hardware Shortcuts for IT Asset Master
 
+// Model Hardware Profiles / Presets
+const MODEL_PRESETS = {
+  'hp elitedesk 800 g3': {
+    category: 'PC',
+    cpu: 'Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz',
+    ram: '16 GB',
+    storage_drives: '256GB NVMe SSD',
+    gpu: 'Intel(R) HD Graphics 530'
+  },
+  'hp elitedesk 800 g4': {
+    category: 'PC',
+    cpu: 'Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz',
+    ram: '16 GB',
+    storage_drives: '512GB NVMe SSD',
+    gpu: 'Intel(R) UHD Graphics 630'
+  },
+  'hp prodesk 600 g3': {
+    category: 'PC',
+    cpu: 'Intel(R) Core(TM) i5-7500 CPU @ 3.40GHz',
+    ram: '8 GB',
+    storage_drives: '256GB SSD',
+    gpu: 'Intel(R) HD Graphics 630'
+  },
+  'dell optiplex 7050': {
+    category: 'PC',
+    cpu: 'Intel(R) Core(TM) i7-7700 CPU @ 3.60GHz',
+    ram: '16 GB',
+    storage_drives: '256GB NVMe SSD',
+    gpu: 'Intel(R) HD Graphics 630'
+  },
+  'dell latitude 5420': {
+    category: 'Laptop',
+    cpu: 'Intel(R) Core(TM) i5-1145G7 @ 2.60GHz',
+    ram: '16 GB',
+    storage_drives: '256GB NVMe SSD',
+    gpu: 'Intel(R) Iris(R) Xe Graphics'
+  },
+  'samsung s27c31x': {
+    category: 'Monitor',
+    monitors: 'Samsung S27C31x (27" IPS 75Hz)'
+  },
+  'samsung s22f350': {
+    category: 'Monitor',
+    monitors: 'Samsung S22F350 (22" Full HD)'
+  }
+};
+
 // Common IT Hardware Shortcuts & Abbreviations
 const HARDWARE_SHORTCUTS = {
   // Storage shortcuts
@@ -83,7 +130,6 @@ const HARDWARE_SHORTCUTS = {
 
 // Initialize Smart-Fill for a page
 async function initSmartFill() {
-  // 1. Fetch suggestions from previous entries in DB
   let suggestions = {};
   try {
     const res = await fetch('/api/suggestions');
@@ -101,8 +147,8 @@ async function initSmartFill() {
   createDatalist('dl-storages', suggestions.storages || ['256GB SSD', '512GB SSD', '1TB SSD', '500GB HDD', '1TB HDD']);
   createDatalist('dl-gpus', suggestions.gpus || ['Intel HD Graphics', 'NVIDIA GeForce', 'Integrated Graphics']);
   createDatalist('dl-monitors', suggestions.monitors || ['Samsung S27C31x', 'Samsung S22F350', 'LG 24" IPS', 'Default Display']);
-  createDatalist('dl-locations', suggestions.locations || ['Warehouse', 'Office Floor 1', 'Office Floor 2', 'IT Room', 'Server Room']);
-  createDatalist('dl-departments', suggestions.departments || ['IT Support', 'Accounting', 'Engineering', 'Sales', 'HR', 'Management']);
+  createDatalist('dl-locations', suggestions.locations || ['انبار مرکزی', 'طبقه اول', 'طبقه دوم', 'اتاق سرور', 'واحد IT']);
+  createDatalist('dl-departments', suggestions.departments || ['پشتیبانی IT', 'حسابداری', 'فروش', 'منابع انسانی', 'مدیریت']);
   createDatalist('dl-users', suggestions.users || []);
 
   // 3. Attach Datalists to Form Inputs
@@ -116,9 +162,12 @@ async function initSmartFill() {
   attachListToInput('department', 'dl-departments');
   attachListToInput('user_name', 'dl-users');
 
-  // Also support edit modal inputs
+  // Edit modal inputs
   attachListToInput('edit-model', 'dl-models');
+  attachListToInput('edit-cpu', 'dl-cpus');
   attachListToInput('edit-ram', 'dl-rams');
+  attachListToInput('edit-storage', 'dl-storages');
+  attachListToInput('edit-monitors', 'dl-monitors');
   attachListToInput('edit-location', 'dl-locations');
   attachListToInput('edit-department', 'dl-departments');
   attachListToInput('edit-user', 'dl-users');
@@ -127,11 +176,34 @@ async function initSmartFill() {
   setupInputExpansion('storage_drives', HARDWARE_SHORTCUTS.storage);
   setupInputExpansion('ram', HARDWARE_SHORTCUTS.ram);
   setupInputExpansion('cpu', HARDWARE_SHORTCUTS.cpu);
-  setupInputExpansion('manufacturer_model', HARDWARE_SHORTCUTS.model);
+  setupInputExpansion('manufacturer_model', HARDWARE_SHORTCUTS.model, applyModelPreset);
   setupInputExpansion('monitors', HARDWARE_SHORTCUTS.monitors);
   
   setupInputExpansion('edit-model', HARDWARE_SHORTCUTS.model);
   setupInputExpansion('edit-ram', HARDWARE_SHORTCUTS.ram);
+}
+
+// Helper: Apply known model presets
+function applyModelPreset(modelName) {
+  const clean = modelName.toLowerCase().trim();
+  for (const [key, preset] of Object.entries(MODEL_PRESETS)) {
+    if (clean.includes(key)) {
+      const cpu = document.getElementById('cpu');
+      const ram = document.getElementById('ram');
+      const storage = document.getElementById('storage_drives');
+      const gpu = document.getElementById('gpu');
+      const cat = document.getElementById('category');
+      const monitors = document.getElementById('monitors');
+
+      if (cpu && !cpu.value && preset.cpu) cpu.value = preset.cpu;
+      if (ram && !ram.value && preset.ram) ram.value = preset.ram;
+      if (storage && !storage.value && preset.storage_drives) storage.value = preset.storage_drives;
+      if (gpu && !gpu.value && preset.gpu) gpu.value = preset.gpu;
+      if (monitors && !monitors.value && preset.monitors) monitors.value = preset.monitors;
+      if (cat && preset.category) cat.value = preset.category;
+      break;
+    }
+  }
 }
 
 // Helper: Create <datalist> in document body
@@ -142,7 +214,6 @@ function createDatalist(id, items) {
     dl.id = id;
     document.body.appendChild(dl);
   }
-  // Deduplicate items
   const unique = Array.from(new Set(items)).filter(Boolean);
   dl.innerHTML = unique.map(item => `<option value="${escapeHtml(item)}"></option>`).join('');
 }
@@ -157,7 +228,7 @@ function attachListToInput(inputId, datalistId) {
 }
 
 // Helper: Expand shorthand as user types or on blur/Enter
-function setupInputExpansion(inputId, rules) {
+function setupInputExpansion(inputId, rules, afterHook) {
   const input = document.getElementById(inputId);
   if (!input) return;
 
@@ -168,12 +239,12 @@ function setupInputExpansion(inputId, rules) {
     for (const r of rules) {
       if (r.pattern.test(val)) {
         input.value = r.replace;
-        // Visual indicator flash
         input.style.borderColor = '#10b981';
         setTimeout(() => { input.style.borderColor = ''; }, 600);
         break;
       }
     }
+    if (afterHook) afterHook(input.value);
   };
 
   input.addEventListener('blur', expand);

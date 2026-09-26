@@ -1,10 +1,12 @@
-/* IT Asset Master - Modern Responsive CSS */
+/* IT Asset Master - Modern Bilingual & Responsive CSS */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  --bg-main: #0f172a;
-  --bg-card: #1e293b;
-  --bg-card-hover: #273548;
-  --bg-input: #0f172a;
-  --border-color: #334155;
+  --bg-main: #0b1329;
+  --bg-card: #152238;
+  --bg-card-hover: #1c2d4a;
+  --bg-input: #0b1329;
+  --border-color: #243552;
   --border-focus: #3b82f6;
   
   --text-main: #f8fafc;
@@ -24,18 +26,18 @@
   --purple: #8b5cf6;
   --purple-bg: rgba(139, 92, 246, 0.15);
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-sm: 8px;
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: 15px; /* Boosted base font size */
+  font-family: 'Vazirmatn', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif;
+  font-size: 15px;
 }
 
 body {
@@ -45,7 +47,13 @@ body {
   display: flex;
   flex-direction: column;
   font-size: 1rem;
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+/* RTL Support */
+body.rtl {
+  direction: rtl;
+  text-align: right;
 }
 
 /* Navbar */
@@ -65,28 +73,30 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--text-main);
   text-decoration: none;
 }
 
 .nav-brand-icon {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 1.3rem;
+  font-size: 1.35rem;
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
 }
 
 .nav-links {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 /* Container */
@@ -163,52 +173,58 @@ body {
   font-size: 0.88rem;
 }
 
-.btn-icon {
-  padding: 0.55rem;
-  border-radius: var(--radius-sm);
+.btn-lang {
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  color: #a78bfa;
+  font-weight: 700;
+}
+.btn-lang:hover {
+  background: rgba(139, 92, 246, 0.3);
 }
 
 /* Top Stats Cards */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.15rem;
+  margin-bottom: 1.75rem;
 }
 
 .stat-card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  padding: 1.1rem 1.25rem;
+  padding: 1.25rem 1.4rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-shadow: var(--shadow);
 }
 
 .stat-card-info h4 {
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
   color: var(--text-muted);
   margin-bottom: 0.35rem;
 }
 
 .stat-card-info .stat-number {
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-size: 1.9rem;
+  font-weight: 800;
   color: var(--text-main);
 }
 
 .stat-icon {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.35rem;
+  font-size: 1.5rem;
 }
 
 .icon-blue { background-color: var(--primary-light); color: var(--primary); }
@@ -222,29 +238,33 @@ body {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  padding: 1.15rem;
+  margin-bottom: 1.75rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.85rem;
   align-items: center;
   justify-content: space-between;
 }
 
 .search-box {
   flex: 1;
-  min-width: 250px;
+  min-width: 280px;
   position: relative;
 }
 
 .search-box input {
   width: 100%;
-  padding: 0.6rem 1rem 0.6rem 2.4rem;
+  padding: 0.75rem 1.1rem 0.75rem 2.6rem;
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   color: var(--text-main);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+}
+
+body.rtl .search-box input {
+  padding: 0.75rem 2.6rem 0.75rem 1.1rem;
 }
 
 .search-box input:focus {
@@ -254,25 +274,30 @@ body {
 
 .search-box .search-icon {
   position: absolute;
-  left: 0.8rem;
+  left: 0.9rem;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-dim);
 }
 
+body.rtl .search-box .search-icon {
+  left: auto;
+  right: 0.9rem;
+}
+
 .filters-row {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
 }
 
 select.filter-select {
-  padding: 0.55rem 0.85rem;
+  padding: 0.65rem 1rem;
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   color: var(--text-main);
-  font-size: 0.85rem;
+  font-size: 0.92rem;
   cursor: pointer;
 }
 
@@ -284,8 +309,8 @@ select.filter-select:focus {
 /* Asset Cards Grid */
 .assets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.5rem;
 }
 
 .asset-card {
@@ -306,8 +331,8 @@ select.filter-select:focus {
 
 .asset-header {
   position: relative;
-  height: 160px;
-  background-color: #0b1120;
+  height: 180px;
+  background-color: #080e1e;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -326,37 +351,46 @@ select.filter-select:focus {
   align-items: center;
   gap: 0.5rem;
   color: var(--text-dim);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 
 .asset-header .no-photo-icon {
-  font-size: 2.2rem;
+  font-size: 2.6rem;
 }
 
 .asset-tag-badge {
   position: absolute;
-  top: 0.65rem;
-  left: 0.65rem;
-  background-color: rgba(15, 23, 42, 0.85);
+  top: 0.75rem;
+  left: 0.75rem;
+  background-color: rgba(11, 19, 41, 0.85);
   backdrop-filter: blur(4px);
   border: 1px solid var(--border-color);
-  padding: 0.25rem 0.6rem;
+  padding: 0.3rem 0.7rem;
   border-radius: var(--radius-sm);
   font-family: monospace;
-  font-size: 0.8rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: #60a5fa;
 }
 
+body.rtl .asset-tag-badge {
+  left: auto;
+  right: 0.75rem;
+}
+
 .asset-status-badge {
   position: absolute;
-  top: 0.65rem;
-  right: 0.65rem;
-  padding: 0.25rem 0.6rem;
+  top: 0.75rem;
+  right: 0.75rem;
+  padding: 0.3rem 0.75rem;
   border-radius: 9999px;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  text-transform: capitalize;
+}
+
+body.rtl .asset-status-badge {
+  right: auto;
+  left: 0.75rem;
 }
 
 .badge-active { background-color: var(--success); color: white; }
@@ -372,7 +406,7 @@ select.filter-select:focus {
 }
 
 .asset-title {
-  font-size: 1.18rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-main);
   margin-bottom: 0.35rem;
@@ -391,7 +425,7 @@ select.filter-select:focus {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-bottom: 1.15rem;
+  margin-bottom: 1.2rem;
   font-size: 0.92rem;
 }
 
@@ -422,7 +456,7 @@ select.filter-select:focus {
 .asset-footer {
   margin-top: auto;
   border-top: 1px solid var(--border-color);
-  padding-top: 0.75rem;
+  padding-top: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -433,15 +467,16 @@ select.filter-select:focus {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
-  padding: 1.75rem;
-  max-width: 900px;
+  padding: 2rem;
+  max-width: 950px;
   margin: 0 auto;
+  box-shadow: var(--shadow);
 }
 
 .form-title {
-  font-size: 1.35rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -449,15 +484,15 @@ select.filter-select:focus {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.35rem;
+  margin-bottom: 1.75rem;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
 .form-group.full-width {
@@ -486,7 +521,7 @@ select.filter-select:focus {
 }
 
 textarea.form-control {
-  min-height: 80px;
+  min-height: 90px;
   resize: vertical;
 }
 
@@ -494,9 +529,9 @@ textarea.form-control {
 .photo-uploader {
   border: 2px dashed var(--border-color);
   border-radius: var(--radius);
-  padding: 1.5rem;
+  padding: 1.75rem;
   text-align: center;
-  background-color: rgba(15, 23, 42, 0.5);
+  background-color: rgba(11, 19, 41, 0.6);
   cursor: pointer;
   transition: all 0.15s ease;
   display: flex;
@@ -507,19 +542,19 @@ textarea.form-control {
 
 .photo-uploader:hover {
   border-color: var(--primary);
-  background-color: rgba(59, 130, 246, 0.05);
+  background-color: rgba(59, 130, 246, 0.08);
 }
 
 .photo-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.85rem;
   margin-top: 1rem;
 }
 
 .photo-thumb {
   position: relative;
-  height: 120px;
+  height: 130px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border-color);
@@ -534,26 +569,51 @@ textarea.form-control {
 
 .photo-delete-btn {
   position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
+  top: 0.4rem;
+  right: 0.4rem;
   background-color: rgba(239, 68, 68, 0.9);
   color: white;
   border: none;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+body.rtl .photo-delete-btn {
+  right: auto;
+  left: 0.4rem;
+}
+
+/* Specs Table */
+.specs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.96rem;
+}
+.specs-table td {
+  padding: 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.specs-table td.label-col {
+  width: 180px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.specs-table td.val-col {
+  color: var(--text-main);
+  font-weight: 500;
 }
 
 /* Modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -575,22 +635,22 @@ textarea.form-control {
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   width: 100%;
-  max-width: 550px;
+  max-width: 580px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
-  padding: 1.5rem;
+  padding: 1.75rem;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.35rem;
 }
 
 .modal-title {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 700;
 }
 
@@ -598,8 +658,43 @@ textarea.form-control {
   background: transparent;
   border: none;
   color: var(--text-dim);
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   cursor: pointer;
+}
+
+/* Lightbox */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.lightbox.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 25px;
+  color: white;
+  font-size: 2.2rem;
+  cursor: pointer;
+}
+body.rtl .lightbox-close {
+  right: auto;
+  left: 25px;
 }
 
 /* Printable Asset Tag Sticker */
@@ -616,6 +711,8 @@ textarea.form-control {
   flex-direction: column;
   gap: 6px;
   margin: 0 auto;
+  direction: ltr; /* Always standard LTR for barcode scanners */
+  text-align: left;
 }
 
 .tag-header {

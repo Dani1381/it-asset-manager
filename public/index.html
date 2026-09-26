@@ -1,32 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>IT Asset Master - Hardware & Inventory Manager</title>
+  <title>سیستم مدیریت دارایی‌های IT</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
+  <script src="/smart-fill.js"></script>
 </head>
-<body>
+<body class="rtl">
 
   <!-- Top Navigation -->
   <header class="navbar">
     <a href="/" class="nav-brand">
       <div class="nav-brand-icon">📦</div>
-      <span>IT Asset Master</span>
+      <div>
+        <div data-i18n="app_name">سیستم مدیریت دارایی‌های IT</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;" data-i18n="app_subtitle">مدیریت سخت‌افزار، کیس‌ها و مانیتورها</div>
+      </div>
     </a>
     <div class="nav-links">
-      <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="Scan with phone to open inventory on your mobile camera">
-        📱 Mobile Link
+      <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
+      <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="اسکن با گوشی برای باز کردن پنل دوربین">
+        📱 <span data-i18n="nav_mobile_link">اتصال موبایل</span>
       </button>
-      <button onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="Configure Bale Bot & Organization">
-        ⚙️ Settings
+      <button onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="تنظیمات بات بله و هوش مصنوعی">
+        ⚙️ <span data-i18n="nav_settings">تنظیمات</span>
       </button>
-      <a href="/api/export/csv" class="btn btn-secondary btn-sm" download title="Export Excel / CSV">
-        📥 CSV
+      <a href="/api/export/csv" class="btn btn-secondary btn-sm" download title="دانلود فایل اکسل اموال">
+        📥 <span data-i18n="nav_csv">خروجی اکسل</span>
       </a>
       <a href="/add.html" class="btn btn-primary btn-sm">
-        ➕ Add Device
+        ➕ <span data-i18n="nav_add">افزودن دستگاه</span>
       </a>
     </div>
   </header>
@@ -38,7 +44,7 @@
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-card-info">
-          <h4>Total Assets</h4>
+          <h4 data-i18n="stat_total">کل تجهیزات</h4>
           <div class="stat-number" id="stat-total">0</div>
         </div>
         <div class="stat-icon icon-blue">📊</div>
@@ -46,7 +52,7 @@
 
       <div class="stat-card">
         <div class="stat-card-info">
-          <h4>Active PCs</h4>
+          <h4 data-i18n="stat_active_pcs">سیستم‌های فعال</h4>
           <div class="stat-number" id="stat-pcs">0</div>
         </div>
         <div class="stat-icon icon-green">🖥️</div>
@@ -54,7 +60,7 @@
 
       <div class="stat-card">
         <div class="stat-card-info">
-          <h4>Monitors</h4>
+          <h4 data-i18n="stat_monitors">مانیتورها</h4>
           <div class="stat-number" id="stat-monitors">0</div>
         </div>
         <div class="stat-icon icon-purple">📺</div>
@@ -62,7 +68,7 @@
 
       <div class="stat-card">
         <div class="stat-card-info">
-          <h4>In Storage (Old/Spare)</h4>
+          <h4 data-i18n="stat_storage">در انبار / یدکی</h4>
           <div class="stat-number" id="stat-storage">0</div>
         </div>
         <div class="stat-icon icon-yellow">📦</div>
@@ -70,7 +76,7 @@
 
       <div class="stat-card">
         <div class="stat-card-info">
-          <h4>Needs Photo</h4>
+          <h4 data-i18n="stat_pending_photos">بدون عکس</h4>
           <div class="stat-number" id="stat-pending-photos">0</div>
         </div>
         <div class="stat-icon icon-red">📷</div>
@@ -81,26 +87,27 @@
     <div class="controls-card">
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="Search by Property ID, Serial #, PC Name, User, CPU, Model...">
+        <input type="text" id="search-input" data-i18n-placeholder="search_placeholder" placeholder="جستجو با شناسه اموال، شماره سریال، نام سیستم، کاربر، پردازنده، مدل...">
       </div>
 
       <div class="filters-row">
         <select id="category-filter" class="filter-select">
-          <option value="all">📁 All Categories</option>
-          <option value="PC">🖥️ Computers / Laptops</option>
-          <option value="Single PC">💻 Single PC</option>
-          <option value="Monitor">📺 Monitors</option>
-          <option value="Printer">🖨️ Printers</option>
-          <option value="Network">🌐 Network / Switches</option>
-          <option value="Other">🔌 Other Hardware</option>
+          <option value="all" data-i18n="filter_all_cats">📁 همه دسته‌ها</option>
+          <option value="PC" data-i18n="filter_pc">🖥️ کامپیوتر / کیس</option>
+          <option value="Single PC" data-i18n="filter_single_pc">💻 تک کیس / سیستم کاربر</option>
+          <option value="Laptop" data-i18n="filter_laptop">💻 لپ‌تاپ</option>
+          <option value="Monitor" data-i18n="filter_monitor">📺 مانیتور</option>
+          <option value="Printer" data-i18n="filter_printer">🖨️ پرینتر</option>
+          <option value="Network" data-i18n="filter_network">🌐 سوییچ و شبکه</option>
+          <option value="Other" data-i18n="filter_other">🔌 سایر قطعات</option>
         </select>
 
         <select id="status-filter" class="filter-select">
-          <option value="all">⚡ All Statuses</option>
-          <option value="active">🟢 Active in Use</option>
-          <option value="in_storage">🟡 In Storage / Spare</option>
-          <option value="repair">🔴 Needs Repair</option>
-          <option value="retired">⚪ Retired / Scrap</option>
+          <option value="all" data-i18n="filter_all_status">⚡ همه وضعیت‌ها</option>
+          <option value="active" data-i18n="status_active">🟢 در حال استفاده</option>
+          <option value="in_storage" data-i18n="status_in_storage">🟡 در انبار / یدکی</option>
+          <option value="repair" data-i18n="status_repair">🔴 نیازمند تعمیر</option>
+          <option value="retired" data-i18n="status_retired">⚪ اسقاط / خارج از رده</option>
         </select>
       </div>
     </div>
@@ -119,14 +126,14 @@
   <div id="tag-modal" class="modal-backdrop">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="modal-title">🏷️ Printable Asset Sticker</h3>
+        <h3 class="modal-title">🏷️ <span data-i18n="tab_sticker">برچسب بارکد اموال</span></h3>
         <button class="modal-close" onclick="closePrintTagModal()">&times;</button>
       </div>
 
       <div style="background-color: #f1f5f9; padding: 20px; border-radius: 8px; margin-bottom: 1.5rem;">
         <div id="printable-tag" class="asset-tag-sticker printable-area">
           <div class="tag-header">
-            <span class="tag-company">IT ASSET MANAGEMENT</span>
+            <span class="tag-company" id="print-modal-company">IT ASSET MANAGEMENT</span>
             <span class="tag-id" id="tag-modal-id">AST-0001</span>
           </div>
           <div class="tag-body">
@@ -142,8 +149,8 @@
       </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-        <button class="btn btn-secondary" onclick="closePrintTagModal()">Close</button>
-        <button class="btn btn-primary" onclick="printAssetTag()">🖨️ Print Label</button>
+        <button class="btn btn-secondary" onclick="closePrintTagModal()" data-i18n="btn_cancel">بستن</button>
+        <button class="btn btn-primary" onclick="printAssetTag()">🖨️ <span data-i18n="btn_print_sticker">چاپ برچسب</span></button>
       </div>
     </div>
   </div>
@@ -152,11 +159,11 @@
   <div id="mobile-qr-modal" class="modal-backdrop">
     <div class="modal-dialog" style="text-align: center;">
       <div class="modal-header">
-        <h3 class="modal-title">📱 Open on Your Phone</h3>
+        <h3 class="modal-title">📱 <span data-i18n="nav_mobile_link">اتصال با دوربین موبایل</span></h3>
         <button class="modal-close" onclick="closeMobileQrModal()">&times;</button>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
-        Point your phone camera at this QR code to access this web inventory from your phone. You can walk around the office or warehouse and snap device photos!
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.25rem;">
+        با دوربین گوشی این بارکد را اسکن کنید تا سایت روی گوشی باز شود و بتوانید از تمام دستگاه‌ها و برچسب‌ها عکس بگیرید.
       </p>
 
       <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; display: inline-block; margin-bottom: 1rem;">
@@ -164,13 +171,10 @@
       </div>
 
       <div style="margin-bottom: 1.5rem;">
-        <a id="mobile-qr-link" href="#" target="_blank" style="color: #60a5fa; word-break: break-all; font-weight: 600;"></a>
-        <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.4rem;">
-          (Make sure your phone is connected to the same Wi-Fi / LAN)
-        </div>
+        <a id="mobile-qr-link" href="#" target="_blank" style="color: #60a5fa; word-break: break-all; font-weight: 700; font-size: 1.1rem;"></a>
       </div>
 
-      <button class="btn btn-secondary" onclick="closeMobileQrModal()" style="width: 100%;">Close</button>
+      <button class="btn btn-secondary" onclick="closeMobileQrModal()" style="width: 100%;" data-i18n="btn_cancel">بستن</button>
     </div>
   </div>
 
@@ -178,35 +182,36 @@
   <div id="settings-modal" class="modal-backdrop">
     <div class="modal-dialog">
       <div class="modal-header">
-        <h3 class="modal-title">⚙️ Inventory & Bale Bot Settings</h3>
+        <h3 class="modal-title" data-i18n="settings_title">⚙️ تنظیمات سیستم و بات بله</h3>
         <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
       </div>
 
       <form onsubmit="saveSettings(event)">
         <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">Company / Organization Name</label>
+          <label class="form-label" data-i18n="setting_company">نام شرکت / سازمان</label>
           <input type="text" id="setting-company" class="form-control" placeholder="Company IT Asset Inventory">
         </div>
 
         <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">Asset Tag Prefix</label>
-          <input type="text" id="setting-prefix" class="form-control" placeholder="AST-" style="width: 140px;">
+          <label class="form-label" data-i18n="setting_prefix">پیشوند کد اموال</label>
+          <input type="text" id="setting-prefix" class="form-control" placeholder="AST-" style="width: 160px;">
         </div>
 
         <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
 
-        <h4 style="font-size: 1rem; margin-bottom: 0.75rem; color: #a78bfa;">✨ Gemini Vision AI (Photo Auto-Fill)</h4>
+        <h4 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: #a78bfa;">✨ <span data-i18n="ai_box_title">هوش مصنوعی جمینای (Gemini AI)</span></h4>
 
         <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">Gemini API Key</label>
-          <input type="text" id="setting-gemini-key" class="form-control" placeholder="AIzaSy...">
+          <label class="form-label" data-i18n="setting_gemini_key">کلید API جمینای (Gemini API Key)</label>
+          <input type="password" id="setting-gemini-key" class="form-control" placeholder="AIzaSy...">
+          <small style="color: var(--text-dim); font-size: 0.8rem;">کلید رایگان خود را از aistudio.google.com دریافت و اینجا وارد کنید.</small>
         </div>
 
         <div class="form-group" style="margin-bottom: 1.25rem;">
-          <label class="form-label">Default Gemini Model</label>
+          <label class="form-label" data-i18n="setting_gemini_model">مدل هوش مصنوعی پیش‌فرض</label>
           <select id="setting-gemini-model" class="form-control">
-            <option value="gemini-3.6-flash">gemini-3.6-flash (Fast & Highly Accurate - Recommended)</option>
-            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Fast)</option>
+            <option value="gemini-3.6-flash">gemini-3.6-flash (سریع و بسیار دقیق - پیشنهادی)</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (فوق‌العاده سریع)</option>
             <option value="gemini-3.7-flash">gemini-3.7-flash</option>
             <option value="gemini-3.8-flash">gemini-3.8-flash</option>
             <option value="gemini-3.5-flash">gemini-3.5-flash</option>
@@ -215,26 +220,26 @@
 
         <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
 
-        <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: #60a5fa;">💬 Bale Messenger Bot Alerts</h4>
+        <h4 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: #60a5fa;" data-i18n="setting_bale_title">💬 هشدارهای بات پیام‌رسان بله</h4>
 
         <div class="form-group" style="margin-bottom: 1rem;">
-          <label class="form-label">Bale Bot Token</label>
+          <label class="form-label" data-i18n="setting_bale_token">توکن بات بله</label>
           <input type="text" id="setting-bale-token" class="form-control" placeholder="545562353:ObCU_Jqc3GU6F6AUFSqc...">
         </div>
 
         <div class="form-group" style="margin-bottom: 1.25rem;">
-          <label class="form-label">Bale Chat ID</label>
+          <label class="form-label" data-i18n="setting_bale_chat_id">شناسه چت / کانال بله</label>
           <input type="text" id="setting-bale-chat-id" class="form-control" placeholder="414212991">
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <button type="button" id="test-bale-btn" class="btn btn-secondary btn-sm" onclick="testBaleBot()">
-            🔔 Test Bale Notification
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+          <button type="button" id="test-bale-btn" class="btn btn-secondary btn-sm" onclick="testBaleBot()" data-i18n="btn_test_bale">
+            🔔 تست بات بله
           </button>
 
           <div style="display: flex; gap: 0.5rem;">
-            <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()" data-i18n="btn_cancel">انصراف</button>
+            <button type="submit" class="btn btn-primary" data-i18n="btn_save_settings">ذخیره تنظیمات</button>
           </div>
         </div>
       </form>

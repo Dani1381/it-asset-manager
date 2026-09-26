@@ -1,105 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Device Details - IT Asset Master</title>
+  <title>مشخصات دستگاه - IT Asset Master</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
-  <style>
-    .specs-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-    .specs-table td {
-      padding: 0.75rem 0.5rem;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .specs-table td.label-col {
-      width: 160px;
-      color: var(--text-dim);
-      font-weight: 600;
-    }
-    .specs-table td.val-col {
-      color: var(--text-main);
-      font-weight: 500;
-    }
-    .lightbox {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.9);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 2000;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
-    }
-    .lightbox.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .lightbox img {
-      max-width: 90vw;
-      max-height: 90vh;
-      border-radius: 8px;
-    }
-    .lightbox-close {
-      position: absolute;
-      top: 20px;
-      right: 25px;
-      color: white;
-      font-size: 2rem;
-      cursor: pointer;
-    }
-  </style>
 </head>
-<body>
+<body class="rtl">
 
+  <!-- Navbar -->
   <header class="navbar">
     <a href="/" class="nav-brand">
       <div class="nav-brand-icon">📦</div>
-      <span>IT Asset Master</span>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
     </a>
     <div class="nav-links">
-      <a href="/" class="btn btn-secondary btn-sm">← Back to Inventory</a>
+      <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
+      <a href="/" class="btn btn-secondary btn-sm" data-i18n="nav_back">← بازگشت به لیست</a>
     </div>
   </header>
 
   <main class="container">
-    <div id="loading" style="text-align: center; padding: 4rem; color: var(--text-dim);">
-      Loading device details...
+    <div id="loading" style="text-align: center; padding: 4rem; color: var(--text-dim); font-size: 1.1rem;">
+      ⏳ در حال بارگذاری مشخصات دستگاه...
     </div>
 
     <div id="asset-content" style="display: none;">
       <!-- Title & Action Bar -->
-      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.75rem;">
         <div>
-          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; flex-wrap: wrap;">
             <span id="asset-prop-badge" class="asset-tag-badge" style="position: static; font-size: 1rem;">AST-0001</span>
             <span id="asset-status-badge" class="asset-status-badge badge-active" style="position: static;">Active</span>
-            <span id="asset-automated-badge" style="font-size: 0.75rem; background: var(--purple-bg); color: var(--purple); padding: 0.25rem 0.5rem; border-radius: 4px; display: none;">
-              🤖 Auto-Scanned
+            <span id="asset-automated-badge" style="font-size: 0.8rem; background: var(--purple-bg); color: var(--purple); padding: 0.25rem 0.6rem; border-radius: 6px; display: none;" data-i18n="auto_scanned_badge">
+              🤖 اسکن خودکار شبکه
             </span>
           </div>
-          <h1 id="asset-heading" style="font-size: 1.6rem; font-weight: 700;">HP EliteDesk 800 G3</h1>
+          <h1 id="asset-heading" style="font-size: 1.7rem; font-weight: 800;">HP EliteDesk 800 G3</h1>
         </div>
 
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
-            📷 Snap / Add Photo
+            📷 <span data-i18n="btn_snap">عکس گرفتن / آپلود</span>
           </button>
-          <button onclick="openPrintModal()" class="btn btn-secondary btn-sm">
-            🏷️ Print Tag Sticker
+          <button onclick="window.print()" class="btn btn-secondary btn-sm">
+            🏷️ <span data-i18n="btn_print_sticker">چاپ برچسب اموال</span>
           </button>
-          <button onclick="toggleEditMode()" class="btn btn-secondary btn-sm" id="edit-btn">
-            ✏️ Edit
+          <button onclick="openEditModal()" class="btn btn-secondary btn-sm">
+            ✏️ <span data-i18n="btn_edit">ویرایش</span>
           </button>
           <button onclick="deleteCurrentAsset()" class="btn btn-danger btn-sm">
-            🗑️ Delete
+            🗑️ <span data-i18n="btn_delete">حذف</span>
           </button>
         </div>
       </div>
@@ -112,75 +66,76 @@
         
         <!-- Left: Specifications -->
         <div class="form-card" style="margin: 0; max-width: 100%;">
-          <h3 style="font-size: 1.15rem; margin-bottom: 1rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
-            <span>💻</span> System Specifications
+          <h3 style="font-size: 1.25rem; margin-bottom: 1.2rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
+            <span>💻</span> <span data-i18n="tab_specs">مشخصات فنی سیستم</span>
           </h3>
 
           <table class="specs-table">
             <tbody>
-              <tr><td class="label-col">Property ID</td><td class="val-col" id="spec-prop-id" style="font-family: monospace; font-weight: bold; color: #60a5fa;"></td></tr>
-              <tr><td class="label-col">Category</td><td class="val-col" id="spec-category"></td></tr>
-              <tr><td class="label-col">Manufacturer / Model</td><td class="val-col" id="spec-model"></td></tr>
-              <tr><td class="label-col">Serial Number</td><td class="val-col" id="spec-serial" style="font-family: monospace;"></td></tr>
-              <tr><td class="label-col">Assigned User</td><td class="val-col" id="spec-user"></td></tr>
-              <tr><td class="label-col">Computer Name</td><td class="val-col" id="spec-comp-name"></td></tr>
-              <tr><td class="label-col">Location</td><td class="val-col" id="spec-location"></td></tr>
-              <tr><td class="label-col">Department</td><td class="val-col" id="spec-department"></td></tr>
-              <tr><td class="label-col">OS Version</td><td class="val-col" id="spec-os"></td></tr>
-              <tr><td class="label-col">IP Address</td><td class="val-col" id="spec-ip"></td></tr>
-              <tr><td class="label-col">Processor (CPU)</td><td class="val-col" id="spec-cpu"></td></tr>
-              <tr><td class="label-col">RAM Memory</td><td class="val-col" id="spec-ram"></td></tr>
-              <tr><td class="label-col">Storage Drives</td><td class="val-col" id="spec-storage"></td></tr>
-              <tr><td class="label-col">C: Drive Free Space</td><td class="val-col" id="spec-cspace"></td></tr>
-              <tr><td class="label-col">Graphics (GPU)</td><td class="val-col" id="spec-gpu"></td></tr>
-              <tr><td class="label-col">Connected Monitors</td><td class="val-col" id="spec-monitors"></td></tr>
-              <tr><td class="label-col">Network Adapters</td><td class="val-col" id="spec-network" style="font-size: 0.8rem;"></td></tr>
-              <tr><td class="label-col">Notes / Condition</td><td class="val-col" id="spec-notes"></td></tr>
-              <tr><td class="label-col">Last Scanned</td><td class="val-col" id="spec-scanned" style="font-size: 0.8rem; color: var(--text-dim);"></td></tr>
+              <tr><td class="label-col" data-i18n="field_property_id">کد اموال:</td><td class="val-col" id="spec-prop-id" style="font-family: monospace; font-weight: bold; color: #60a5fa; font-size: 1.1rem;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_category">دسته‌بندی:</td><td class="val-col" id="spec-category"></td></tr>
+              <tr><td class="label-col" data-i18n="field_model">مدل / سازنده:</td><td class="val-col" id="spec-model" style="font-weight: 700;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_serial">شماره سریال:</td><td class="val-col" id="spec-serial" style="font-family: monospace; font-weight: 600;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_user">کاربر تحویل‌گیرنده:</td><td class="val-col" id="spec-user" style="color: #10b981; font-weight: 700;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_comp_name">نام سیستم:</td><td class="val-col" id="spec-comp-name"></td></tr>
+              <tr><td class="label-col" data-i18n="field_location">مکان / اتاق:</td><td class="val-col" id="spec-location"></td></tr>
+              <tr><td class="label-col" data-i18n="field_department">واحد / بخش:</td><td class="val-col" id="spec-department"></td></tr>
+              <tr><td class="label-col">سیستم عامل (OS):</td><td class="val-col" id="spec-os"></td></tr>
+              <tr><td class="label-col" data-i18n="field_ip">آدرس شبکه (IP):</td><td class="val-col" id="spec-ip" style="font-family: monospace;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_cpu">پردازنده (CPU):</td><td class="val-col" id="spec-cpu"></td></tr>
+              <tr><td class="label-col" data-i18n="field_ram">رم (RAM):</td><td class="val-col" id="spec-ram"></td></tr>
+              <tr><td class="label-col" data-i18n="field_storage">هارد / SSD:</td><td class="val-col" id="spec-storage"></td></tr>
+              <tr><td class="label-col">فضای آزاد درایو C:</td><td class="val-col" id="spec-cspace"></td></tr>
+              <tr><td class="label-col" data-i18n="field_gpu">کارت گرافیک:</td><td class="val-col" id="spec-gpu"></td></tr>
+              <tr><td class="label-col" data-i18n="field_monitors">مانیتورهای متصل:</td><td class="val-col" id="spec-monitors"></td></tr>
+              <tr><td class="label-col">کارت‌های شبکه:</td><td class="val-col" id="spec-network" style="font-size: 0.85rem;"></td></tr>
+              <tr><td class="label-col" data-i18n="field_notes">توضیحات / یادداشت:</td><td class="val-col" id="spec-notes"></td></tr>
+              <tr><td class="label-col" data-i18n="last_scanned">آخرین اسکن:</td><td class="val-col" id="spec-scanned" style="font-size: 0.85rem; color: var(--text-dim);"></td></tr>
             </tbody>
           </table>
         </div>
 
-        <!-- Right: Photo Gallery & Sticker -->
+        <!-- Right: Photo Gallery & Sticker Preview -->
         <div>
           <!-- Photo Gallery Card -->
           <div class="form-card" style="margin: 0; max-width: 100%; margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-              <h3 style="font-size: 1.15rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
-                <span>📷</span> Device Photos (<span id="photo-count-badge">0</span>)
+              <h3 style="font-size: 1.25rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📷</span> <span data-i18n="tab_photos">تصاویر دستگاه</span> (<span id="photo-count-badge">0</span>)
               </h3>
               <div style="display: flex; gap: 0.4rem;">
                 <button onclick="aiAnalyzeExistingPhoto()" class="btn btn-ai btn-sm" id="ai-reanalyze-btn">
-                  ✨ AI Extract Specs
+                  ✨ <span data-i18n="btn_ai_extract">استخراج با AI</span>
                 </button>
                 <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
-                  ➕ Add Photo
+                  ➕ <span data-i18n="btn_add_photo">افزودن عکس</span>
                 </button>
               </div>
             </div>
-            <div id="ai-extract-status" style="margin-bottom: 0.75rem; font-size: 0.88rem; display: none;"></div>
+
+            <div id="ai-extract-status" style="margin-bottom: 0.75rem; font-size: 0.9rem; display: none;"></div>
 
             <div id="photo-gallery" class="photo-gallery"></div>
             <div id="no-photos-msg" style="text-align: center; padding: 2rem; color: var(--text-dim); display: none;">
-              No photos attached yet. Tap <strong>Snap / Add Photo</strong> above using your phone's camera!
+              هیچ تصویری ثبت نشده است. روی دکمه <strong>افزودن عکس</strong> بزنید تا با دوربین گوشی عکس بگیرید!
             </div>
           </div>
 
           <!-- Printable Sticker Preview Card -->
           <div class="form-card" style="margin: 0; max-width: 100%;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-              <h3 style="font-size: 1.15rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
-                <span>🏷️</span> Asset Tag Sticker
+              <h3 style="font-size: 1.25rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🏷️</span> <span data-i18n="tab_sticker">برچسب بارکد اموال</span>
               </h3>
               <button onclick="window.print()" class="btn btn-secondary btn-sm">
-                🖨️ Print
+                🖨️ <span data-i18n="btn_print_sticker">چاپ برچسب</span>
               </button>
             </div>
 
             <div style="background-color: #f1f5f9; padding: 15px; border-radius: 8px;">
               <div class="asset-tag-sticker printable-area" style="width: 100%;">
                 <div class="tag-header">
-                  <span class="tag-company">IT ASSET MANAGEMENT</span>
+                  <span class="tag-company" id="sticker-company">IT ASSET MANAGEMENT</span>
                   <span class="tag-id" id="sticker-prop-id">AST-0001</span>
                 </div>
                 <div class="tag-body">
@@ -203,84 +158,99 @@
       <div id="edit-modal" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-header">
-            <h3 class="modal-title">✏️ Edit Device Details</h3>
+            <h3 class="modal-title" data-i18n="edit_title">✏️ ویرایش مشخصات دستگاه</h3>
             <button class="modal-close" onclick="closeEditModal()">&times;</button>
           </div>
 
           <form onsubmit="saveAssetEdit(event)">
             <div class="form-grid">
               <div class="form-group">
-                <label class="form-label">Property ID</label>
+                <label class="form-label" data-i18n="field_property_id">شناسه اموال</label>
                 <input type="text" id="edit-property-id" class="form-control" required>
               </div>
 
               <div class="form-group">
-                <label class="form-label">Category</label>
+                <label class="form-label" data-i18n="field_category">دسته‌بندی</label>
                 <select id="edit-category" class="form-control">
-                  <option value="PC">🖥️ Desktop PC</option>
-                  <option value="Single PC">💻 Single PC</option>
-                  <option value="Laptop">💻 Laptop</option>
-                  <option value="Monitor">📺 Monitor</option>
-                  <option value="Printer">🖨️ Printer</option>
-                  <option value="Network">🌐 Network</option>
-                  <option value="Other">🔌 Other</option>
+                  <option value="PC">🖥️ کامپیوتر / کیس</option>
+                  <option value="Single PC">💻 تک کیس / سیستم اختصاصی</option>
+                  <option value="Laptop">💻 لپ‌تاپ</option>
+                  <option value="Monitor">📺 مانیتور</option>
+                  <option value="Printer">🖨️ پرینتر</option>
+                  <option value="Network">🌐 شبکه</option>
+                  <option value="Other">🔌 سایر</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label class="form-label">Status</label>
+                <label class="form-label" data-i18n="field_status">وضعیت</label>
                 <select id="edit-status" class="form-control">
-                  <option value="active">🟢 Active</option>
-                  <option value="in_storage">🟡 In Storage</option>
-                  <option value="repair">🔴 Needs Repair</option>
-                  <option value="retired">⚪ Retired</option>
+                  <option value="active">🟢 در حال استفاده</option>
+                  <option value="in_storage">🟡 در انبار / یدکی</option>
+                  <option value="repair">🔴 نیازمند تعمیر</option>
+                  <option value="retired">⚪ اسقاط</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label class="form-label">Assigned User</label>
+                <label class="form-label" data-i18n="field_user">کاربر تحویل‌گیرنده</label>
                 <input type="text" id="edit-user" class="form-control">
               </div>
 
               <div class="form-group">
-                <label class="form-label">Computer Name</label>
+                <label class="form-label" data-i18n="field_comp_name">نام کامپیوتر</label>
                 <input type="text" id="edit-comp-name" class="form-control">
               </div>
 
               <div class="form-group">
-                <label class="form-label">Model</label>
+                <label class="form-label" data-i18n="field_model">مدل / سازنده</label>
                 <input type="text" id="edit-model" class="form-control">
               </div>
 
               <div class="form-group">
-                <label class="form-label">Serial Number</label>
+                <label class="form-label" data-i18n="field_serial">شماره سریال</label>
                 <input type="text" id="edit-serial" class="form-control">
               </div>
 
               <div class="form-group">
-                <label class="form-label">Location</label>
+                <label class="form-label" data-i18n="field_cpu">پردازنده (CPU)</label>
+                <input type="text" id="edit-cpu" class="form-control">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" data-i18n="field_ram">رم (RAM)</label>
+                <input type="text" id="edit-ram" class="form-control">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" data-i18n="field_storage">هارد / SSD</label>
+                <input type="text" id="edit-storage" class="form-control">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" data-i18n="field_monitors">مانیتورها</label>
+                <input type="text" id="edit-monitors" class="form-control">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" data-i18n="field_location">مکان</label>
                 <input type="text" id="edit-location" class="form-control">
               </div>
 
               <div class="form-group">
-                <label class="form-label">Department</label>
+                <label class="form-label" data-i18n="field_department">واحد / بخش</label>
                 <input type="text" id="edit-department" class="form-control">
               </div>
 
-              <div class="form-group">
-                <label class="form-label">RAM</label>
-                <input type="text" id="edit-ram" class="form-control">
-              </div>
-
               <div class="form-group full-width">
-                <label class="form-label">Notes</label>
+                <label class="form-label" data-i18n="field_notes">توضیحات</label>
                 <textarea id="edit-notes" class="form-control"></textarea>
               </div>
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-              <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
-              <button type="submit" class="btn btn-primary">Save Changes</button>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+              <button type="button" class="btn btn-secondary" onclick="closeEditModal()" data-i18n="btn_cancel">انصراف</button>
+              <button type="submit" class="btn btn-primary" data-i18n="btn_save">ذخیره تغییرات</button>
             </div>
           </form>
         </div>
@@ -302,7 +272,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       if (!assetId) {
-        alert('No asset ID provided');
+        alert('شناسه دستگاه مشخص نشده است!');
         window.location.href = '/';
         return;
       }
@@ -312,13 +282,13 @@
     async function loadAssetDetails() {
       try {
         const res = await fetch(`/api/assets/${assetId}`);
-        if (!res.ok) throw new Error('Asset not found');
+        if (!res.ok) throw new Error('دستگاه یافت نشد!');
         currentAsset = await res.json();
         renderAssetDetails(currentAsset);
       } catch (e) {
         document.getElementById('loading').innerHTML = `
-          <div style="color: var(--danger);">⚠️ ${e.message}</div>
-          <br><a href="/" class="btn btn-secondary btn-sm">Return to Inventory</a>
+          <div style="color: var(--danger); font-size: 1.2rem;">⚠️ ${escapeHtml(e.message)}</div>
+          <br><a href="/" class="btn btn-secondary btn-sm">${getTranslation('nav_back')}</a>
         `;
       }
     }
@@ -327,39 +297,39 @@
       document.getElementById('loading').style.display = 'none';
       document.getElementById('asset-content').style.display = 'block';
 
-      document.title = `${a.property_id} - ${a.manufacturer_model || a.computer_name || 'Asset'}`;
+      document.title = `${a.property_id} - ${a.manufacturer_model || a.computer_name || 'Device'}`;
 
       document.getElementById('asset-prop-badge').textContent = a.property_id;
       document.getElementById('asset-heading').textContent = a.manufacturer_model || a.computer_name || `${a.category} Asset`;
       
       const statusBadge = document.getElementById('asset-status-badge');
       statusBadge.className = `asset-status-badge badge-${a.status || 'active'}`;
-      statusBadge.textContent = (a.status || 'active').replace('_', ' ');
+      statusBadge.textContent = getTranslation(`status_${a.status || 'active'}`) || (a.status || 'active');
 
       if (a.is_automated) {
         document.getElementById('asset-automated-badge').style.display = 'inline-block';
       }
 
       // Specs
-      document.getElementById('spec-prop-id').textContent = a.property_id;
-      document.getElementById('spec-category').textContent = a.category || 'PC';
-      document.getElementById('spec-model').textContent = a.manufacturer_model || 'N/A';
-      document.getElementById('spec-serial').textContent = a.serial_number || 'N/A';
-      document.getElementById('spec-user').textContent = a.user_name || 'Unassigned';
-      document.getElementById('spec-comp-name').textContent = a.computer_name || 'N/A';
-      document.getElementById('spec-location').textContent = a.location || 'N/A';
-      document.getElementById('spec-department').textContent = a.department || 'N/A';
-      document.getElementById('spec-os').textContent = a.os_version || 'N/A';
-      document.getElementById('spec-ip').textContent = a.ip_address || 'N/A';
-      document.getElementById('spec-cpu').textContent = a.cpu || 'N/A';
-      document.getElementById('spec-ram').textContent = a.ram || 'N/A';
-      document.getElementById('spec-storage').textContent = a.storage_drives || 'N/A';
-      document.getElementById('spec-cspace').textContent = a.c_space || 'N/A';
-      document.getElementById('spec-gpu').textContent = a.gpu || 'N/A';
-      document.getElementById('spec-monitors').textContent = a.monitors || 'N/A';
-      document.getElementById('spec-network').textContent = a.network_devices || 'N/A';
-      document.getElementById('spec-notes').textContent = a.notes || 'None';
-      document.getElementById('spec-scanned').textContent = a.last_scanned_at ? new Date(a.last_scanned_at).toLocaleString() : 'Not scanned';
+      document.getElementById('spec-prop-id').textContent = a.property_id || '-';
+      document.getElementById('spec-category').textContent = getTranslation(`filter_${(a.category || 'pc').toLowerCase().replace(' ', '_')}`) || a.category || '-';
+      document.getElementById('spec-model').textContent = a.manufacturer_model || '-';
+      document.getElementById('spec-serial').textContent = a.serial_number || '-';
+      document.getElementById('spec-user').textContent = a.user_name || getTranslation('unassigned');
+      document.getElementById('spec-comp-name').textContent = a.computer_name || '-';
+      document.getElementById('spec-location').textContent = a.location || '-';
+      document.getElementById('spec-department').textContent = a.department || '-';
+      document.getElementById('spec-os').textContent = a.os_version || '-';
+      document.getElementById('spec-ip').textContent = a.ip_address || '-';
+      document.getElementById('spec-cpu').textContent = a.cpu || '-';
+      document.getElementById('spec-ram').textContent = a.ram || '-';
+      document.getElementById('spec-storage').textContent = a.storage_drives || '-';
+      document.getElementById('spec-cspace').textContent = a.c_space || '-';
+      document.getElementById('spec-gpu').textContent = a.gpu || '-';
+      document.getElementById('spec-monitors').textContent = a.monitors || '-';
+      document.getElementById('spec-network').textContent = a.network_devices || '-';
+      document.getElementById('spec-notes').textContent = a.notes || '-';
+      document.getElementById('spec-scanned').textContent = a.last_scanned_at ? new Date(a.last_scanned_at).toLocaleString('fa-IR') : getTranslation('never_scanned');
 
       // Sticker preview
       document.getElementById('sticker-prop-id').textContent = a.property_id;
@@ -394,7 +364,7 @@
       emptyMsg.style.display = 'none';
       container.innerHTML = photos.map(p => `
         <div class="photo-thumb">
-          <img src="/uploads/${p.file_name}" alt="${p.caption || 'Photo'}" onclick="openLightbox('/uploads/${p.file_name}')">
+          <img src="/uploads/${p.file_name}" alt="${escapeHtml(p.caption || 'Photo')}" onclick="openLightbox('/uploads/${p.file_name}')">
           <button type="button" class="photo-delete-btn" onclick="deletePhoto(${p.id})">&times;</button>
         </div>
       `).join('');
@@ -416,24 +386,24 @@
           })
         });
 
-        if (!res.ok) throw new Error('Upload failed');
+        if (!res.ok) throw new Error('بارگذاری عکس ناموفق بود');
         await loadAssetDetails();
-        alert('Photo uploaded!');
+        alert('عکس با موفقیت ذخیره شد!');
       } catch (e) {
-        alert('Photo upload failed: ' + e.message);
+        alert('خطا در ارسال تصویر: ' + e.message);
       } finally {
         event.target.value = '';
       }
     }
 
     async function deletePhoto(photoId) {
-      if (!confirm('Delete this photo?')) return;
+      if (!confirm(getTranslation('confirm_delete_photo'))) return;
       try {
         const res = await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
         if (res.ok) {
           await loadAssetDetails();
         } else {
-          alert('Failed to delete photo');
+          alert('خطا در حذف عکس');
         }
       } catch (e) {
         alert(e.message);
@@ -442,20 +412,19 @@
 
     async function aiAnalyzeExistingPhoto() {
       if (!currentAsset || !currentAsset.photos || currentAsset.photos.length === 0) {
-        alert('Please add a photo of the device or serial sticker first!');
+        alert('لطفاً ابتدا یک عکس از دستگاه یا برچسب مشخصات آن بگیرید!');
         return;
       }
       const btn = document.getElementById('ai-reanalyze-btn');
       const status = document.getElementById('ai-extract-status');
 
       btn.disabled = true;
-      btn.textContent = '⏳ Analyzing...';
+      btn.textContent = '⏳ در حال خواندن عکس با هوش مصنوعی...';
       status.style.display = 'block';
       status.style.color = '#a78bfa';
-      status.textContent = 'Gemini AI is reading device labels and specs from your photo...';
+      status.textContent = 'هوش مصنوعی جمینای در حال تحلیل برچسب‌ها و مشخصات سخت‌افزاری تصویر است...';
 
       try {
-        // Fetch first photo as base64
         const photoUrl = `/uploads/${currentAsset.photos[0].file_name}`;
         const imgRes = await fetch(photoUrl);
         const blob = await imgRes.blob();
@@ -475,11 +444,10 @@
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.error || 'AI analysis failed');
+          throw new Error(data.error || 'تحلیل ناموفق بود');
         }
 
         const s = data.specs;
-        // Update asset in db
         const updatePayload = {};
         if (s.category) updatePayload.category = s.category;
         if (s.manufacturer_model) updatePayload.manufacturer_model = s.manufacturer_model;
@@ -501,29 +469,17 @@
 
         if (saveRes.ok) {
           status.style.color = 'var(--success)';
-          status.innerHTML = `✅ <strong>Specs updated automatically</strong> using <em>${escapeHtml(data.model)}</em>!`;
+          status.innerHTML = `✅ <strong>مشخصات با موفقیت توسط مدل ${escapeHtml(data.model)} استخراج و ذخیره شد!</strong>`;
           await loadAssetDetails();
         } else {
-          throw new Error('Could not save updated specs');
+          throw new Error('خطا در ذخیره‌سازی مشخصات استخراج شده');
         }
       } catch (err) {
         status.style.color = 'var(--danger)';
-        status.textContent = `⚠️ AI Extraction failed: ${err.message}`;
+        status.textContent = `⚠️ استخراج با خطا مواجه شد: ${err.message}`;
       } finally {
         btn.disabled = false;
-        btn.textContent = '✨ AI Extract Specs';
-      }
-    }
-      if (!confirm('Delete this photo?')) return;
-      try {
-        const res = await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
-        if (res.ok) {
-          await loadAssetDetails();
-        } else {
-          alert('Failed to delete photo');
-        }
-      } catch (e) {
-        alert(e.message);
+        btn.textContent = getTranslation('btn_ai_extract');
       }
     }
 
@@ -536,7 +492,7 @@
       document.getElementById('lightbox').classList.remove('active');
     }
 
-    function toggleEditMode() {
+    function openEditModal() {
       if (!currentAsset) return;
       document.getElementById('edit-property-id').value = currentAsset.property_id || '';
       document.getElementById('edit-category').value = currentAsset.category || 'PC';
@@ -545,9 +501,12 @@
       document.getElementById('edit-comp-name').value = currentAsset.computer_name || '';
       document.getElementById('edit-model').value = currentAsset.manufacturer_model || '';
       document.getElementById('edit-serial').value = currentAsset.serial_number || '';
+      document.getElementById('edit-cpu').value = currentAsset.cpu || '';
+      document.getElementById('edit-ram').value = currentAsset.ram || '';
+      document.getElementById('edit-storage').value = currentAsset.storage_drives || '';
+      document.getElementById('edit-monitors').value = currentAsset.monitors || '';
       document.getElementById('edit-location').value = currentAsset.location || '';
       document.getElementById('edit-department').value = currentAsset.department || '';
-      document.getElementById('edit-ram').value = currentAsset.ram || '';
       document.getElementById('edit-notes').value = currentAsset.notes || '';
 
       document.getElementById('edit-modal').classList.add('active');
@@ -567,9 +526,12 @@
         computer_name: document.getElementById('edit-comp-name').value.trim(),
         manufacturer_model: document.getElementById('edit-model').value.trim(),
         serial_number: document.getElementById('edit-serial').value.trim(),
+        cpu: document.getElementById('edit-cpu').value.trim(),
+        ram: document.getElementById('edit-ram').value.trim(),
+        storage_drives: document.getElementById('edit-storage').value.trim(),
+        monitors: document.getElementById('edit-monitors').value.trim(),
         location: document.getElementById('edit-location').value.trim(),
         department: document.getElementById('edit-department').value.trim(),
-        ram: document.getElementById('edit-ram').value.trim(),
         notes: document.getElementById('edit-notes').value.trim()
       };
 
@@ -580,23 +542,23 @@
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error('Save failed');
+        if (!res.ok) throw new Error('خطا در ذخیره‌سازی اطلاعات');
         closeEditModal();
         await loadAssetDetails();
       } catch (e) {
-        alert('Failed to save changes: ' + e.message);
+        alert('خطا: ' + e.message);
       }
     }
 
     async function deleteCurrentAsset() {
-      if (!confirm(`Are you sure you want to permanently delete asset ${currentAsset.property_id}?`)) return;
+      if (!confirm(`${getTranslation('confirm_delete_asset')} (${currentAsset.property_id})`)) return;
       try {
         const res = await fetch(`/api/assets/${assetId}`, { method: 'DELETE' });
         if (res.ok) {
-          alert('Asset deleted');
+          alert('دستگاه با موفقیت حذف شد');
           window.location.href = '/';
         } else {
-          alert('Delete failed');
+          alert('حذف ناموفق بود');
         }
       } catch (e) {
         alert(e.message);
@@ -635,6 +597,16 @@
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
   </script>
 </body>

@@ -1,148 +1,48 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Add New Device - IT Asset Master</title>
+  <title>ثبت دستگاه جدید - IT Asset Master</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
 </head>
-<body>
+<body class="rtl">
 
   <header class="navbar">
     <a href="/" class="nav-brand">
       <div class="nav-brand-icon">📦</div>
-      <span>IT Asset Master</span>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
     </a>
     <div class="nav-links">
-      <a href="/" class="btn btn-secondary btn-sm">← Back to Inventory</a>
+      <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
+      <a href="/" class="btn btn-secondary btn-sm" data-i18n="nav_back">← بازگشت به لیست</a>
     </div>
   </header>
 
   <main class="container">
     <div class="form-card">
-      <h2 class="form-title">➕ Register New Device / Equipment</h2>
-      <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.5rem;">
-        Use this for <strong>monitors, old PCs, spare parts, printers, or anything the .bat scanner cannot reach</strong>.
-        Fill in what you know, take photos of the physical sticker, and assign your Property ID.
+      <h2 class="form-title" data-i18n="add_title">➕ ثبت مشخصات دستگاه / تجهیزات جدید</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.75rem;" data-i18n="add_subtitle">
+        برای ثبت مانیتورها، کیس‌های قدیمی، قطعات انبار و لوازمی که اسکریپت روی آن‌ها اجرا نمی‌شود.
       </p>
 
       <form id="add-form" onsubmit="submitAsset(event)">
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">🏷️ Property / Asset ID *</label>
-            <input type="text" id="property_id" class="form-control" placeholder="AST-0001" required>
-            <small style="color: var(--text-dim); font-size: 0.78rem;">Auto-generated if left blank</small>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">📁 Category *</label>
-            <select id="category" class="form-control" required>
-              <option value="PC">🖥️ Desktop PC</option>
-              <option value="Single PC">💻 Single PC</option>
-              <option value="Laptop">💻 Laptop</option>
-              <option value="Monitor">📺 Monitor</option>
-              <option value="Printer">🖨️ Printer / Scanner</option>
-              <option value="Network">🌐 Network / Switch / Router</option>
-              <option value="Other">🔌 Other Hardware</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">⚡ Status</label>
-            <select id="status" class="form-control">
-              <option value="active">🟢 Active in Use</option>
-              <option value="in_storage">🟡 In Storage / Spare</option>
-              <option value="repair">🔴 Needs Repair</option>
-              <option value="retired">⚪ Retired / Scrap</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">👤 Assigned User / Employee</label>
-            <input type="text" id="user_name" class="form-control" placeholder="e.g. Dani Shayan">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">💻 Computer / Device Name</label>
-            <input type="text" id="computer_name" class="form-control" placeholder="e.g. DESKTOP-3PG4DDG">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🏷️ Manufacturer / Model *</label>
-            <input type="text" id="manufacturer_model" class="form-control" placeholder="e.g. HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🔑 Serial Number</label>
-            <input type="text" id="serial_number" class="form-control" placeholder="e.g. 2UA7361S32">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">📍 Location / Room</label>
-            <input type="text" id="location" class="form-control" placeholder="e.g. Warehouse A / Office Floor 2 / Room 104">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🏢 Department</label>
-            <input type="text" id="department" class="form-control" placeholder="e.g. Accounting / IT Support">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🗓️ Purchase / Receipt Date</label>
-            <input type="date" id="purchase_date" class="form-control">
-          </div>
-
-          <!-- Hardware Specs -->
-          <div class="form-group full-width">
-            <label class="form-label" style="color: #60a5fa; margin-top: 0.75rem;">🔧 Hardware Specs (if known)</label>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🖥️ CPU / Processor</label>
-            <input type="text" id="cpu" class="form-control" placeholder="e.g. Intel Core i5-6500 @ 3.20GHz">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🧠 RAM (Memory)</label>
-            <input type="text" id="ram" class="form-control" placeholder="e.g. 16 GB">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">💾 Storage Drives</label>
-            <input type="text" id="storage_drives" class="form-control" placeholder="e.g. PC SN740 NVMe WD 256GB">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🎮 GPU / Graphics</label>
-            <input type="text" id="gpu" class="form-control" placeholder="e.g. Intel HD Graphics 530">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">📺 Monitor(s) / Display</label>
-            <input type="text" id="monitors" class="form-control" placeholder="e.g. Samsung S27C31x / S22F350">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">🌐 IP Address</label>
-            <input type="text" id="ip_address" class="form-control" placeholder="e.g. 192.168.10.194">
-          </div>
-
-          <div class="form-group full-width">
-            <label class="form-label">📝 Notes / Warranty / Accessories</label>
-            <textarea id="notes" class="form-control" placeholder="e.g. Warranty expires 2024-10-10, mouse and keyboard included, missing remote..."></textarea>
-          </div>
-        </div>
-
-        <!-- Photo Upload -->
-        <div class="form-group full-width" style="margin-bottom: 1.5rem;">
-          <label class="form-label" style="color: #a78bfa; margin-bottom: 0.6rem;">✨ AI Spec Scanner & Device Photos</label>
+        
+        <!-- Photo Upload & AI Scan at the TOP for fast smartphone workflow -->
+        <div class="form-group full-width" style="margin-bottom: 1.75rem;">
+          <label class="form-label" style="color: #a78bfa; margin-bottom: 0.6rem; font-size: 1.1rem; font-weight: 700;" data-i18n="ai_box_title">
+            ✨ تشخیص هوشمند مشخصات با هوش مصنوعی جمینای (Gemini AI)
+          </label>
 
           <div class="photo-uploader" onclick="document.getElementById('photo-input').click()">
-            <div style="font-size: 2.5rem;">📸</div>
-            <div style="font-weight: 600;">Tap to take a photo or select files</div>
-            <div style="font-size: 0.85rem; color: var(--text-dim);">Tip: photograph the device label / spec sticker for best AI results</div>
+            <div style="font-size: 2.8rem;">📸</div>
+            <div style="font-weight: 700; font-size: 1.05rem;" data-i18n="ai_uploader_text">برای عکس گرفتن یا انتخاب تصویر برچسب لمس کنید</div>
+            <div style="font-size: 0.88rem; color: var(--text-dim);" data-i18n="ai_uploader_sub">
+              از برچسب مشخصات یا پشت مانیتور/کیس عکس بگیرید تا هوش مصنوعی فیلدها را خودکار پر کند.
+            </div>
           </div>
           <input type="file" id="photo-input" accept="image/*" capture="environment" multiple style="display:none;" onchange="handlePhotoSelect(event)">
 
@@ -150,18 +50,130 @@
 
           <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem; flex-wrap: wrap;">
             <button type="button" id="ai-scan-btn" class="btn btn-ai" onclick="aiScanPhotos()" disabled>
-              ✨ Scan Photos with Gemini AI (Auto-Fill Specs)
+              ✨ <span data-i18n="btn_ai_scan">اسکن هوشمند عکس با هوش مصنوعی (پر کردن خودکار)</span>
             </button>
             <small id="ai-hint" style="color: var(--text-dim); align-self: center;">
-              Add at least one photo to enable AI scan
+              برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید
             </small>
           </div>
-          <div id="ai-status" style="margin-top: 0.75rem; font-size: 0.9rem; display: none;"></div>
+          <div id="ai-status" style="margin-top: 0.75rem; font-size: 0.95rem; display: none;"></div>
+        </div>
+
+        <hr style="border-color: var(--border-color); margin: 1.75rem 0;">
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_property_id">🏷️ شناسه / کد اموال *</label>
+            <input type="text" id="property_id" class="form-control" placeholder="AST-0001">
+            <small style="color: var(--text-dim); font-size: 0.82rem;" data-i18n="field_property_id_hint">در صورت خالی ماندن، خودکار تولید می‌شود</small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_category">📁 دسته‌بندی *</label>
+            <select id="category" class="form-control" required>
+              <option value="PC" data-i18n="filter_pc">🖥️ کامپیوتر / کیس</option>
+              <option value="Single PC" data-i18n="filter_single_pc">💻 تک کیس / سیستم کاربر</option>
+              <option value="Laptop" data-i18n="filter_laptop">💻 لپ‌تاپ</option>
+              <option value="Monitor" data-i18n="filter_monitor">📺 مانیتور</option>
+              <option value="Printer" data-i18n="filter_printer">🖨️ پرینتر / اسکنر</option>
+              <option value="Network" data-i18n="filter_network">🌐 سوییچ و شبکه</option>
+              <option value="Other" data-i18n="filter_other">🔌 سایر قطعات</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_status">⚡ وضعیت دستگاه</label>
+            <select id="status" class="form-control">
+              <option value="active" data-i18n="status_active">🟢 در حال استفاده</option>
+              <option value="in_storage" data-i18n="status_in_storage">🟡 در انبار / یدکی</option>
+              <option value="repair" data-i18n="status_repair">🔴 نیازمند تعمیر</option>
+              <option value="retired" data-i18n="status_retired">⚪ اسقاط / خارج از رده</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_user">👤 کاربر / کارمند تحویل‌گیرنده</label>
+            <input type="text" id="user_name" class="form-control" placeholder="مثال: دانیال شایان">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_comp_name">💻 نام کامپیوتر</label>
+            <input type="text" id="computer_name" class="form-control" placeholder="DESKTOP-3PG4DDG">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_model">🏷️ سازنده / مدل دستگاه *</label>
+            <input type="text" id="manufacturer_model" class="form-control" placeholder="HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
+            <small style="color: var(--text-dim); font-size: 0.8rem;">نکته: میانبر تایپی مثل hp 800 g3 یا sam 27 کار می‌کند</small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_serial">🔑 شماره سریال</label>
+            <input type="text" id="serial_number" class="form-control" placeholder="2UA7361S32">
+            <div id="serial-dup-warn" style="color: var(--warning); font-size: 0.82rem; display: none;"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_location">📍 محل استقرار / اتاق / انبار</label>
+            <input type="text" id="location" class="form-control" placeholder="انبار مرکزی / طبقه دوم / اتاق ۱۰۴">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_department">🏢 واحد / دپارتمان</label>
+            <input type="text" id="department" class="form-control" placeholder="پشتیبانی IT / حسابداری / فروش">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_purchase_date">🗓️ تاریخ خرید / تحویل</label>
+            <input type="date" id="purchase_date" class="form-control">
+          </div>
+
+          <!-- Hardware Specs -->
+          <div class="form-group full-width">
+            <label class="form-label" style="color: #60a5fa; margin-top: 0.75rem; font-size: 1.05rem;" data-i18n="tab_specs">
+              🔧 مشخصات سخت‌افزاری (در صورت اطلاع)
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_cpu">🖥️ پردازنده (CPU)</label>
+            <input type="text" id="cpu" class="form-control" placeholder="Intel Core i5-6500 @ 3.20GHz">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_ram">🧠 حافظه رم (RAM)</label>
+            <input type="text" id="ram" class="form-control" placeholder="16 GB">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_storage">💾 حافظه ذخیره‌سازی (SSD / HDD)</label>
+            <input type="text" id="storage_drives" class="form-control" placeholder="256GB NVMe SSD / 500GB HDD">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_gpu">🎮 کارت گرافیک (GPU)</label>
+            <input type="text" id="gpu" class="form-control" placeholder="Intel HD Graphics 530">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_monitors">📺 مانیتور / نمایشگر متصل</label>
+            <input type="text" id="monitors" class="form-control" placeholder="Samsung S27C31x / S22F350">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="field_ip">🌐 آدرس شبکه (IP)</label>
+            <input type="text" id="ip_address" class="form-control" placeholder="192.168.10.194">
+          </div>
+
+          <div class="form-group full-width">
+            <label class="form-label" data-i18n="field_notes">📝 توضیحات / وضعیت سلامت / گارانتی</label>
+            <textarea id="notes" class="form-control" data-i18n-placeholder="field_notes_placeholder" placeholder="مثال: دارای ۲ پورت HDMI، بدنه خط و خش دارد، گارانتی تا پایان سال..."></textarea>
+          </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-          <a href="/" class="btn btn-secondary">Cancel</a>
-          <button type="submit" class="btn btn-primary" id="submit-btn">💾 Save Device</button>
+          <a href="/" class="btn btn-secondary" data-i18n="btn_cancel">انصراف</a>
+          <button type="submit" class="btn btn-primary" id="submit-btn" data-i18n="btn_save">💾 ذخیره دستگاه</button>
         </div>
       </form>
     </div>
@@ -171,7 +183,6 @@
     let pendingPhotos = [];
     let nextPropId = '';
 
-    // Load next Property ID suggestion on page load
     document.addEventListener('DOMContentLoaded', async () => {
       try {
         const res = await fetch('/api/assets/next-id');
@@ -183,7 +194,38 @@
       } catch (e) {
         console.warn('Could not fetch next property id');
       }
+
+      // Live serial duplicate warning
+      const serialInput = document.getElementById('serial_number');
+      if (serialInput) {
+        serialInput.addEventListener('blur', checkSerialDuplicate);
+      }
     });
+
+    async function checkSerialDuplicate() {
+      const serial = document.getElementById('serial_number').value.trim();
+      const warn = document.getElementById('serial-dup-warn');
+      if (!serial || serial === 'Unknown') {
+        warn.style.display = 'none';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/assets?search=${encodeURIComponent(serial)}`);
+        if (res.ok) {
+          const items = await res.json();
+          const match = items.find(i => (i.serial_number || '').toLowerCase() === serial.toLowerCase());
+          if (match) {
+            warn.textContent = `${getTranslation('duplicate_serial_warning')} (${match.property_id} - ${match.manufacturer_model})`;
+            warn.style.display = 'block';
+          } else {
+            warn.style.display = 'none';
+          }
+        }
+      } catch (e) {
+        warn.style.display = 'none';
+      }
+    }
 
     async function handlePhotoSelect(event) {
       const files = Array.from(event.target.files || []);
@@ -207,10 +249,10 @@
 
       if (pendingPhotos.length > 0) {
         if (aiBtn) aiBtn.disabled = false;
-        if (aiHint) aiHint.textContent = `${pendingPhotos.length} photo(s) ready for AI analysis`;
+        if (aiHint) aiHint.textContent = `${pendingPhotos.length} عکس برای تحلیل هوش مصنوعی آماده است`;
       } else {
         if (aiBtn) aiBtn.disabled = true;
-        if (aiHint) aiHint.textContent = 'Add at least one photo to enable AI scan';
+        if (aiHint) aiHint.textContent = 'برای فعال شدن اسکن هوش مصنوعی حداقل یک عکس اضافه کنید';
       }
 
       container.innerHTML = pendingPhotos.map((p, idx) => `
@@ -221,19 +263,23 @@
       `).join('');
     }
 
+    function removePendingPhoto(index) {
+      pendingPhotos.splice(index, 1);
+      renderPendingPhotos();
+    }
+
     async function aiScanPhotos() {
       if (pendingPhotos.length === 0) return;
       const btn = document.getElementById('ai-scan-btn');
       const status = document.getElementById('ai-status');
 
       btn.disabled = true;
-      btn.textContent = '⏳ Analyzing with Gemini AI...';
+      btn.textContent = '⏳ در حال تحلیل هوش مصنوعی...';
       status.style.display = 'block';
       status.style.color = '#a78bfa';
-      status.textContent = 'Analyzing image labels & hardware details...';
+      status.textContent = getTranslation('ai_analyzing');
 
       try {
-        // Use the first (or most recently added) photo for analysis
         const photo = pendingPhotos[0];
         const res = await fetch('/api/gemini/analyze', {
           method: 'POST',
@@ -243,13 +289,12 @@
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Gemini analysis failed');
+          throw new Error(data.error || 'تحلیل عکس توسط جمینای ناموفق بود');
         }
 
         const s = data.specs;
         let filledCount = 0;
 
-        // Auto-fill fields if Gemini extracted them
         if (s.category) {
           const catSelect = document.getElementById('category');
           for (let opt of catSelect.options) {
@@ -267,6 +312,7 @@
         if (s.serial_number) {
           document.getElementById('serial_number').value = s.serial_number;
           filledCount++;
+          checkSerialDuplicate();
         }
         if (s.cpu) {
           document.getElementById('cpu').value = s.cpu;
@@ -294,62 +340,20 @@
         }
 
         status.style.color = 'var(--success)';
-        status.innerHTML = `✅ <strong>Auto-filled ${filledCount} field(s)</strong> using <em>${escapeHtml(data.model)}</em>! Check the values above and make any edits if needed.`;
+        status.innerHTML = `✅ <strong>${filledCount} فیلد با موفقیت توسط مدل ${escapeHtml(data.model)} پر شد!</strong> اطلاعات را بررسی کنید و در صورت نیاز ویرایش نمایید.`;
       } catch (err) {
         status.style.color = 'var(--danger)';
-        status.textContent = `⚠️ AI Scan failed: ${err.message}`;
+        status.textContent = `⚠️ اسکن با خطا مواجه شد: ${err.message}`;
       } finally {
         btn.disabled = false;
-        btn.textContent = '✨ Re-scan with Gemini AI';
+        btn.textContent = getTranslation('btn_ai_rescan');
       }
-    }
-
-    function removePendingPhoto(index) {
-      pendingPhotos.splice(index, 1);
-      renderPendingPhotos();
-    }
-
-    async function resizeImageFile(file, maxWidth, maxHeight, quality) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const img = new Image();
-          img.onload = function() {
-            let width = img.width;
-            let height = img.height;
-
-            if (width > height) {
-              if (width > maxWidth) {
-                height = Math.round((height * maxWidth) / width);
-                width = maxWidth;
-              }
-            } else {
-              if (height > maxHeight) {
-                width = Math.round((width * maxHeight) / height);
-                height = maxHeight;
-              }
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', quality);
-            resolve(dataUrl);
-          };
-          img.onerror = reject;
-          img.src = e.target.result;
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
     }
 
     async function submitAsset(event) {
       event.preventDefault();
       const btn = document.getElementById('submit-btn');
-      btn.textContent = 'Saving...';
+      btn.textContent = 'در حال ذخیره...';
       btn.disabled = true;
 
       const payload = {
@@ -382,7 +386,7 @@
 
         if (!res.ok) {
           const err = await res.json();
-          throw new Error(err.error || 'Failed to save asset');
+          throw new Error(err.error || 'خطا در ثبت دستگاه');
         }
 
         const created = await res.json();
@@ -400,13 +404,47 @@
           });
         }
 
-        alert('Device registered successfully! Property ID: ' + created.property_id);
+        alert(`دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`);
         window.location.href = `/asset.html?id=${created.id}`;
       } catch (e) {
-        alert('Error: ' + e.message);
-        btn.textContent = '💾 Save Device';
+        alert('خطا: ' + e.message);
+        btn.textContent = getTranslation('btn_save');
         btn.disabled = false;
       }
+    }
+
+    async function resizeImageFile(file, maxWidth, maxHeight, quality) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+              if (width > maxWidth) {
+                height = Math.round((height * maxWidth) / width);
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width = Math.round((width * maxHeight) / height);
+                height = maxHeight;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
     }
 
     function escapeHtml(str) {
