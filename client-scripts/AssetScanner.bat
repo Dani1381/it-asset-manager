@@ -21,9 +21,10 @@ exit /b
 <#PS_START#>
 # ========================================================
 # CONFIGURATION
-# Set your IT Asset Server address (IP or hostname)
+# Set your IT Asset Server address & API key
 # ========================================================
-$SERVER_URL = "http://localhost:3000"
+$SERVER_URL = "http://143.246.138.167:3000"
+$SERVER_KEY = "DaniAsset2026!"
 $BALE_TOKEN = "545562353:ObCU_Jqc3GU6F6AUFSqc9PncphRtSyAb49g"
 $BALE_CHAT_ID = "414212991"
 $OutputFile = "system_specs.csv"
@@ -131,7 +132,8 @@ $Payload = @{
 } | ConvertTo-Json
 
 try {
-    $ApiResponse = Invoke-RestMethod -Uri $ApiUrl -Method Post -ContentType "application/json; charset=utf-8" -Body $Payload -TimeoutSec 10
+    $Headers = @{ "X-IAM-Key" = $SERVER_KEY }
+    $ApiResponse = Invoke-RestMethod -Uri $ApiUrl -Method Post -Headers $Headers -ContentType "application/json; charset=utf-8" -Body $Payload -TimeoutSec 10
     if ($ApiResponse.success) {
         Write-Host "--------------------------------------------------------" -ForegroundColor Green
         Write-Host "[SUCCESS] Device registered in IT Asset Master!" -ForegroundColor Green
