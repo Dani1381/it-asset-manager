@@ -83,38 +83,86 @@ const MIME_TYPES = {
   '.csv': 'text/csv; charset=utf-8'
 };
 
-// Call Gemini Vision to extract specs from photo
+// 9Router Gateway Configuration
+const NINE_ROUTER_URL = process.env.NINE_ROUTER_URL || 'http://127.0.0.1:20128/v1/chat/completions';
+const NINE_ROUTER_KEY = process.env.DANI_API_KEY || 'sk-5b20d0102616fe63-rd4yvl-c8b097b3';
+const NINE_ROUTER_MODEL = process.env.NINE_ROUTER_MODEL || 'opus';
+
+// Helper: Call 9Router AI Gateway (OpenAI Compatible)
+async function call9Router(promptText, base64Image = null) {
+  const content = [];
+  content.push({ type: 'text', text: promptText });
+
+  if (base64Image) {
+    let fullDataUrl = base64Image;
+    if (!base64Image.startsWith('data:')) {
+      fullDataUrl = `data:image/jpeg;base64,${base64Image}`;
+    }
+    content.push({
+      type: 'image_url',
+      image_url: { url: fullDataUrl }
+    });
+  }
+
+  const payload = {
+    model: NINE_ROUTER_MODEL,
+    messages: [
+      {
+        role: 'user',
+        content: content
+      }
+    ]
+  };
+
+  const res = await fetch(NINE_ROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${NINE_ROUTER_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`9Router error ${res.status}: ${errText.slice(0, 150)}`);
+  }
+
+  const raw = await res.text();
+  let fullText = '';
+
+  // Handle SSE streaming or standard JSON response
+  if (raw.includes('data:')) {
+    const lines = raw.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+        try {
+          const chunk = JSON.parse(line.slice(6));
+          const delta = chunk.choices?.[0]?.delta?.content || '';
+          fullText += delta;
+        } catch {}
+      }
+    }
+  } else {
+    try {
+      const json = JSON.parse(raw);
+      fullText = json.choices?.[0]?.message?.content || '';
+    } catch {
+      fullText = raw;
+    }
+  }
+
+  const cleanJson = fullText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = cleanJson.indexOf('{');
+  const lastBrace = cleanJson.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return JSON.parse(cleanJson.substring(firstBrace, lastBrace + 1));
+  }
+  return JSON.parse(cleanJson);
+}
+
+// Call 9Router AI to extract specs from photo
 async function extractSpecsWithGemini(base64Image, requestedModel) {
-  const settings = queries.getSettings();
-  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || '';
-  
-  if (!apiKey) {
-    throw new Error('برای اسکن تصویر، لطفاً کلید رایگان جمینای را در ⚙️ تنظیمات وارد نمایید.');
-  }
-
-  const candidateModels = [];
-  if (requestedModel) candidateModels.push(requestedModel);
-  // Comprehensive model list with stable production fallbacks
-  const fallbacks = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-3.6-flash',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
-  ];
-  for (const m of fallbacks) {
-    if (!candidateModels.includes(m)) candidateModels.push(m);
-  }
-
-  let mimeType = 'image/jpeg';
-  let cleanB64 = base64Image;
-  const match = base64Image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-  if (match) {
-    mimeType = match[1];
-    cleanB64 = match[2];
-  }
-
   const prompt = `
 You are an expert IT Asset & Hardware Inventory Analyst.
 Examine this image of an IT hardware device or its specification label/sticker very carefully.
@@ -129,82 +177,28 @@ EXTRACT the following information as strictly structured JSON:
   "storage_drives": "Storage drive / SSD / HDD details if mentioned, else null",
   "gpu": "Graphics card details if mentioned, else null",
   "monitors": "Display size, resolution, or model if this is a monitor or connected display, else null",
-  "notes": "Any other helpful information observed (ports, condition, MAC address, power rating, asset numbers)"
+  "notes": "Any other helpful information observed"
 }
 
 Rules:
 1. If the device is a desktop tower / all-in-one / mini PC for one user, classify as "Single PC" or "PC".
 2. Read stickers and printed labels carefully for Serial Numbers and Models.
-3. If a field cannot be determined from the image, return null for that field.
-4. Output MUST be pure JSON with NO markdown code fences.
+3. Return STRICT JSON ONLY with NO markdown formatting.
 `;
 
-  let lastError = null;
-  for (const model of candidateModels) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType, data: cleanB64 } }
-          ]
-        }],
-        generationConfig: {
-          response_mime_type: 'application/json',
-          temperature: 0.1
-        }
-      };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        lastError = `Model ${model} returned HTTP ${res.status}: ${errText.slice(0, 150)}`;
-        continue;
-      }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
-
-      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      parsed._used_model = model;
-      queries.addLog('SUCCESS', 'GEMINI_VISION', `عکس با موفقیت توسط مدل ${model} تحلیل شد`, `مدل شناسایی شده: ${parsed.manufacturer_model || 'ناشناخته'}`);
-      return parsed;
-    } catch (err) {
-      lastError = err.message;
-      queries.addLog('WARN', 'GEMINI_VISION', `خطا در مدل ${model}`, err.message);
-    }
+  try {
+    const parsed = await call9Router(prompt, base64Image);
+    parsed._used_model = '9Router (opus)';
+    queries.addLog('SUCCESS', '9ROUTER_VISION', 'عکس با موفقیت توسط گیت‌وی 9Router تحلیل شد', `مدل شناسایی شده: ${parsed.manufacturer_model || 'نامشخص'}`);
+    return parsed;
+  } catch (err) {
+    queries.addLog('ERROR', '9ROUTER_VISION', 'خطا در گیت‌وی 9Router', err.message);
+    throw err;
   }
-
-  queries.addLog('ERROR', 'GEMINI_VISION', 'تمام مدل‌های اسکن عکس با خطا مواجه شدند', lastError);
-  throw new Error(`تمام مدل‌های جمینای با خطا مواجه شدند: ${lastError}`);
 }
 
-// Online Hardware Spec Search by Model name using AI Knowledge Base
+// Online Hardware Spec Search by Model name using 9Router AI
 async function lookupSpecsByModelOnline(modelName) {
-  const settings = queries.getSettings();
-  const apiKey = settings.gemini_api_key || process.env.GEMINI_API_KEY || '';
-
-  if (!apiKey) {
-    throw new Error('برای استعلام آنلاین مشخصات، لطفاً کلید رایگان جمینای را در ⚙️ تنظیمات وارد نمایید.');
-  }
-
-  // Comprehensive model list with stable production fallbacks
-  const fallbacks = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-3.6-flash',
-    'gemini-1.5-pro',
-    'gemini-flash-latest'
-  ];
   const prompt = `
 You are a master hardware database specialist.
 The user entered this device model: "${modelName}".
@@ -227,51 +221,18 @@ Return STRICT JSON ONLY:
   "notes": "Brief 1-line note about form factor, ports, or chipset"
 }
 
-Rules:
-1. If the model is recognized, provide accurate, clean hardware names.
-2. If it is unknown, set "recognized": false.
-3. Output MUST be valid JSON with NO markdown formatting.
+Return STRICT JSON ONLY with NO markdown code fences.
 `;
 
-  let lastError = null;
-  for (const model of fallbacks) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          response_mime_type: 'application/json',
-          temperature: 0.1
-        }
-      };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        lastError = `HTTP ${res.status}`;
-        continue;
-      }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) continue;
-
-      const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      parsed._used_model = model;
-      return parsed;
-    } catch (err) {
-      lastError = err.message;
-    }
+  try {
+    const parsed = await call9Router(prompt);
+    parsed._used_model = '9Router (opus)';
+    queries.addLog('SUCCESS', '9ROUTER_LOOKUP', `استعلام مدل «${modelName}» با 9Router با موفقیت انجام شد`);
+    return parsed;
+  } catch (err) {
+    queries.addLog('ERROR', '9ROUTER_LOOKUP', `خطا در استعلام 9Router برای «${modelName}»`, err.message);
+    throw err;
   }
-
-  throw new Error(`خطا در ارتباط با سرور هوش مصنوعی: ${lastError}`);
 }
 
 // Send JSON response helper
