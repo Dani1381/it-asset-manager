@@ -6,6 +6,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { queries, getNextPropertyId } = require('./database');
 const { generateProductCard } = require('./svg_generator');
+const { fetchIranianStoreImage } = require('./iran_store_scraper');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -759,7 +760,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // POST /api/assets/:id/fetch-stock-photo (Fetch official high-res stock photo via 9Router AI + Local SVG Generator)
+    // POST /api/assets/:id/fetch-stock-photo (Fetch studio stock photo from Digikala / Torob / 9Router)
     const fetchStockMatch = pathname.match(/^\/api\/assets\/(\d+)\/fetch-stock-photo$/);
     if (method === 'POST' && fetchStockMatch) {
       const assetId = parseInt(fetchStockMatch[1], 10);
@@ -773,7 +774,7 @@ const server = http.createServer(async (req, res) => {
         if (!url || !url.startsWith('http')) return null;
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 4000);
+          const timer = setTimeout(() => ctrl.abort(), 6000);
           const resp = await fetch(url, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
             signal: ctrl.signal
@@ -783,7 +784,7 @@ const server = http.createServer(async (req, res) => {
           const ct = resp.headers.get('content-type') || '';
           if (!ct.includes('image') && !ct.includes('octet-stream')) return null;
           const buf = Buffer.from(await resp.arrayBuffer());
-          if (buf.length < 3000) return null;
+          if (buf.length < 2000) return null;
           return buf;
         } catch (e) {
           return null;
@@ -793,50 +794,66 @@ const server = http.createServer(async (req, res) => {
       try {
         let buffer = null;
         let usedUrl = null;
-        let source = 'local';
+        let sourceName = '';
 
-        // LAYER 1: Try AI search with 4s hard timeout
+        // LAYER 1: Ultra-fast Iranian Store API (Digikala & Torob) - High-Res White Background Studio Photos
         try {
-          const prompt = `Give 2 direct high-res official product image URLs (JPG/PNG) on white background for: "${model}". JSON format: {"image_urls": ["url1", "url2"]}`;
-          const aiPromise = call9Router(prompt);
-          const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('AI timeout')), 4000));
-          const aiResponse = await Promise.race([aiPromise, timeoutPromise]);
-
-          let candidates = [];
-          if (aiResponse && typeof aiResponse === 'object') {
-            const arr = aiResponse.image_urls || (aiResponse.image_url ? [aiResponse.image_url] : []);
-            if (Array.isArray(arr)) candidates = arr.filter(u => typeof u === 'string' && u.startsWith('http'));
-          }
-
-          for (const url of candidates) {
-            buffer = await downloadImage(url);
-            if (buffer) { usedUrl = url; source = 'ai'; break; }
+          const storeRes = await fetchIranianStoreImage(model, cat);
+          if (storeRes && storeRes.url) {
+            buffer = await downloadImage(storeRes.url);
+            if (buffer) {
+              usedUrl = storeRes.url;
+              sourceName = storeRes.source;
+            }
           }
         } catch (e) {}
 
-        // LAYER 2: Generate local professional product card (guaranteed instant success)
+        // LAYER 2: Try 9Router AI Search (4s hard timeout) if Iranian stores didn't match
+        if (!buffer) {
+          try {
+            const prompt = `Give 2 direct high-res official product image URLs (JPG/PNG) on white background for: "${model}". JSON format: {"image_urls": ["url1", "url2"]}`;
+            const aiPromise = call9Router(prompt);
+            const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('AI timeout')), 4000));
+            const aiResponse = await Promise.race([aiPromise, timeoutPromise]);
+
+            let candidates = [];
+            if (aiResponse && typeof aiResponse === 'object') {
+              const arr = aiResponse.image_urls || (aiResponse.image_url ? [aiResponse.image_url] : []);
+              if (Array.isArray(arr)) candidates = arr.filter(u => typeof u === 'string' && u.startsWith('http'));
+            }
+
+            for (const url of candidates) {
+              buffer = await downloadImage(url);
+              if (buffer) {
+                usedUrl = url;
+                sourceName = 'هوش مصنوعی (9Router)';
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // LAYER 3: Generate local professional product card (guaranteed instant success)
         if (!buffer) {
           const svg = generateProductCard(model, cat, assetId);
           buffer = Buffer.from(svg, 'utf-8');
           usedUrl = 'local-generated';
-          source = 'generated';
+          sourceName = 'کارت استوک اختصاصی';
         }
 
-        const ext = usedUrl === 'local-generated' ? '.svg' : (path.extname(new URL(usedUrl).pathname) || '.png').toLowerCase();
-        const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.svg'].includes(ext) ? ext : '.png';
+        const ext = usedUrl === 'local-generated' ? '.svg' : (path.extname(new URL(usedUrl).pathname) || '.jpg').toLowerCase();
+        const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.svg'].includes(ext) ? ext : '.jpg';
         const fileName = `stock_${assetId}_${Date.now()}${safeExt}`;
         const filePath = path.join(UPLOADS_DIR, fileName);
         fs.writeFileSync(filePath, buffer);
 
-        const photoId = queries.addPhoto(assetId, fileName, `Official_${model}${safeExt}`, `عکس رسمی (${model})`);
+        const photoId = queries.addPhoto(assetId, fileName, `Official_${model}${safeExt}`, `عکس استودیوئی استوک (${sourceName})`);
 
-        queries.addLog('SUCCESS', 'STOCK_PHOTO', `عکس رسمی برای مدل «${model}» ثبت شد`);
+        queries.addLog('SUCCESS', 'STOCK_PHOTO', `عکس رسمی استوک برای مدل «${model}» از ${sourceName} ثبت شد`);
 
-        const msg = source === 'ai'
-          ? `عکس واقعی محصول «${model}» از اینترنت دریافت و ست شد!`
-          : `کارت رسمی و استوک مدل «${model}» با موفقیت ایجاد و ست شد!`;
+        const msg = `عکس استودیوئی مدل «${model}» با موفقیت از ${sourceName} دریافت و ست شد!`;
 
-        return sendJson(res, 200, { success: true, message: msg, photo_id: photoId });
+        return sendJson(res, 200, { success: true, message: msg, photo_id: photoId, source: sourceName });
       } catch (err) {
         return sendJson(res, 500, { error: 'خطا در پردازش تصویر: ' + err.message });
       }
