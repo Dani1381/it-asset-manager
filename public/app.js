@@ -212,23 +212,34 @@ function renderAssets(assets) {
             ${getTranslation('user_label')} <strong>${escapeHtml(asset.user_name || getTranslation('unassigned'))}</strong>
           </div>
 
+          ${asset.cpu || asset.ram || asset.storage_drives ? `
+            <div class="asset-key-specs">
+              ${asset.cpu ? `
+                <div class="key-spec">
+                  <span class="key-spec-icon">🖥️</span>
+                  <span class="key-spec-value" title="${escapeHtml(asset.cpu)}">${escapeHtml(asset.cpu)}</span>
+                </div>
+              ` : ''}
+              ${asset.ram ? `
+                <div class="key-spec">
+                  <span class="key-spec-icon">🧠</span>
+                  <span class="key-spec-value">${escapeHtml(asset.ram)}</span>
+                </div>
+              ` : ''}
+              ${asset.storage_drives ? `
+                <div class="key-spec">
+                  <span class="key-spec-icon">💾</span>
+                  <span class="key-spec-value" title="${escapeHtml(asset.storage_drives)}">${escapeHtml(asset.storage_drives)}</span>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+
           <div class="asset-specs-list">
             <div class="spec-item">
               <span class="spec-label">${getTranslation('serial_label')}</span>
               <span class="spec-value" style="font-family: monospace;">${escapeHtml(asset.serial_number || '-')}</span>
             </div>
-            ${asset.cpu ? `
-              <div class="spec-item">
-                <span class="spec-label">${getTranslation('cpu_label')}</span>
-                <span class="spec-value" title="${escapeHtml(asset.cpu)}">${escapeHtml(asset.cpu)}</span>
-              </div>
-            ` : ''}
-            ${asset.ram ? `
-              <div class="spec-item">
-                <span class="spec-label">${getTranslation('ram_label')}</span>
-                <span class="spec-value">${escapeHtml(asset.ram)}</span>
-              </div>
-            ` : ''}
             ${asset.monitors ? `
               <div class="spec-item">
                 <span class="spec-label">${getTranslation('monitors_label')}</span>

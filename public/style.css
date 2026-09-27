@@ -418,7 +418,40 @@ body.rtl .asset-status-badge {
 .asset-subtitle {
   font-size: 0.92rem;
   color: var(--text-muted);
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Highlighted Main Key Specs (CPU / RAM / Storage) */
+.asset-key-specs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.key-spec {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  color: #e2e8f0;
+}
+
+.key-spec-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.key-spec-value {
+  font-weight: 600;
+  color: #93c5fd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .asset-specs-list {
