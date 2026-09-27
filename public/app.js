@@ -13,7 +13,11 @@ async function initApp() {
   await loadStats();
   await loadAssets();
   await loadNetworkInfo();
+  await checkPendingScans();
   setupEventListeners();
+
+  // Periodic check for new pending scans every 15 seconds
+  setInterval(checkPendingScans, 15000);
 }
 
 // Setup Event Listeners
@@ -589,6 +593,173 @@ async function handleRestoreDatabase(event) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+// Pending Scans Approval Queue Functions
+async function checkPendingScans() {
+  try {
+    const res = await fetch('/api/pending-scans');
+    if (!res.ok) return;
+    const items = await res.json();
+    const btn = document.getElementById('pending-scans-btn');
+    const badge = document.getElementById('pending-badge-count');
+
+    if (btn && badge) {
+      if (items.length > 0) {
+        badge.textContent = items.length;
+        btn.style.display = 'inline-flex';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+  } catch (e) {}
+}
+
+function openPendingScansModal() {
+  document.getElementById('pending-scans-modal').classList.add('active');
+  loadPendingScansList();
+}
+
+function closePendingScansModal() {
+  document.getElementById('pending-scans-modal').classList.remove('active');
+}
+
+async function loadPendingScansList() {
+  const container = document.getElementById('pending-scans-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 1.5rem;">در حال دریافت لیست دستگاه‌های منتظر تایید...</div>';
+
+  try {
+    const [scansRes, nextIdRes] = await Promise.all([
+      fetch('/api/pending-scans'),
+      fetch('/api/assets/next-id')
+    ]);
+
+    const items = await scansRes.json();
+    let nextId = 'AST-0001';
+    if (nextIdRes.ok) {
+      const nextData = await nextIdRes.json();
+      nextId = nextData.nextPropertyId || nextId;
+    }
+
+    if (items.length === 0) {
+      container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 2rem;">🎉 هیچ دستگاهی در صف انتظار نیست! تمام اسکن‌ها تایید شده‌اند.</div>';
+      checkPendingScans();
+      return;
+    }
+
+    container.innerHTML = items.map((it, idx) => {
+      let icon = '🖥️';
+      let catBadge = 'کیس / PC';
+      let catBg = 'rgba(59, 130, 246, 0.15)';
+      let catColor = '#60a5fa';
+
+      if (it.category === 'Monitor') {
+        icon = '📺';
+        catBadge = 'مانیتور / نمایشگر';
+        catBg = 'rgba(168, 85, 247, 0.15)';
+        catColor = '#c084fc';
+      } else if (it.category === 'Laptop') {
+        icon = '💻';
+        catBadge = 'لپ‌تاپ';
+        catBg = 'rgba(234, 179, 8, 0.15)';
+        catColor = '#fde047';
+      }
+
+      const timeStr = new Date(it.created_at).toLocaleTimeString('fa-IR');
+
+      return `
+        <div style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 1.35rem;">${icon}</span>
+              <div>
+                <strong style="font-size: 1rem; color: #f8fafc;">${escapeHtml(it.manufacturer_model || it.computer_name || 'دستگاه بدون نام')}</strong>
+                <span style="background: ${catBg}; color: ${catColor}; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 4px; margin-right: 0.5rem;">${catBadge}</span>
+              </div>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-dim);">زمان اسکن: ${timeStr}</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.4rem; font-size: 0.84rem; background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
+            <div>👤 <strong>کاربر:</strong> ${escapeHtml(it.user_name || 'مشخص نشده')}</div>
+            <div>💻 <strong>نام سیستم:</strong> ${escapeHtml(it.computer_name || 'N/A')}</div>
+            ${it.serial_number ? `<div>🔑 <strong>سریال:</strong> ${escapeHtml(it.serial_number)}</div>` : ''}
+            ${it.cpu ? `<div>🖥️ <strong>پردازنده:</strong> ${escapeHtml(it.cpu)}</div>` : ''}
+            ${it.ram ? `<div>🧠 <strong>رم:</strong> ${escapeHtml(it.ram)}</div>` : ''}
+            ${it.storage_drives ? `<div>💾 <strong>هارد:</strong> ${escapeHtml(it.storage_drives)}</div>` : ''}
+            ${it.ip_address ? `<div>🌐 <strong>IP:</strong> ${escapeHtml(it.ip_address)}</div>` : ''}
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.4rem;">
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 260px;">
+              <label style="font-size: 0.82rem; color: #94a3b8; white-space: nowrap;">شماره اموال فیزیکی:</label>
+              <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${nextId}" placeholder="مثال: AST-0010">
+            </div>
+
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn btn-danger btn-sm" onclick="rejectPendingItem(${it.id})" title="حذف این مورد از صف">
+                ❌ رد
+              </button>
+              <button class="btn btn-success btn-sm" onclick="approvePendingItem(${it.id}, '${it.category}')" style="min-width: 130px;">
+                ✅ تایید و ثبت در انبار
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">خطا در دریافت لیست: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function approvePendingItem(id, defaultCategory) {
+  const propInput = document.getElementById(`pending-prop-id-${id}`);
+  const propId = propInput ? propInput.value.trim() : '';
+
+  if (!propId) {
+    alert('لطفاً شماره اموال این دستگاه را وارد کنید.');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/pending-scans/${id}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        property_id: propId,
+        category: defaultCategory
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('خطا در تایید: ' + (data.error || 'ناشناخته'));
+      return;
+    }
+
+    // Refresh pending list and main assets
+    await loadPendingScansList();
+    await checkPendingScans();
+    await loadAssets();
+    await loadStats();
+  } catch (e) {
+    alert('خطا: ' + e.message);
+  }
+}
+
+async function rejectPendingItem(id) {
+  if (!confirm('آیا مطمئن هستید که این دستگاه از صف انتظار حذف شود؟')) return;
+  try {
+    const res = await fetch(`/api/pending-scans/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      await loadPendingScansList();
+      await checkPendingScans();
+    }
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 // Utility: Escape HTML

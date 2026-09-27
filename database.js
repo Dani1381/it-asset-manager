@@ -75,6 +75,28 @@ function initDb() {
       ip TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pending_scans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      user_name TEXT,
+      computer_name TEXT,
+      manufacturer_model TEXT,
+      serial_number TEXT,
+      os_version TEXT,
+      ip_address TEXT,
+      cpu TEXT,
+      ram TEXT,
+      storage_drives TEXT,
+      c_space TEXT,
+      gpu TEXT,
+      notes TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pending_scans_status ON pending_scans(status);
   `);
 
   // Default settings
@@ -298,63 +320,143 @@ const queries = {
     return true;
   },
 
-  // Ingest scan from .bat script (creates new or updates existing)
+  // Ingest scan from .bat script into the PENDING APPROVAL QUEUE (and auto-split PC & Monitors!)
   ingestScan(scanData) {
     const now = new Date().toISOString();
-    const existing = queries.findBySerialOrComputerName(scanData.serial_number, scanData.computer_name);
+    const batchId = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const createdItems = [];
 
-    if (existing) {
-      // Update existing record
-      queries.updateAsset(existing.id, {
-        user_name: scanData.user_name || existing.user_name,
-        computer_name: scanData.computer_name || existing.computer_name,
-        manufacturer_model: scanData.manufacturer_model || existing.manufacturer_model,
-        serial_number: scanData.serial_number || existing.serial_number,
-        os_version: scanData.os_version || existing.os_version,
-        ip_address: scanData.ip_address || existing.ip_address,
-        cpu: scanData.cpu || existing.cpu,
-        ram: scanData.ram || existing.ram,
-        storage_drives: scanData.storage_drives || existing.storage_drives,
-        c_space: scanData.c_space || existing.c_space,
-        network_devices: scanData.network_devices || existing.network_devices,
-        gpu: scanData.gpu || existing.gpu,
-        monitors: scanData.monitors || existing.monitors,
-        is_automated: 1,
-        last_scanned_at: now
-      });
-      return { id: existing.id, property_id: existing.property_id, is_new: false };
-    } else {
-      // Determine category (e.g. if model has 'Laptop' or 'EliteBook' -> Laptop, else PC)
-      let cat = 'PC';
-      const m = (scanData.manufacturer_model || '').toLowerCase();
-      if (m.includes('laptop') || m.includes('notebook') || m.includes('latitude 54') || m.includes('thinkpad') || m.includes('elitebook')) {
-        cat = 'Laptop';
-      }
-
-      const newId = queries.createAsset({
-        category: cat,
-        status: 'active',
-        user_name: scanData.user_name,
-        computer_name: scanData.computer_name,
-        manufacturer_model: scanData.manufacturer_model,
-        serial_number: scanData.serial_number,
-        os_version: scanData.os_version,
-        ip_address: scanData.ip_address,
-        cpu: scanData.cpu,
-        ram: scanData.ram,
-        storage_drives: scanData.storage_drives,
-        c_space: scanData.c_space,
-        network_devices: scanData.network_devices,
-        gpu: scanData.gpu,
-        monitors: scanData.monitors,
-        is_automated: 1,
-        last_scanned_at: now,
-        notes: 'Discovered via automated scan'
-      });
-
-      const asset = db.prepare('SELECT property_id FROM assets WHERE id = ?').get(newId);
-      return { id: newId, property_id: asset.property_id, is_new: true };
+    // 1. Determine PC/Laptop Category
+    let mainCategory = 'PC';
+    const m = (scanData.manufacturer_model || '').toLowerCase();
+    if (m.includes('laptop') || m.includes('notebook') || m.includes('latitude 54') || m.includes('thinkpad') || m.includes('elitebook') || m.includes('probook')) {
+      mainCategory = 'Laptop';
     }
+
+    // Insert Main Device (Case / PC / Laptop) into pending queue
+    const insertPending = db.prepare(`
+      INSERT INTO pending_scans (
+        batch_id, category, user_name, computer_name, manufacturer_model, serial_number,
+        os_version, ip_address, cpu, ram, storage_drives, c_space, gpu, notes, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `);
+
+    const pcRes = insertPending.run(
+      batchId,
+      mainCategory,
+      scanData.user_name || null,
+      scanData.computer_name || null,
+      scanData.manufacturer_model || null,
+      scanData.serial_number || null,
+      scanData.os_version || null,
+      scanData.ip_address || null,
+      scanData.cpu || null,
+      scanData.ram || null,
+      scanData.storage_drives || null,
+      scanData.c_space || null,
+      scanData.gpu || null,
+      `سیستم اسکن شده از طریق شبکه (${scanData.computer_name || ''})`,
+      now
+    );
+
+    createdItems.push({ id: Number(pcRes.lastInsertRowid), category: mainCategory, name: scanData.manufacturer_model || scanData.computer_name });
+
+    // 2. Auto-Split Connected Monitors as separate individual assets!
+    const rawMonitors = scanData.monitors || '';
+    if (rawMonitors && rawMonitors.trim() && rawMonitors.toLowerCase() !== 'default display') {
+      const monList = rawMonitors.split(/[\/,;]+/)
+        .map(s => s.trim())
+        .filter(s => s && s.length > 2 && s.toLowerCase() !== 'default display');
+
+      for (let i = 0; i < monList.length; i++) {
+        const monModel = monList[i];
+        const monNotes = `نمایشگر شماره ${i + 1} متصل به سیستم ${scanData.computer_name || 'کاربر'} (${scanData.user_name || ''})`;
+
+        const monRes = insertPending.run(
+          batchId,
+          'Monitor',
+          scanData.user_name || null,
+          scanData.computer_name ? `${scanData.computer_name}-MON${i + 1}` : null,
+          monModel,
+          null, // Serial to be inspected/filled or scanned
+          null,
+          scanData.ip_address || null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          monNotes,
+          now
+        );
+
+        createdItems.push({ id: Number(monRes.lastInsertRowid), category: 'Monitor', name: monModel });
+      }
+    }
+
+    return {
+      batch_id: batchId,
+      items_count: createdItems.length,
+      items: createdItems,
+      is_new: true
+    };
+  },
+
+  // Get all pending scan items waiting for admin review & property ID assignment
+  getPendingScans() {
+    return db.prepare(`
+      SELECT * FROM pending_scans
+      WHERE status = 'pending'
+      ORDER BY id DESC
+    `).all();
+  },
+
+  // Approve a pending scan item and assign its official physical Property ID
+  approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = 'active') {
+    const item = db.prepare('SELECT * FROM pending_scans WHERE id = ?').get(pendingId);
+    if (!item) return null;
+
+    const propertyId = (customPropertyId && customPropertyId.trim()) ? customPropertyId.trim() : getNextPropertyId();
+    const category = customCategory || item.category || 'PC';
+    const now = new Date().toISOString();
+
+    // Check if property_id already exists in assets
+    const existing = queries.getAssetByPropertyId(propertyId);
+    if (existing) {
+      throw new Error(`شماره اموال «${propertyId}» از قبل در سیستم ثبت شده است! لطفاً شماره دیگری انتخاب کنید.`);
+    }
+
+    const newId = queries.createAsset({
+      property_id: propertyId,
+      category: category,
+      status: customStatus,
+      user_name: item.user_name,
+      computer_name: item.computer_name,
+      manufacturer_model: item.manufacturer_model,
+      serial_number: item.serial_number,
+      os_version: item.os_version,
+      ip_address: item.ip_address,
+      cpu: item.cpu,
+      ram: item.ram,
+      storage_drives: item.storage_drives,
+      c_space: item.c_space,
+      gpu: item.gpu,
+      monitors: item.category === 'Monitor' ? item.manufacturer_model : null,
+      notes: item.notes,
+      is_automated: 1,
+      last_scanned_at: item.created_at
+    });
+
+    // Mark as approved in pending table
+    db.prepare("UPDATE pending_scans SET status = 'approved' WHERE id = ?").run(pendingId);
+
+    return { id: newId, property_id: propertyId };
+  },
+
+  // Reject / Delete a pending scan item
+  rejectPendingScan(pendingId) {
+    db.prepare('DELETE FROM pending_scans WHERE id = ?').run(pendingId);
+    return true;
   },
 
   // Delete asset

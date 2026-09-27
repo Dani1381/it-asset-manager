@@ -661,6 +661,43 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { success: true });
     }
 
+    // GET /api/pending-scans (List all items waiting for approval)
+    if (method === 'GET' && pathname === '/api/pending-scans') {
+      const items = queries.getPendingScans();
+      return sendJson(res, 200, items);
+    }
+
+    // POST /api/pending-scans/:id/approve (Approve pending item and assign Property ID)
+    const approveMatch = pathname.match(/^\/api\/pending-scans\/(\d+)\/approve$/);
+    if (method === 'POST' && approveMatch) {
+      const pendingId = parseInt(approveMatch[1], 10);
+      const data = await parseRequestBody(req);
+
+      try {
+        const approved = queries.approvePendingScan(
+          pendingId,
+          data.property_id,
+          data.category,
+          data.status || 'active'
+        );
+
+        if (!approved) return sendJson(res, 404, { error: 'Pending item not found' });
+
+        queries.addLog('SUCCESS', 'APPROVAL', `دستگاه از صف انتظار تایید شد: ${approved.property_id}`);
+        return sendJson(res, 200, { success: true, asset_id: approved.id, property_id: approved.property_id });
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+    }
+
+    // DELETE /api/pending-scans/:id (Reject / Remove pending item)
+    const rejectMatch = pathname.match(/^\/api\/pending-scans\/(\d+)$/);
+    if (method === 'DELETE' && rejectMatch) {
+      const pendingId = parseInt(rejectMatch[1], 10);
+      queries.rejectPendingScan(pendingId);
+      return sendJson(res, 200, { success: true });
+    }
+
     // POST /api/assets/scan (Ingestion Endpoint for .bat / PowerShell scripts)
     if (method === 'POST' && pathname === '/api/assets/scan') {
       const data = await parseRequestBody(req);
@@ -688,41 +725,36 @@ const server = http.createServer(async (req, res) => {
       });
 
       queries.addLog('SUCCESS', 'SCANNER', 
-        `${result.is_new ? 'دستگاه جدید ثبت شد' : 'مشخصات دستگاه بروزرسانی شد'}: ${compName || serialNum}`,
-        `شناسه: ${result.property_id}, کاربر: ${data.user_name || data.userName || 'ناشناخته'}`,
+        `اسکن دریافت شد (${result.items_count} دارایی مجزا تفکیک شد): ${compName || serialNum}`,
+        `کاربر: ${data.user_name || data.userName || 'ناشناخته'}, اقلام: ${result.items.map(i => i.category + ': ' + i.name).join(' | ')}`,
         req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
       );
 
-      const asset = queries.getAssetById(result.id);
-
-      // Bale notification for scans
+      // Bale notification for incoming scan waiting for approval
       const settings = queries.getSettings();
       if (settings.bale_token && settings.bale_chat_id) {
         const host = req.headers.host || '192.168.10.194:3000';
         const protocol = req.socket?.encrypted ? 'https' : 'http';
-        const deviceLink = `${protocol}://${host}/asset.html?id=${asset.id}`;
+        const queueLink = `${protocol}://${host}`;
 
-        const text = `🖥️ *${result.is_new ? 'ثبت خودکار دستگاه جدید در انبار' : 'بروزرسانی مشخصات سیستم'}*\n\n` +
-          `🏷️ *کد اموال:* ${asset.property_id}\n` +
-          `💻 *نام سیستم:* ${asset.computer_name || 'N/A'}\n` +
-          `👤 *کاربر تحویل‌گیرنده:* ${asset.user_name || 'N/A'}\n` +
-          `🏢 *مدل:* ${asset.manufacturer_model || 'N/A'}\n` +
-          `🔑 *شماره سریال:* ${asset.serial_number || 'N/A'}\n` +
-          `🌐 *آدرس IP:* ${asset.ip_address || 'N/A'}\n` +
-          `🖥️ *پردازنده (CPU):* ${asset.cpu || 'N/A'}\n` +
-          `🧠 *حافظه (RAM):* ${asset.ram || 'N/A'}\n` +
-          `💾 *فضای ذخیره‌سازی:* ${asset.storage_drives || 'N/A'}\n` +
-          `📺 *مانیتورهای متصل:* ${asset.monitors || 'N/A'}\n\n` +
-          `🔗 [مشاهده و افزودن عکس دستگاه در پنل](${deviceLink})`;
+        const itemsSummary = result.items.map((it, idx) => `  ${idx + 1}. [${it.category}] ${it.name}`).join('\n');
+
+        const text = `📥 *دریافت اسکن جدید (در انتظار تخصیص شماره اموال)*\n\n` +
+          `💻 *نام سیستم:* ${compName || 'N/A'}\n` +
+          `👤 *کاربر:* ${data.user_name || data.userName || 'N/A'}\n` +
+          `🌐 *آدرس IP:* ${data.ip_address || data.ip || 'N/A'}\n\n` +
+          `📦 *دارایی‌های تفکیک‌شده (${result.items_count} مورد):*\n${itemsSummary}\n\n` +
+          `🔔 *توجه:* برای تخصیص شماره اموال فیزیکی و تایید نهایی، وارد پنل شوید:\n` +
+          `🔗 [ورود به پنل و تایید اموال](${queueLink})`;
         notifyBale(text).catch(() => {});
       }
 
       return sendJson(res, 200, {
         success: true,
-        is_new: result.is_new,
-        asset_id: result.id,
-        property_id: result.property_id,
-        message: result.is_new ? 'Asset created successfully' : 'Asset updated successfully'
+        message: `Scan ingested into approval queue. ${result.items_count} items ready for Property ID assignment.`,
+        batch_id: result.batch_id,
+        items_count: result.items_count,
+        items: result.items
       });
     }
 
