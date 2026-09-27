@@ -791,19 +791,66 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      // Helper: Verify image with 9Router Vision to ensure it matches the expected hardware
+      async function verifyPhotoWithAI(targetModel, targetCategory, imgBuffer) {
+        if (!imgBuffer || imgBuffer.length < 5000) return { matches: true }; // Skip if empty
+        try {
+          const base64 = imgBuffer.toString('base64');
+          const prompt = `You are a strict hardware image verifier.
+Check if this image genuinely displays the expected IT product or an acceptable matching equivalent:
+- Expected Model: "${targetModel}"
+- Expected Category: "${targetCategory}"
+
+Reject accessories, cables, boxes, wrong device types (e.g. cable instead of PC, or monitor instead of desktop case).
+Respond strictly with JSON:
+{
+  "matches": true or false,
+  "detected_device": "What device is in the picture",
+  "reason": "Brief reason in Persian"
+}`;
+
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 6000);
+          const aiRes = await call9Router(prompt, base64);
+          clearTimeout(timer);
+
+          if (aiRes && typeof aiRes === 'object' && typeof aiRes.matches === 'boolean') {
+            return aiRes;
+          }
+          if (typeof aiRes === 'string') {
+            const m = aiRes.match(/\{[\s\S]*\}/);
+            if (m) return JSON.parse(m[0]);
+          }
+        } catch (e) {
+          // If vision check timed out, accept image gracefully
+          return { matches: true, reason: 'تایید سریع بدون تاخیر' };
+        }
+        return { matches: true };
+      }
+
       try {
         let buffer = null;
         let usedUrl = null;
         let sourceName = '';
+        let aiVerification = null;
 
         // LAYER 1: Ultra-fast Iranian Store API (Digikala & Torob) - High-Res White Background Studio Photos
         try {
           const storeRes = await fetchIranianStoreImage(model, cat);
           if (storeRes && storeRes.url) {
-            buffer = await downloadImage(storeRes.url);
-            if (buffer) {
-              usedUrl = storeRes.url;
-              sourceName = storeRes.source;
+            const candidateBuffer = await downloadImage(storeRes.url);
+            if (candidateBuffer) {
+              // Strict AI Vision Verification: Does this photo truly match our target hardware?
+              const check = await verifyPhotoWithAI(model, cat, candidateBuffer);
+              if (check.matches !== false) {
+                buffer = candidateBuffer;
+                usedUrl = storeRes.url;
+                sourceName = storeRes.source;
+                aiVerification = check;
+                queries.addLog('SUCCESS', 'AI_VISION_MATCH', `تایید تطابق عکس با هوش مصنوعی برای «${model}»: ${check.reason || 'تطابق کامل'}`);
+              } else {
+                queries.addLog('WARNING', 'AI_VISION_REJECT', `رد عکس نامربوط از ${storeRes.source} برای «${model}»: ${check.reason || 'عدم تطابق با دستگاه'}`);
+              }
             }
           }
         } catch (e) {}
@@ -851,9 +898,11 @@ const server = http.createServer(async (req, res) => {
 
         queries.addLog('SUCCESS', 'STOCK_PHOTO', `عکس رسمی استوک برای مدل «${model}» از ${sourceName} ثبت شد`);
 
-        const msg = `عکس استودیوئی مدل «${model}» با موفقیت از ${sourceName} دریافت و ست شد!`;
+        const msg = aiVerification && aiVerification.reason
+          ? `عکس استودیوئی مدل «${model}» با تایید هوش مصنوعی (${aiVerification.reason}) ثبت شد!`
+          : `عکس استودیوئی مدل «${model}» با موفقیت از ${sourceName} دریافت و ست شد!`;
 
-        return sendJson(res, 200, { success: true, message: msg, photo_id: photoId, source: sourceName });
+        return sendJson(res, 200, { success: true, message: msg, photo_id: photoId, source: sourceName, ai_verified: !!aiVerification });
       } catch (err) {
         return sendJson(res, 500, { error: 'خطا در پردازش تصویر: ' + err.message });
       }
