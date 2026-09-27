@@ -6,7 +6,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { queries, getNextPropertyId } = require('./database');
 const { generateProductCard } = require('./svg_generator');
-const { fetchIranianStoreImagesList } = require('./iran_store_scraper');
+const { fetchMultiSourceProductImages } = require('./multi_store_scraper');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -826,7 +826,7 @@ Respond ONLY JSON: {"matches": true|false, "detected_device": "...", "reason": "
 
         // LAYER 1: Multi-candidate Search from Digikala & Torob with AI Vision Guard (Top 3 candidates)
         try {
-          const candidateList = await fetchIranianStoreImagesList(model, cat);
+          const candidateList = await fetchMultiSourceProductImages(model, cat);
           for (const item of candidateList.slice(0, 3)) {
             const candidateBuffer = await downloadImage(item.url);
             if (candidateBuffer) {
