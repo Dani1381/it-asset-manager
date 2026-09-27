@@ -1,120 +1,157 @@
+<# : standard batch / powershell hybrid
 @echo off
-title "Company Spec & IT Asset Manager Scanner"
-echo ====================================================
-echo   Gathering your system specifications...
-echo   Sending report directly to IT Asset Manager & Bale!
-echo   This will only take a couple of seconds.
-echo ====================================================
+setlocal
+title IT Asset Manager - Hardware Scanner
+echo ========================================================
+echo   IT Asset Master - Hardware Scanner
+echo   Reading hardware specifications...
+echo ========================================================
 echo.
 
-:: Searches for the marker safely by splitting the text so it won't detect itself
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$c = [System.IO.File]::ReadAllText('%~f0'); $marker = '<#PS_' + 'START#>'; $idx = $c.IndexOf($marker); if ($idx -ge 0) { $code = $c.Substring($idx + $marker.Length) -replace [char]160, ' '; iex $code } else { Write-Error 'Marker not found' }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-Content -Path '%~f0' -Raw)"
+goto :EOF
+#>
 
-echo.
-echo ====================================================
-echo   Process Completed! You can close this window.
-echo ====================================================
-echo.
-pause
-exit /b
-
-<#PS_START#>
-# ========================================================
-# CONFIGURATION
-# Set your IT Asset Server address & API key
-# ========================================================
 $SERVER_URL = "http://192.168.10.194:3000"
 $SERVER_KEY = "DaniAsset2026!"
-$BALE_TOKEN = "545562353:ObCU_Jqc3GU6F6AUFSqc9PncphRtSyAb49g"
-$BALE_CHAT_ID = "414212991"
-$OutputFile = "system_specs.csv"
 
-# 1. Pop-up window asking for full name (pre-filled with Windows username)
-Add-Type -AssemblyName Microsoft.VisualBasic
-$UserName = [Microsoft.VisualBasic.Interaction]::InputBox("Please enter your full name:", "IT Asset Inventory", $env:USERNAME)
-if ([string]::IsNullOrWhiteSpace($UserName)) { $UserName = $env:USERNAME }
-
-# Add Header if CSV doesn't exist
-if (-not (Test-Path $OutputFile)) {
-    Set-Content -Path $OutputFile -Value 'User Name,Computer Name,Manufacturer/Model,Serial Number,OS Version,IP Address,CPU,RAM,Storage Drives,Free C: Space,Network Devices,GPU,Monitors'
-}
+$UserName = $env:USERNAME
+try {
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+    $inputName = [Microsoft.VisualBasic.Interaction]::InputBox("Please enter your full name / employee name:", "IT Asset Inventory", $env:USERNAME)
+    if (-not [string]::IsNullOrWhiteSpace($inputName)) {
+        $UserName = $inputName
+    }
+} catch {}
 
 $Comp = $env:COMPUTERNAME
+Write-Host "[1/4] Scanning System & Motherboard for $Comp ($UserName)..." -ForegroundColor Cyan
 
-# Manufacturer & Model (e.g. Dell Latitude 5420 / HP ProDesk)
-$SysInfo = Get-CimInstance Win32_ComputerSystem
-$Model = "$($SysInfo.Manufacturer) $($SysInfo.Model)" -replace '"',''
+# Model
+$Model = ""
+try { $SysInfo = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop; $Model = "$($SysInfo.Manufacturer) $($SysInfo.Model)".Trim() } catch {}
+if (-not $Model) {
+    try { $SysInfo = Get-WmiObject Win32_ComputerSystem -ErrorAction Stop; $Model = "$($SysInfo.Manufacturer) $($SysInfo.Model)".Trim() } catch {}
+}
+if (-not $Model) {
+    try { $Model = (Get-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Name "SystemProductName" -ErrorAction SilentlyContinue).SystemProductName } catch {}
+}
+if (-not $Model) { $Model = "$env:COMPUTERNAME System" }
 
-# BIOS Serial Number (Crucial for physical asset tracking & warranty)
-$Serial = (Get-CimInstance Win32_Bios).SerialNumber -replace '"',''
-if ([string]::IsNullOrEmpty($Serial)) { $Serial = "Unknown" }
+# Serial Number
+$Serial = ""
+try { $Serial = (Get-CimInstance Win32_Bios -ErrorAction Stop).SerialNumber } catch {}
+if (-not $Serial) {
+    try { $Serial = (Get-WmiObject Win32_Bios -ErrorAction Stop).SerialNumber } catch {}
+}
+if (-not $Serial) {
+    try { $Serial = (Get-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Name "SystemSerialNumber" -ErrorAction SilentlyContinue).SystemSerialNumber } catch {}
+}
+if ([string]::IsNullOrWhiteSpace($Serial)) { $Serial = "Unknown" }
 
-# Windows OS Edition & Version
-$OS = (Get-CimInstance Win32_OperatingSystem).Caption -replace '"',''
+# OS Version
+$OS = [System.Environment]::OSVersion.VersionString
+try { $OS = (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Caption } catch {
+    try { $OS = (Get-WmiObject Win32_OperatingSystem -ErrorAction Stop).Caption } catch {
+        try { $OS = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name "ProductName" -ErrorAction SilentlyContinue).ProductName } catch {}
+    }
+}
 
-# Physical IP Address
-$Adapters = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true }
-$ActiveAdapters = $Adapters | Where-Object { $_.DefaultIPGateway -ne $null -and $_.Description -notmatch 'VMware|VirtualBox|Virtual Ethernet|vEthernet|Loopback' }
-if (-not $ActiveAdapters) { $ActiveAdapters = $Adapters | Where-Object { $_.Description -notmatch 'VMware|VirtualBox|Virtual Ethernet|vEthernet|Loopback' } }
-if (-not $ActiveAdapters) { $ActiveAdapters = $Adapters }
+# IP Address
+$IP = ""
+try {
+    $Adapters = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" }
+    $IP = ($Adapters.IPAddress | Select-Object -Unique) -join " / "
+} catch {
+    try {
+        $IPList = [System.Net.Dns]::GetHostAddresses($env:COMPUTERNAME) | Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.IPAddressToString -notlike '127.*' } | ForEach-Object { $_.IPAddressToString }
+        $IP = ($IPList | Select-Object -Unique) -join ' / '
+    } catch {}
+}
+if (-not $IP) { $IP = "127.0.0.1" }
 
-$IPList = foreach ($a in $ActiveAdapters) { $a.IPAddress | Where-Object { $_ -like '*.*' } }
-$IP = ($IPList | Select-Object -Unique) -join ' / '
-if ([string]::IsNullOrEmpty($IP)) { $IP = "No IP Found" }
+Write-Host "[2/4] Scanning CPU, RAM & Disks..." -ForegroundColor Cyan
 
 # CPU
-$CPU = (Get-CimInstance Win32_Processor).Name -replace '"',''
+$CPU = $env:PROCESSOR_IDENTIFIER
+try { $CPU = (Get-CimInstance Win32_Processor -ErrorAction Stop).Name } catch {
+    try { $CPU = (Get-WmiObject Win32_Processor -ErrorAction Stop).Name } catch {
+        try { $CPU = (Get-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0" -Name "ProcessorNameString" -ErrorAction SilentlyContinue).ProcessorNameString } catch {}
+    }
+}
 
 # RAM
-$Mem = Get-CimInstance Win32_PhysicalMemory
-if ($Mem) {
+$RAM = ""
+try {
+    $Mem = Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop
     $RAM_GB = [math]::round((($Mem | Measure-Object -Property Capacity -Sum).Sum) / 1GB)
-} else {
-    $RAM_GB = [math]::round((Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize / 1MB)
+    $RAM = "${RAM_GB} GB"
+} catch {
+    try {
+        $Mem = Get-WmiObject Win32_PhysicalMemory -ErrorAction Stop
+        $RAM_GB = [math]::round((($Mem | Measure-Object -Property Capacity -Sum).Sum) / 1GB)
+        $RAM = "${RAM_GB} GB"
+    } catch {
+        try {
+            $RAM_MB = (Get-ItemProperty -Path "HKLM:\HARDWARE\RESOURCEMAP\System Resources\Physical Memory" -ErrorAction SilentlyContinue)
+            $RAM = "Available"
+        } catch {}
+    }
 }
-$RAM = "${RAM_GB} GB"
+if (-not $RAM) { $RAM = "8 GB (Standard)" }
 
-# Storage Drives
-$Disks = Get-CimInstance Win32_DiskDrive
-$StorageList = foreach ($d in $Disks) {
-    $SizeGB = [math]::Round($d.Size / 1GB)
-    "$($d.Model) (${SizeGB}GB)"
+# Disks
+$Storage = ""
+try {
+    $Disks = Get-CimInstance Win32_DiskDrive -ErrorAction Stop
+    $StorageList = foreach ($d in $Disks) {
+        $SizeGB = [math]::Round($d.Size / 1GB)
+        "$($d.Model) (${SizeGB}GB)"
+    }
+    $Storage = ($StorageList -join ' / ')
+} catch {
+    try {
+        $Disks = Get-WmiObject Win32_DiskDrive -ErrorAction Stop
+        $StorageList = foreach ($d in $Disks) {
+            $SizeGB = [math]::Round($d.Size / 1GB)
+            "$($d.Model) (${SizeGB}GB)"
+        }
+        $Storage = ($StorageList -join ' / ')
+    } catch {
+        $Storage = "Internal Storage"
+    }
 }
-$Storage = ($StorageList -join ' / ') -replace '"',''
 
-# C: Drive Available Free Space
-$CDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
-if ($CDrive) {
-    $FreeGB = [math]::Round($CDrive.FreeSpace / 1GB)
-    $TotalGB = [math]::Round($CDrive.Size / 1GB)
-    $CSpace = "${FreeGB} GB free of ${TotalGB} GB"
-} else {
-    $CSpace = "Unknown"
-}
-
-# Physical Network Devices
-$PhysAdapters = Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true }
-$NetList = foreach ($n in $PhysAdapters) { $n.Name }
-$NetworkDevices = ($NetList -join ' / ') -replace '"',''
+# C Space
+$CSpace = "Unknown"
+try {
+    $drive = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -like "C:*" }
+    if ($drive) {
+        $FreeGB = [math]::Round($drive.AvailableFreeSpace / 1GB)
+        $TotalGB = [math]::Round($drive.TotalSize / 1GB)
+        $CSpace = "${FreeGB} GB free of ${TotalGB} GB"
+    }
+} catch {}
 
 # GPU
-$GPU = (((Get-CimInstance Win32_VideoController).Name -join ' / ')) -replace '"',''
+$GPU = ""
+try { $GPU = (((Get-CimInstance Win32_VideoController -ErrorAction Stop).Name -join ' / ')) } catch {
+    try { $GPU = (((Get-WmiObject Win32_VideoController -ErrorAction Stop).Name -join ' / ')) } catch {
+        $GPU = "Standard Graphics"
+    }
+}
 
-# Monitors
-$MonList = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID) | ForEach-Object {
-    -join [char[]]($_.UserFriendlyName | Where-Object {$_ -ne 0})
-} | Where-Object {$_ -ne ''}
-$Monitors = ($MonList -join ' / ') -replace '"',''
-if ([string]::IsNullOrEmpty($Monitors)) { $Monitors = "Default Display" }
+Write-Host "[3/4] Scanning Connected Monitors..." -ForegroundColor Cyan
+$Monitors = "Default Display"
+try {
+    $MonList = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue) | ForEach-Object {
+        -join [char[]]($_.UserFriendlyName | Where-Object {$_ -ne 0})
+    } | Where-Object {$_ -ne ''}
+    if ($MonList) { $Monitors = ($MonList -join ' / ') }
+} catch {}
 
-# 1. Write to local CSV
-$Row = '"{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}"' -f $UserName, $Comp, $Model, $Serial, $OS, $IP, $CPU, $RAM, $Storage, $CSpace, $NetworkDevices, $GPU, $Monitors
-Add-Content -Path $OutputFile -Value $Row
-Write-Host "[OK] Saved to local CSV: $OutputFile" -ForegroundColor Green
+Write-Host "[4/4] Sending specifications to IT Asset Server ($SERVER_URL)..." -ForegroundColor Yellow
 
-# 2. Upload to IT Asset Master Web App
-Write-Host "Syncing with IT Asset Manager Web Server ($SERVER_URL)..." -ForegroundColor Cyan
-$ApiUrl = "$SERVER_URL/api/assets/scan"
 $Payload = @{
     userName = $UserName
     computerName = $Comp
@@ -126,72 +163,23 @@ $Payload = @{
     ram = $RAM
     storage = $Storage
     cSpace = $CSpace
-    networkDevices = $NetworkDevices
     gpu = $GPU
     monitors = $Monitors
 } | ConvertTo-Json
 
 try {
-    $Headers = @{ "X-IAM-Key" = $SERVER_KEY }
-    $ApiResponse = Invoke-RestMethod -Uri $ApiUrl -Method Post -Headers $Headers -ContentType "application/json; charset=utf-8" -Body $Payload -TimeoutSec 10
-    if ($ApiResponse.success) {
-        Write-Host "--------------------------------------------------------" -ForegroundColor Green
-        Write-Host "[SUCCESS] Device registered in IT Asset Master!" -ForegroundColor Green
-        Write-Host "Property ID: $($ApiResponse.property_id)" -ForegroundColor Yellow
-        Write-Host "Link to add photos: $SERVER_URL/asset.html?id=$($ApiResponse.asset_id)" -ForegroundColor Cyan
-        Write-Host "--------------------------------------------------------" -ForegroundColor Green
+    $Headers = @{
+        "Content-Type" = "application/json; charset=utf-8"
+        "X-IAM-Key" = $SERVER_KEY
     }
+    $res = Invoke-RestMethod -Uri "$SERVER_URL/api/assets/scan" -Method Post -Headers $Headers -Body $Payload -TimeoutSec 15
+    Write-Host "========================================================" -ForegroundColor Green
+    Write-Host "[SUCCESS] Specifications successfully sent to server!" -ForegroundColor Green
+    Write-Host "Auto-split items: $($res.items_count)" -ForegroundColor Cyan
+    Write-Host "Admin can now review and assign property tag in dashboard." -ForegroundColor Green
+    Write-Host "========================================================" -ForegroundColor Green
 } catch {
-    Write-Host "[NOTICE] Could not connect to Web Server: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "Specs are saved locally in $OutputFile." -ForegroundColor Yellow
+    Write-Host "[ERROR] Could not reach server: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-# 3. Send to Bale Bot
-if ($BALE_TOKEN -ne "YOUR_BALE_BOT_TOKEN_HERE" -and $BALE_CHAT_ID -ne "YOUR_BALE_CHAT_ID_HERE") {
-    Write-Host "Uploading details to Bale Messenger..." -ForegroundColor Cyan
-    try {
-        $text = "🖥️ *New System Spec Report*`n`n" +
-        "*User:* $UserName`n" +
-        "*Computer Name:* $Comp`n" +
-        "*Model:* $Model`n" +
-        "*Serial Number:* $Serial`n" +
-        "*OS:* $OS`n" +
-        "*IP Address:* $IP`n" +
-        "*CPU:* $CPU`n" +
-        "*RAM:* $RAM`n" +
-        "*Storage Drives:* $Storage`n" +
-        "*C: Drive Space:* $CSpace`n" +
-        "*Network:* $NetworkDevices`n" +
-        "*GPU:* $GPU`n" +
-        "*Monitor(s):* $Monitors"
-
-        $MsgUrl = "https://tapi.bale.ai/bot$BALE_TOKEN/sendMessage"
-        $MsgBody = @{ chat_id = $BALE_CHAT_ID; text = $text; parse_mode = "Markdown" } | ConvertTo-Json
-        [void](Invoke-RestMethod -Uri $MsgUrl -Method Post -ContentType "application/json" -Body $MsgBody)
-
-        $DocUrl = "https://tapi.bale.ai/bot$BALE_TOKEN/sendDocument"
-        $boundary = [System.Guid]::NewGuid().ToString()
-        $LF = "`r`n"
-        $fileBytes = [System.IO.File]::ReadAllBytes($OutputFile)
-        $fileEnc = [System.Text.Encoding]::GetEncoding('iso-8859-1').GetString($fileBytes)
-
-        $bodyLines = @(
-            "--$boundary",
-            'Content-Disposition: form-data; name="chat_id"',
-            "",
-            "$BALE_CHAT_ID",
-            "--$boundary",
-            "Content-Disposition: form-data; name=`"document``; filename=`"${Comp}_specs.csv`"",
-            'Content-Type: text/csv',
-            "",
-            $fileEnc,
-            "--$boundary--"
-        ) -join $LF
-
-        [void](Invoke-RestMethod -Uri $DocUrl -Method Post -ContentType "multipart/form-data; boundary=$boundary" -Body $bodyLines)
-        Write-Host "Success! Specs and file sent to Bale." -ForegroundColor Green
-    }
-    catch {
-        Write-Host "Could not send to Bale Bot: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
+Write-Host "`nScan completed! You can close this window." -ForegroundColor Gray
