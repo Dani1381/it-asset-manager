@@ -4,15 +4,15 @@ const TRANSLATIONS = {
   fa: {
     // Nav & General
     app_name: "سیستم مدیریت دارایی‌های IT",
-    app_subtitle: "مدیریت سخت‌افزار، کیس‌ها، مانیتورها و قطعات",
-    nav_inventory: "📦 انبار تجهیزات",
-    nav_add: "➕ افزودن دستگاه",
-    nav_mobile_link: "📱 اتصال موبایل",
-    nav_settings: "⚙️ تنظیمات",
-    nav_logs: "📋 لاگ‌های سیستم",
+    app_subtitle: "مدیریت سخت‌افزار، کیس‌ها و مانیتورها",
+    nav_inventory: "انبار تجهیزات",
+    nav_add: "افزودن دستگاه",
+    nav_mobile_link: "اتصال موبایل",
+    nav_settings: "تنظیمات",
+    nav_logs: "لاگ‌های سیستم",
     logs_title: "لاگ‌های زنده و رویدادهای سیستم",
-    nav_csv: "📥 خروجی اکسل / CSV",
-    nav_back: "← بازگشت به لیست",
+    nav_csv: "خروجی اکسل / CSV",
+    nav_back: "بازگشت به لیست",
     lang_toggle: "English",
 
     // Stats
@@ -126,12 +126,14 @@ const TRANSLATIONS = {
     // Nav & General
     app_name: "IT Asset Master",
     app_subtitle: "Hardware & Device Inventory Management",
-    nav_inventory: "📦 Inventory",
-    nav_add: "➕ Add Device",
-    nav_mobile_link: "📱 Mobile Link",
-    nav_settings: "⚙️ Settings",
-    nav_csv: "📥 CSV Export",
-    nav_back: "← Back to Inventory",
+    nav_inventory: "Inventory",
+    nav_add: "Add Device",
+    nav_mobile_link: "Mobile Link",
+    nav_settings: "Settings",
+    nav_logs: "System Logs",
+    logs_title: "Live System Logs & Events",
+    nav_csv: "CSV Export",
+    nav_back: "Back to Inventory",
     lang_toggle: "فارسی",
 
     // Stats
