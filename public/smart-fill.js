@@ -299,6 +299,8 @@ function setupFieldChips(inputId, defaultChips = [], dbItems = [], callback) {
       // Visual feedback
       input.style.borderColor = '#10b981';
       setTimeout(() => { input.style.borderColor = ''; }, 600);
+      // Trigger input listeners (photo suggestion / serial dup check)
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
       if (callback) callback(chip.value);
     };
 
@@ -347,6 +349,7 @@ function setupShorthand(inputId, rules, afterHook) {
         input.value = r.replace;
         input.style.borderColor = '#10b981';
         setTimeout(() => { input.style.borderColor = ''; }, 600);
+        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
         break;
       }
     }

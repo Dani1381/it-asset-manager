@@ -193,6 +193,20 @@
               </div>
               <input type="text" id="manufacturer_model" class="form-control" placeholder="HP EliteDesk 800 G3 SFF / Samsung S27C31x" required>
               <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
+
+              <!-- Suggested Existing Photo Card -->
+              <div id="model-photo-suggest-card" style="display: none; margin-top: 0.75rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 0.65rem 0.85rem; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                  <img id="suggested-photo-img" src="" alt="Device photo" style="width: 52px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">
+                  <div>
+                    <div style="font-size: 0.86rem; font-weight: 600; color: #93c5fd;">🖼️ عکس این مدل در انبار موجود است</div>
+                    <div id="suggested-photo-caption" style="font-size: 0.78rem; color: var(--text-dim);">ثبت‌شده برای دستگاه قبلی</div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" onclick="applySuggestedModelPhoto()" style="white-space: nowrap; font-size: 0.82rem;">
+                  ✅ استفاده از همین عکس
+                </button>
+              </div>
             </div>
 
             <div class="form-group">
@@ -371,7 +385,63 @@
       if (serialInput) {
         serialInput.addEventListener('blur', checkSerialDuplicate);
       }
+
+      // Live model photo suggestion
+      const modelInput = document.getElementById('manufacturer_model');
+      if (modelInput) {
+        let debounceTimer = null;
+        modelInput.addEventListener('input', () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(checkModelPhotoSuggestion, 600);
+        });
+        modelInput.addEventListener('blur', checkModelPhotoSuggestion);
+      }
     });
+
+    let currentSuggestedPhoto = null;
+
+    async function checkModelPhotoSuggestion() {
+      const model = document.getElementById('manufacturer_model').value.trim();
+      const card = document.getElementById('model-photo-suggest-card');
+      if (!model || model.length < 3) {
+        if (card) card.style.display = 'none';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/models/photo-preview?model=${encodeURIComponent(model)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.found) {
+            currentSuggestedPhoto = data;
+            document.getElementById('suggested-photo-img').src = data.url;
+            document.getElementById('suggested-photo-caption').textContent = `از قبل برای اموال ${data.property_id} (${data.model}) ثبت شده`;
+            card.style.display = 'flex';
+            return;
+          }
+        }
+      } catch (e) {}
+
+      if (card) card.style.display = 'none';
+    }
+
+    function applySuggestedModelPhoto() {
+      if (!currentSuggestedPhoto) return;
+
+      // Add to pendingPhotos as an existing photo clone
+      pendingPhotos.push({
+        isExisting: true,
+        existingPhotoId: currentSuggestedPhoto.photo_id,
+        previewUrl: currentSuggestedPhoto.url,
+        original_name: currentSuggestedPhoto.original_name || 'preset_photo.jpg'
+      });
+
+      renderPendingPhotos();
+
+      // Hide suggestion card after applying
+      const card = document.getElementById('model-photo-suggest-card');
+      if (card) card.style.display = 'none';
+    }
 
     async function checkSerialDuplicate() {
       const serial = document.getElementById('serial_number').value.trim();
@@ -425,7 +495,7 @@
 
       container.innerHTML = pendingPhotos.map((p, idx) => `
         <div class="photo-thumb">
-          <img src="${p.base64}" alt="${escapeHtml(p.original_name)}">
+          <img src="${p.isExisting ? p.previewUrl : p.base64}" alt="${escapeHtml(p.original_name)}">
           <button type="button" class="photo-delete-btn" onclick="removePendingPhoto(${idx})">&times;</button>
         </div>
       `).join('');
@@ -476,6 +546,7 @@
         if (s.manufacturer_model) {
           document.getElementById('manufacturer_model').value = s.manufacturer_model;
           filledCount++;
+          checkModelPhotoSuggestion();
         }
         if (s.serial_number) {
           document.getElementById('serial_number').value = s.serial_number;
@@ -559,17 +630,29 @@
 
         const created = await res.json();
 
-        // Upload pending photos
+        // Upload pending photos (new base64 photos AND cloned existing photos)
         for (const p of pendingPhotos) {
-          await fetch(`/api/assets/${created.id}/photos`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              image: p.base64,
-              original_name: p.original_name,
-              caption: 'Device Photo'
-            })
-          });
+          if (p.isExisting) {
+            // Clone existing photo of the same model (no upload needed, server copies it)
+            await fetch(`/api/assets/${created.id}/photos`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                existing_photo_id: p.existingPhotoId,
+                caption: 'Device Photo (Same Model)'
+              })
+            });
+          } else {
+            await fetch(`/api/assets/${created.id}/photos`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                image: p.base64,
+                original_name: p.original_name,
+                caption: 'Device Photo'
+              })
+            });
+          }
         }
 
         alert(`دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`);

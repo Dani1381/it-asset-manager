@@ -496,6 +496,26 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // GET /api/models/photo-preview (Find existing photo of same model)
+    if (method === 'GET' && pathname === '/api/models/photo-preview') {
+      const model = parsedUrl.searchParams.get('model');
+      if (!model) return sendJson(res, 200, { found: false });
+
+      const photo = queries.getExistingPhotoForModel(model);
+      if (photo) {
+        return sendJson(res, 200, {
+          found: true,
+          photo_id: photo.id,
+          file_name: photo.file_name,
+          url: `/uploads/${photo.file_name}`,
+          original_name: photo.original_name,
+          property_id: photo.property_id,
+          model: photo.manufacturer_model
+        });
+      }
+      return sendJson(res, 200, { found: false });
+    }
+
     // GET /api/assets/next-id
     if (method === 'GET' && pathname === '/api/assets/next-id') {
       return sendJson(res, 200, { nextPropertyId: getNextPropertyId() });
@@ -645,8 +665,17 @@ const server = http.createServer(async (req, res) => {
       const contentType = req.headers['content-type'] || '';
 
       if (contentType.includes('application/json')) {
-        // Base64 Photo Upload (most reliable across mobile browsers!)
+        // Base64 Photo Upload or Clone Existing Photo
         const data = await parseRequestBody(req);
+
+        // Option A: Use existing photo from another asset of same model
+        if (data.existing_photo_id) {
+          const photoId = queries.attachExistingPhotoToAsset(assetId, data.existing_photo_id, data.caption || 'Device Photo');
+          if (photoId) {
+            return sendJson(res, 201, { success: true, photo: { id: photoId, asset_id: assetId } });
+          }
+        }
+
         if (!data.image) {
           return sendJson(res, 400, { error: 'No image data provided' });
         }

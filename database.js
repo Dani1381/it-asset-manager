@@ -394,6 +394,58 @@ const queries = {
     return true;
   },
 
+  // Find existing photo of the same or similar model
+  getExistingPhotoForModel(modelName) {
+    if (!modelName || !modelName.trim()) return null;
+    const clean = modelName.trim();
+    
+    // First try exact match
+    let photo = db.prepare(`
+      SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id
+      FROM asset_photos p
+      JOIN assets a ON p.asset_id = a.id
+      WHERE LOWER(a.manufacturer_model) = LOWER(?)
+      ORDER BY p.id DESC
+      LIMIT 1
+    `).get(clean);
+
+    // If not found, try partial LIKE match
+    if (!photo && clean.length >= 4) {
+      photo = db.prepare(`
+        SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id
+        FROM asset_photos p
+        JOIN assets a ON p.asset_id = a.id
+        WHERE LOWER(a.manufacturer_model) LIKE LOWER(?)
+        ORDER BY p.id DESC
+        LIMIT 1
+      `).get(`%${clean}%`);
+    }
+
+    return photo || null;
+  },
+
+  // Attach an existing photo file to a new asset
+  attachExistingPhotoToAsset(assetId, existingPhotoId, caption = 'Device Photo') {
+    const existing = db.prepare('SELECT * FROM asset_photos WHERE id = ?').get(existingPhotoId);
+    if (!existing) return null;
+
+    const ext = path.extname(existing.file_name);
+    const newFileName = `photo_${assetId}_${Date.now()}_copy${ext}`;
+    const srcPath = path.join(__dirname, 'uploads', existing.file_name);
+    const destPath = path.join(__dirname, 'uploads', newFileName);
+
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+      const now = new Date().toISOString();
+      const res = db.prepare(`
+        INSERT INTO asset_photos (asset_id, file_name, original_name, caption, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(assetId, newFileName, existing.original_name, caption, now);
+      return Number(res.lastInsertRowid);
+    }
+    return null;
+  },
+
   // Suggestions for autocomplete / learning memory
   getSuggestions() {
     const getDistinct = (column) => {
