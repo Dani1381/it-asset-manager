@@ -560,6 +560,28 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // GET /api/download/scanner (Download dynamic AssetScanner.bat tailored to current host)
+    if (method === 'GET' && pathname === '/api/download/scanner') {
+      const host = req.headers.host || '192.168.10.194:3000';
+      const protocol = req.socket?.encrypted ? 'https' : 'http';
+      const serverUrl = `${protocol}://${host}`;
+
+      const scannerTemplatePath = path.join(__dirname, 'client-scripts', 'AssetScanner.bat');
+      let batContent = '';
+      if (fs.existsSync(scannerTemplatePath)) {
+        batContent = fs.readFileSync(scannerTemplatePath, 'utf8');
+        // Replace server URL dynamically
+        batContent = batContent.replace(/\$SERVER_URL = ".*?"/, `$SERVER_URL = "${serverUrl}"`);
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'application/x-bat',
+        'Content-Disposition': 'attachment; filename="AssetScanner.bat"'
+      });
+      res.end(batContent);
+      return;
+    }
+
     // GET /api/assets/next-id
     if (method === 'GET' && pathname === '/api/assets/next-id') {
       return sendJson(res, 200, { nextPropertyId: getNextPropertyId() });
@@ -676,17 +698,22 @@ const server = http.createServer(async (req, res) => {
       // Bale notification for scans
       const settings = queries.getSettings();
       if (settings.bale_token && settings.bale_chat_id) {
-        const text = `🖥️ *${result.is_new ? 'New Device Discovered' : 'Device Specs Updated'}*\n\n` +
-          `*Property ID:* ${asset.property_id}\n` +
-          `*Computer Name:* ${asset.computer_name || 'N/A'}\n` +
-          `*User:* ${asset.user_name || 'N/A'}\n` +
-          `*Model:* ${asset.manufacturer_model || 'N/A'}\n` +
-          `*Serial:* ${asset.serial_number || 'N/A'}\n` +
-          `*OS:* ${asset.os_version || 'N/A'}\n` +
-          `*IP:* ${asset.ip_address || 'N/A'}\n` +
-          `*CPU:* ${asset.cpu || 'N/A'}\n` +
-          `*RAM:* ${asset.ram || 'N/A'}\n` +
-          `*Monitors:* ${asset.monitors || 'N/A'}`;
+        const host = req.headers.host || '192.168.10.194:3000';
+        const protocol = req.socket?.encrypted ? 'https' : 'http';
+        const deviceLink = `${protocol}://${host}/asset.html?id=${asset.id}`;
+
+        const text = `🖥️ *${result.is_new ? 'ثبت خودکار دستگاه جدید در انبار' : 'بروزرسانی مشخصات سیستم'}*\n\n` +
+          `🏷️ *کد اموال:* ${asset.property_id}\n` +
+          `💻 *نام سیستم:* ${asset.computer_name || 'N/A'}\n` +
+          `👤 *کاربر تحویل‌گیرنده:* ${asset.user_name || 'N/A'}\n` +
+          `🏢 *مدل:* ${asset.manufacturer_model || 'N/A'}\n` +
+          `🔑 *شماره سریال:* ${asset.serial_number || 'N/A'}\n` +
+          `🌐 *آدرس IP:* ${asset.ip_address || 'N/A'}\n` +
+          `🖥️ *پردازنده (CPU):* ${asset.cpu || 'N/A'}\n` +
+          `🧠 *حافظه (RAM):* ${asset.ram || 'N/A'}\n` +
+          `💾 *فضای ذخیره‌سازی:* ${asset.storage_drives || 'N/A'}\n` +
+          `📺 *مانیتورهای متصل:* ${asset.monitors || 'N/A'}\n\n` +
+          `🔗 [مشاهده و افزودن عکس دستگاه در پنل](${deviceLink})`;
         notifyBale(text).catch(() => {});
       }
 
