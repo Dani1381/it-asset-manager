@@ -253,7 +253,14 @@ const queries = {
       now
     );
 
-    return Number(result.lastInsertRowid);
+    const newId = Number(result.lastInsertRowid);
+
+    // Auto-attach existing photo if available for same model
+    if (data.manufacturer_model) {
+      queries.autoAttachPhotoIfAvailable(newId, data.manufacturer_model);
+    }
+
+    return newId;
   },
 
   // Update existing asset
@@ -450,6 +457,9 @@ const queries = {
     // Mark as approved in pending table
     db.prepare("UPDATE pending_scans SET status = 'approved' WHERE id = ?").run(pendingId);
 
+    // Auto-attach existing photo of the same model if available
+    queries.autoAttachPhotoIfAvailable(newId, item.manufacturer_model);
+
     return { id: newId, property_id: propertyId };
   },
 
@@ -480,7 +490,17 @@ const queries = {
       INSERT INTO asset_photos (asset_id, file_name, original_name, caption, created_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(assetId, fileName, originalName, caption, now);
-    return Number(result.lastInsertRowid);
+    const photoId = Number(result.lastInsertRowid);
+
+    // Propagate this new photo to all other assets of the same model that have no photo
+    try {
+      const asset = db.prepare('SELECT manufacturer_model FROM assets WHERE id = ?').get(assetId);
+      if (asset && asset.manufacturer_model) {
+        queries.propagatePhotoToSameModel(photoId, asset.manufacturer_model);
+      }
+    } catch (e) {}
+
+    return photoId;
   },
 
   deletePhoto(photoId) {
@@ -526,7 +546,51 @@ const queries = {
     return photo || null;
   },
 
-  // Attach an existing photo file to a new asset
+  // Automatically attach existing photo of the same model if available
+  autoAttachPhotoIfAvailable(assetId, modelName) {
+    if (!assetId || !modelName || !modelName.trim()) return false;
+
+    // Check if asset already has photos
+    const currentPhotos = db.prepare('SELECT COUNT(*) as count FROM asset_photos WHERE asset_id = ?').get(assetId);
+    if (currentPhotos && currentPhotos.count > 0) return false;
+
+    // Find existing photo for same model
+    const existingPhoto = queries.getExistingPhotoForModel(modelName);
+    if (existingPhoto) {
+      const clonedId = queries.attachExistingPhotoToAsset(assetId, existingPhoto.id, `کپی خودکار از عکس مدل (${modelName})`);
+      if (clonedId) {
+        queries.addLog('SUCCESS', 'PHOTO_AUTO', `عکس مدل «${modelName}» به‌صورت خودکار برای دستگاه کد اموال جدید کپی شد`);
+        return true;
+      }
+    }
+    return false;
+  },
+
+  // Propagate a newly uploaded photo to all other assets of the same model that lack photos
+  propagatePhotoToSameModel(sourcePhotoId, modelName) {
+    if (!sourcePhotoId || !modelName || !modelName.trim()) return 0;
+    const cleanModel = modelName.trim();
+
+    // Find all assets of same model without photos
+    const targetAssets = db.prepare(`
+      SELECT a.id, a.property_id
+      FROM assets a
+      LEFT JOIN asset_photos p ON a.id = p.asset_id
+      WHERE LOWER(a.manufacturer_model) = LOWER(?)
+        AND p.id IS NULL
+    `).all(cleanModel);
+
+    let attachedCount = 0;
+    for (const target of targetAssets) {
+      const res = queries.attachExistingPhotoToAsset(target.id, sourcePhotoId, `همگام‌سازی خودکار عکس مدل (${cleanModel})`);
+      if (res) attachedCount++;
+    }
+
+    if (attachedCount > 0) {
+      queries.addLog('SUCCESS', 'PHOTO_SYNC', `عکس جدید مدل «${cleanModel}» برای ${attachedCount} دستگاه هم‌مدل کپی شد`);
+    }
+    return attachedCount;
+  },
   attachExistingPhotoToAsset(assetId, existingPhotoId, caption = 'Device Photo') {
     const existing = db.prepare('SELECT * FROM asset_photos WHERE id = ?').get(existingPhotoId);
     if (!existing) return null;
