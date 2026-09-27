@@ -793,16 +793,28 @@ const server = http.createServer(async (req, res) => {
 
       // Helper: Verify image with 9Router Vision to ensure it matches the expected hardware
       async function verifyPhotoWithAI(targetModel, targetCategory, imgBuffer) {
-        if (!imgBuffer || imgBuffer.length < 5000) return { matches: true };
+        if (!imgBuffer || imgBuffer.length < 5000) return { matches: false, reason: 'حجم تصویر نامعتبر است' };
         try {
           const base64 = imgBuffer.toString('base64');
-          const prompt = `Strictly check: does this image show the EXACT IT product?
-Expected: "${targetModel}" (Category: ${targetCategory})
-Reject wrong brands, wrong device types, wrong models.
-Respond ONLY JSON: {"matches": true|false, "detected_device": "...", "reason": "..."}`;
+          const prompt = `You are a strict brand and hardware image verifier.
+Check if this image shows the EXACT IT product or exact same brand:
+- Expected Model: "${targetModel}"
+- Expected Category: "${targetCategory}"
+
+CRITICAL RULES:
+1. If the expected product brand is HP, and the image shows an LG or Samsung logo/monitor, return matches: false!
+2. If the expected product is Dell, and the image shows HP or Lenovo, return matches: false!
+3. If the device type is wrong (e.g. cable/box/adapter instead of monitor/PC), return matches: false!
+
+Respond ONLY in JSON format:
+{
+  "matches": true or false,
+  "detected_device": "brand and device detected",
+  "reason": "short explanation in Persian"
+}`;
 
           const aiPromise = call9Router(prompt, base64);
-          const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000));
+          const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
           const aiRes = await Promise.race([aiPromise, timeoutPromise]);
 
           if (aiRes && typeof aiRes === 'object' && typeof aiRes.matches === 'boolean') {
@@ -813,9 +825,10 @@ Respond ONLY JSON: {"matches": true|false, "detected_device": "...", "reason": "
             if (m) return JSON.parse(m[0]);
           }
         } catch (e) {
-          return { matches: true, reason: 'تایید سریع (بدون وقفه)' };
+          // In case of timeout or failure, do NOT blindly accept! Reject to be safe.
+          return { matches: false, reason: 'عدم تایید هوش مصنوعی (خطا یا اتمام زمان)' };
         }
-        return { matches: true };
+        return { matches: false, reason: 'عدم دریافت تاییدیه قطعی' };
       }
 
       try {
