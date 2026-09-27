@@ -4,11 +4,11 @@ services:
   it-asset-manager:
     build: .
     container_name: it-asset-manager
-    restart: unless-stopped
+    restart: always
     ports:
       - "3000:3000"
     volumes:
+      - ./data:/app/data
       - ./uploads:/app/uploads
-      - ./inventory.db:/app/inventory.db
     environment:
       - PORT=3000

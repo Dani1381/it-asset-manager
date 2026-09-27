@@ -516,6 +516,50 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { found: false });
     }
 
+    // GET /api/backup/db (Download complete SQLite database file)
+    if (method === 'GET' && pathname === '/api/backup/db') {
+      const dbPath = path.join(__dirname, 'asset_database.sqlite');
+      if (!fs.existsSync(dbPath)) {
+        return sendJson(res, 404, { error: 'Database file not found' });
+      }
+
+      const stat = fs.statSync(dbPath);
+      res.writeHead(200, {
+        'Content-Type': 'application/x-sqlite3',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="asset_database_backup_${Date.now()}.sqlite"`
+      });
+      const readStream = fs.createReadStream(dbPath);
+      readStream.pipe(res);
+      return;
+    }
+
+    // POST /api/backup/restore-db (Restore/Replace SQLite database)
+    if (method === 'POST' && pathname === '/api/backup/restore-db') {
+      const data = await parseRequestBody(req);
+      if (!data.database_base64) {
+        return sendJson(res, 400, { error: 'No database_base64 provided' });
+      }
+
+      try {
+        const dbPath = path.join(__dirname, 'asset_database.sqlite');
+        const backupPath = path.join(__dirname, `asset_database_bak_${Date.now()}.sqlite`);
+        
+        // Backup current database first
+        if (fs.existsSync(dbPath)) {
+          fs.copyFileSync(dbPath, backupPath);
+        }
+
+        const buffer = Buffer.from(data.database_base64, 'base64');
+        fs.writeFileSync(dbPath, buffer);
+
+        queries.addLog('SUCCESS', 'SYSTEM', 'دیتابیس با موفقیت بازنشانی/مهاجرت داده شد');
+        return sendJson(res, 200, { success: true, message: 'Database restored successfully! Reload page.' });
+      } catch (err) {
+        return sendJson(res, 500, { error: `Restore failed: ${err.message}` });
+      }
+    }
+
     // GET /api/assets/next-id
     if (method === 'GET' && pathname === '/api/assets/next-id') {
       return sendJson(res, 200, { nextPropertyId: getNextPropertyId() });

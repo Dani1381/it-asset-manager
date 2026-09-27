@@ -558,6 +558,39 @@ async function clearSystemLogs() {
   }
 }
 
+async function handleRestoreDatabase(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  if (!confirm(`آیا مطمئن هستید که می‌خواهید دیتابیس با فایل «${file.name}» جایگزین شود؟ تمام اطلاعات فعلی با این فایل بروزرسانی خواهند شد.`)) {
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const base64 = e.target.result.split(',')[1];
+      const res = await fetch('/api/backup/restore-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ database_base64: base64 })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert('دیتابیس با موفقیت بازنشانی شد! صفحه اکنون بازخوانی می‌شود.');
+        window.location.reload();
+      } else {
+        alert('خطا در بازنشانی دیتابیس: ' + (data.error || 'ناشناخته'));
+      }
+    } catch (err) {
+      alert('خطا: ' + err.message);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
 // Utility: Escape HTML
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
