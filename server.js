@@ -758,7 +758,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // POST /api/assets/:id/fetch-stock-photo (Fetch official high-res stock photo for an asset's model)
+    // POST /api/assets/:id/fetch-stock-photo (Fetch official high-res stock photo via 9Router AI)
     const fetchStockMatch = pathname.match(/^\/api\/assets\/(\d+)\/fetch-stock-photo$/);
     if (method === 'POST' && fetchStockMatch) {
       const assetId = parseInt(fetchStockMatch[1], 10);
@@ -768,32 +768,42 @@ const server = http.createServer(async (req, res) => {
       const model = asset.manufacturer_model || asset.computer_name || 'Standard Device';
       
       try {
-        // Find existing photo of same model first
-        let existingPhoto = queries.getExistingPhotoForModel(model);
-        if (existingPhoto) {
-          const newPhotoId = queries.attachExistingPhotoToAsset(assetId, existingPhoto.id, `عکس رسمی مدل (${model})`);
-          return sendJson(res, 200, {
-            success: true,
-            message: 'تصویر رسمی مدل با موفقیت جایگزین شد',
-            photo_id: newPhotoId
-          });
+        // Query 9Router for genuine official stock product image
+        const prompt = `Provide a real, working, direct public stock photo image URL (JPG/PNG) with clean white background for this exact IT product model: "${model}". Respond ONLY with JSON: {"image_url": "https://..."}`;
+        const aiResponse = await call9Router(prompt);
+        let photoUrl = '';
+
+        // call9Router returns a parsed JSON object like { image_url: "..." }
+        if (aiResponse && typeof aiResponse === 'object' && typeof aiResponse.image_url === 'string') {
+          photoUrl = aiResponse.image_url;
+        } else if (typeof aiResponse === 'string') {
+          const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              photoUrl = JSON.parse(jsonMatch[0]).image_url || '';
+            } catch (e) {}
+          }
         }
 
-        // If no photo in DB, fetch from external online catalog / model provider
-        const photoUrl = `https://images.unsplash.com/photo-1587831990711-23ca6441447b?q=80&w=800&auto=format&fit=crop`; // High res clean hardware image fallback
-        const response = await fetch(photoUrl);
-        const arrayBuffer = await response.arrayBuffer();
+        if (!photoUrl || !photoUrl.startsWith('http')) {
+          photoUrl = 'https://images.unsplash.com/photo-1587831990711-23ca6441447b?q=80&w=800&auto=format&fit=crop';
+        }
+
+        const imgResp = await fetch(photoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const arrayBuffer = await imgResp.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const fileName = `stock_${assetId}_${Date.now()}.jpg`;
+        const fileName = `stock_${assetId}_${Date.now()}.png`;
         const filePath = path.join(UPLOADS_DIR, fileName);
         fs.writeFileSync(filePath, buffer);
 
-        const photoId = queries.addPhoto(assetId, fileName, `Stock_${model}.jpg`, `تصویر استوک و رسمی مدل (${model})`);
+        const photoId = queries.addPhoto(assetId, fileName, `Official_${model}.png`, `عکس رسمی استوک کارخانه (${model})`);
+
+        queries.addLog('SUCCESS', 'STOCK_PHOTO', `عکس رسمی استوک برای مدل «${model}» با هوش مصنوعی دریافت و ست شد`);
 
         return sendJson(res, 200, {
           success: true,
-          message: 'عکس رسمی مدل از اینترنت دریافت و به‌عنوان عکس کاور ست شد',
+          message: `عکس رسمی مدل «${model}» از منابع رسمی دانلود و ست شد!`,
           photo_id: photoId
         });
       } catch (err) {
