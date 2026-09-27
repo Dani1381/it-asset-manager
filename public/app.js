@@ -773,6 +773,23 @@ async function rejectPendingItem(id) {
   }
 }
 
+async function syncAllStockPhotos() {
+  if (!confirm('آیا می‌خواهید عکس رسمی و تمیز مدل‌ها برای تمام دستگاه‌های فعال انبار به‌روزرسانی شود؟ (عکس‌های قبلی دوربین در گالری دستگاه‌ها باقی می‌مانند)')) return;
+
+  try {
+    const res = await fetch('/api/models/sync-all-stock-photos', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.message || 'همگام‌سازی عکس‌ها با موفقیت انجام شد!');
+      await loadAssets();
+    } else {
+      alert('خطا در همگام‌سازی: ' + (data.error || 'ناشناخته'));
+    }
+  } catch (e) {
+    alert('خطا: ' + e.message);
+  }
+}
+
 // Utility: Escape HTML
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';

@@ -104,6 +104,9 @@
                 <span>📷</span> <span data-i18n="tab_photos">تصاویر دستگاه</span> (<span id="photo-count-badge">0</span>)
               </h3>
               <div style="display: flex; gap: 0.4rem;">
+                <button onclick="fetchStockPhotoForCurrentAsset()" class="btn btn-secondary btn-sm" title="دریافت عکس استوک تمیز و باکیفیت مدل از اینترنت">
+                  🌐 <span>عکس رسمی مدل</span>
+                </button>
                 <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
                   ➕ <span data-i18n="btn_add_photo">افزودن عکس</span>
                 </button>
@@ -371,6 +374,21 @@
           <button type="button" class="photo-delete-btn" onclick="deletePhoto(${p.id})">&times;</button>
         </div>
       `).join('');
+    }
+
+    async function fetchStockPhotoForCurrentAsset() {
+      try {
+        const res = await fetch(`/api/assets/${assetId}/fetch-stock-photo`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          alert(data.message || 'عکس مرجع مدل با موفقیت ست شد!');
+          await loadAssetDetails();
+        } else {
+          alert('خطا: ' + (data.error || 'ناشناخته'));
+        }
+      } catch (e) {
+        alert('خطا: ' + e.message);
+      }
     }
 
     async function uploadDevicePhoto(event) {

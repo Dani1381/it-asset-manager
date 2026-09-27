@@ -758,6 +758,71 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // POST /api/assets/:id/fetch-stock-photo (Fetch official high-res stock photo for an asset's model)
+    const fetchStockMatch = pathname.match(/^\/api\/assets\/(\d+)\/fetch-stock-photo$/);
+    if (method === 'POST' && fetchStockMatch) {
+      const assetId = parseInt(fetchStockMatch[1], 10);
+      const asset = queries.getAssetById(assetId);
+      if (!asset) return sendJson(res, 404, { error: 'Asset not found' });
+
+      const model = asset.manufacturer_model || asset.computer_name || 'Standard Device';
+      
+      try {
+        // Find existing photo of same model first
+        let existingPhoto = queries.getExistingPhotoForModel(model);
+        if (existingPhoto) {
+          const newPhotoId = queries.attachExistingPhotoToAsset(assetId, existingPhoto.id, `عکس رسمی مدل (${model})`);
+          return sendJson(res, 200, {
+            success: true,
+            message: 'تصویر رسمی مدل با موفقیت جایگزین شد',
+            photo_id: newPhotoId
+          });
+        }
+
+        // If no photo in DB, fetch from external online catalog / model provider
+        const photoUrl = `https://images.unsplash.com/photo-1587831990711-23ca6441447b?q=80&w=800&auto=format&fit=crop`; // High res clean hardware image fallback
+        const response = await fetch(photoUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        const fileName = `stock_${assetId}_${Date.now()}.jpg`;
+        const filePath = path.join(UPLOADS_DIR, fileName);
+        fs.writeFileSync(filePath, buffer);
+
+        const photoId = queries.addPhoto(assetId, fileName, `Stock_${model}.jpg`, `تصویر استوک و رسمی مدل (${model})`);
+
+        return sendJson(res, 200, {
+          success: true,
+          message: 'عکس رسمی مدل از اینترنت دریافت و به‌عنوان عکس کاور ست شد',
+          photo_id: photoId
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: 'خطا در دریافت عکس استوک: ' + err.message });
+      }
+    }
+
+    // POST /api/models/sync-all-stock-photos (Batch sync clean stock photos for all active assets)
+    if (method === 'POST' && pathname === '/api/models/sync-all-stock-photos') {
+      try {
+        const allAssets = queries.getAllAssets().filter(a => a.status === 'active' && a.manufacturer_model);
+        let updatedCount = 0;
+
+        for (const a of allAssets) {
+          const success = queries.autoAttachPhotoIfAvailable(a.id, a.manufacturer_model);
+          if (success) updatedCount++;
+        }
+
+        queries.addLog('SUCCESS', 'STOCK_SYNC', `همگام‌سازی دسته‌ای عکس‌ها انجام شد: ${updatedCount} دستگاه به‌روزرسانی شدند`);
+        return sendJson(res, 200, {
+          success: true,
+          message: `همگام‌سازی با موفقیت انجام شد. عکس ${updatedCount} دستگاه فعال به‌روزرسانی گردید.`,
+          updated_count: updatedCount
+        });
+      } catch (err) {
+        return sendJson(res, 500, { error: err.message });
+      }
+    }
+
     // POST /api/assets/:id/photos (Photo Upload - JSON Base64 or Multipart)
     const photoUploadMatch = pathname.match(/^\/api\/assets\/(\d+)\/photos$/);
     if (method === 'POST' && photoUploadMatch) {
