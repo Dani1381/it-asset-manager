@@ -142,7 +142,7 @@ const queries = {
     let sql = `
       SELECT a.*, 
              (SELECT COUNT(*) FROM asset_photos p WHERE p.asset_id = a.id) as photo_count,
-             (SELECT p.file_name FROM asset_photos p WHERE p.asset_id = a.id ORDER BY p.id ASC LIMIT 1) as primary_photo
+             (SELECT p.file_name FROM asset_photos p WHERE p.asset_id = a.id ORDER BY CASE WHEN p.file_name LIKE 'asset_%' OR p.file_name LIKE 'photo_%' THEN 0 ELSE 1 END, p.id ASC LIMIT 1) as primary_photo
       FROM assets a
       WHERE 1=1
     `;
@@ -183,7 +183,7 @@ const queries = {
   getAssetById(id) {
     const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!asset) return null;
-    const photos = db.prepare('SELECT * FROM asset_photos WHERE asset_id = ? ORDER BY id ASC').all(id);
+    const photos = db.prepare(`SELECT * FROM asset_photos WHERE asset_id = ? ORDER BY CASE WHEN file_name LIKE 'asset_%' OR file_name LIKE 'photo_%' THEN 0 ELSE 1 END, id ASC`).all(id);
     return { ...asset, photos };
   },
 
@@ -516,18 +516,20 @@ const queries = {
     return true;
   },
 
-  // Find existing photo of the same or similar model
+  // Find existing photo of the same or similar model (PRIORITIZES REAL USER CAMERA PHOTOS)
   getExistingPhotoForModel(modelName) {
     if (!modelName || !modelName.trim()) return null;
     const clean = modelName.trim();
     
-    // First try exact match
+    // First try exact match prioritizing real user camera photos (file_name starting with asset_ or photo_)
     let photo = db.prepare(`
       SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id
       FROM asset_photos p
       JOIN assets a ON p.asset_id = a.id
       WHERE LOWER(a.manufacturer_model) = LOWER(?)
-      ORDER BY p.id DESC
+      ORDER BY 
+        CASE WHEN p.file_name LIKE 'asset_%' OR p.file_name LIKE 'photo_%' THEN 0 ELSE 1 END,
+        p.id DESC
       LIMIT 1
     `).get(clean);
 
@@ -538,7 +540,9 @@ const queries = {
         FROM asset_photos p
         JOIN assets a ON p.asset_id = a.id
         WHERE LOWER(a.manufacturer_model) LIKE LOWER(?)
-        ORDER BY p.id DESC
+        ORDER BY 
+          CASE WHEN p.file_name LIKE 'asset_%' OR p.file_name LIKE 'photo_%' THEN 0 ELSE 1 END,
+          p.id DESC
         LIMIT 1
       `).get(`%${clean}%`);
     }
@@ -571,17 +575,25 @@ const queries = {
     if (!sourcePhotoId || !modelName || !modelName.trim()) return 0;
     const cleanModel = modelName.trim();
 
-    // Find all assets of same model without photos
+    // Find all assets of same model (even if they have stock photos, real user camera photos take priority!)
     const targetAssets = db.prepare(`
       SELECT a.id, a.property_id
       FROM assets a
-      LEFT JOIN asset_photos p ON a.id = p.asset_id
       WHERE LOWER(a.manufacturer_model) = LOWER(?)
-        AND p.id IS NULL
     `).all(cleanModel);
 
     let attachedCount = 0;
     for (const target of targetAssets) {
+      // Check if this asset already has a REAL user camera photo
+      const hasRealPhoto = db.prepare(`
+        SELECT COUNT(*) as count FROM asset_photos 
+        WHERE asset_id = ? AND (file_name LIKE 'asset_%' OR file_name LIKE 'photo_%')
+      `).get(target.id);
+
+      if (hasRealPhoto && hasRealPhoto.count > 0) {
+        continue; // Skip if real photo already exists
+      }
+
       const res = queries.attachExistingPhotoToAsset(target.id, sourcePhotoId, `همگام‌سازی خودکار عکس مدل (${cleanModel})`);
       if (res) attachedCount++;
     }
