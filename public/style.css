@@ -608,12 +608,69 @@ body.rtl .asset-status-badge {
 }
 
 .asset-subtitle {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text-muted);
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.65rem;
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* Prominently Highlighted User Badge / Chip */
+.asset-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.16) 0%, rgba(59, 130, 246, 0.16) 100%);
+  border: 1px solid rgba(6, 182, 212, 0.38);
+  border-radius: 9999px;
+  padding: 0.28rem 0.8rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.88rem;
+  color: #38bdf8;
+  width: fit-content;
+  max-width: 100%;
+  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.15);
+  transition: all 0.2s ease;
+}
+
+.asset-user-chip:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(59, 130, 246, 0.25) 100%);
+  border-color: rgba(6, 182, 212, 0.6);
+  transform: translateY(-1px);
+}
+
+.asset-user-chip .user-avatar-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.asset-user-chip .user-label-prefix {
+  font-size: 0.78rem;
+  color: #7dd3fc;
+  opacity: 0.85;
+}
+
+.asset-user-chip .user-name-text {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.asset-user-chip.unassigned {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  box-shadow: none;
+}
+.asset-user-chip.unassigned .user-name-text {
+  color: #94a3b8;
+  font-weight: 500;
+  text-shadow: none;
 }
 
 /* Highlighted Main Key Specs Chips (CPU / RAM / Storage) */

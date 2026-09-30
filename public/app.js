@@ -211,8 +211,13 @@ function renderAssets(assets) {
             ${escapeHtml(asset.manufacturer_model || asset.computer_name || 'Device')}
           </div>
           <div class="asset-subtitle">
-            ${catIcon} ${escapeHtml(categoryName)} • 
-            ${getTranslation('user_label')} <strong>${escapeHtml(asset.user_name || getTranslation('unassigned'))}</strong>
+            ${catIcon} <span>${escapeHtml(categoryName)}</span>
+          </div>
+
+          <div class="asset-user-chip ${asset.user_name ? '' : 'unassigned'}" title="${getTranslation('user_label')} ${escapeHtml(asset.user_name || getTranslation('unassigned'))}">
+            <span class="user-avatar-icon">👤</span>
+            <span class="user-label-prefix">${getTranslation('user_label')}:</span>
+            <span class="user-name-text">${escapeHtml(asset.user_name || getTranslation('unassigned'))}</span>
           </div>
 
           ${asset.cpu || asset.ram || asset.storage_drives ? `
@@ -695,9 +700,9 @@ async function loadPendingScansList() {
             <div style="font-size: 0.8rem; color: var(--text-dim);">زمان اسکن: ${timeStr}</div>
           </div>
 
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.4rem; font-size: 0.84rem; background: rgba(0,0,0,0.2); padding: 0.5rem 0.75rem; border-radius: 6px;">
-            <div>👤 <strong>کاربر:</strong> ${escapeHtml(it.user_name || 'مشخص نشده')}</div>
-            <div>💻 <strong>نام سیستم:</strong> ${escapeHtml(it.computer_name || 'N/A')}</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem; font-size: 0.86rem; background: rgba(0,0,0,0.25); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+            <div>👤 <strong>کاربر:</strong> <span style="background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.3); color: #38bdf8; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 6px;">${escapeHtml(it.user_name || 'مشخص نشده')}</span></div>
+            <div>💻 <strong>نام سیستم:</strong> <span style="color: #f8fafc; font-weight: 600;">${escapeHtml(it.computer_name || 'N/A')}</span></div>
             ${it.serial_number ? `<div>🔑 <strong>سریال:</strong> ${escapeHtml(it.serial_number)}</div>` : ''}
             ${it.cpu ? `<div>🖥️ <strong>پردازنده:</strong> ${escapeHtml(it.cpu)}</div>` : ''}
             ${it.ram ? `<div>🧠 <strong>رم:</strong> ${escapeHtml(it.ram)}</div>` : ''}
