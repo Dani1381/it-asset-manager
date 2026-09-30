@@ -46,16 +46,16 @@
         </div>
 
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-          <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
+          <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm viewer-hide">
             📷 <span data-i18n="btn_snap">عکس گرفتن / آپلود</span>
           </button>
           <button onclick="window.print()" class="btn btn-secondary btn-sm">
             🏷️ <span data-i18n="btn_print_sticker">چاپ برچسب اموال</span>
           </button>
-          <button onclick="openEditModal()" class="btn btn-secondary btn-sm">
+          <button onclick="openEditModal()" class="btn btn-secondary btn-sm viewer-hide">
             ✏️ <span data-i18n="btn_edit">ویرایش</span>
           </button>
-          <button onclick="deleteCurrentAsset()" class="btn btn-danger btn-sm">
+          <button onclick="deleteCurrentAsset()" class="btn btn-danger btn-sm viewer-hide">
             🗑️ <span data-i18n="btn_delete">حذف</span>
           </button>
         </div>
@@ -314,6 +314,15 @@
     }
     const isAdmin = () => currentUser && currentUser.is_admin;
 
+    // Hide admin-only buttons for viewer role
+    function applyViewerRestrictions() {
+      if (!isAdmin()) {
+        document.querySelectorAll('.viewer-hide').forEach(el => {
+          el.style.display = 'none';
+        });
+      }
+    }
+
     // Theme Toggle
     function initTheme() {
       const saved = localStorage.getItem('theme') || 'dark';
@@ -344,6 +353,7 @@
         window.location.href = '/';
         return;
       }
+      applyViewerRestrictions();
       loadAssetDetails();
     });
 

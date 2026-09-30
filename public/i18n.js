@@ -42,10 +42,10 @@ const TRANSLATIONS = {
     filter_other: "🔌 سایر قطعات",
 
     filter_all_status: "⚡ همه وضعیت‌ها",
-    status_active: "🟢 در حال استفاده",
-    status_in_storage: "🟡 در انبار / یدکی",
-    status_repair: "🔴 نیازمند تعمیر",
-    status_retired: "⚪ اسقاط / خارج از رده",
+    status_active: "در حال استفاده",
+    status_in_storage: "در انبار / یدکی",
+    status_repair: "نیازمند تعمیر",
+    status_retired: "اسقاط / خارج از رده",
 
     // Asset Cards
     user_label: "کاربر:",

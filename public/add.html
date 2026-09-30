@@ -334,6 +334,20 @@
   </main>
 
   <script>
+    // Session Auth Guard
+    try {
+      const rawUser = localStorage.getItem('arka_user');
+      const currentUser = rawUser ? JSON.parse(rawUser) : null;
+      if (!currentUser) {
+        window.location.href = '/login.html';
+      } else if (!currentUser.is_admin) {
+        alert('شما دسترسی لازم برای ثبت دستگاه جدید را ندارید.');
+        window.location.href = '/';
+      }
+    } catch (e) {
+      window.location.href = '/login.html';
+    }
+
     let currentStep = 1;
     let pendingPhotos = [];
     let nextPropId = '';

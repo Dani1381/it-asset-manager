@@ -4,6 +4,7 @@
 let allAssets = [];
 let networkInfo = null;
 let currentUser = null;
+let activeSpecialFilter = null;
 
 // -------------------------------------------------------------------------
 // Session & Auth Guard
@@ -102,17 +103,62 @@ async function initApp() {
 function setupEventListeners() {
   const searchInput = document.getElementById('search-input');
   if (searchInput) {
-    searchInput.addEventListener('input', debounce(filterAssets, 250));
+    searchInput.addEventListener('input', () => {
+      activeSpecialFilter = null;
+      debounce(filterAssets, 250)();
+    });
   }
 
   const categoryFilter = document.getElementById('category-filter');
   if (categoryFilter) {
-    categoryFilter.addEventListener('change', filterAssets);
+    categoryFilter.addEventListener('change', () => {
+      activeSpecialFilter = null;
+      filterAssets();
+    });
   }
 
   const statusFilter = document.getElementById('status-filter');
   if (statusFilter) {
-    statusFilter.addEventListener('change', filterAssets);
+    statusFilter.addEventListener('change', () => {
+      activeSpecialFilter = null;
+      filterAssets();
+    });
+  }
+}
+
+// Quick filter from top stat cards
+function quickFilterStat(target) {
+  const catFilter = document.getElementById('category-filter');
+  const statusFilter = document.getElementById('status-filter');
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) searchInput.value = '';
+
+  activeSpecialFilter = null;
+
+  if (target === 'all') {
+    if (catFilter) catFilter.value = 'all';
+    if (statusFilter) statusFilter.value = 'all';
+  } else if (target === 'PC') {
+    if (catFilter) catFilter.value = 'PC';
+    if (statusFilter) statusFilter.value = 'all';
+  } else if (target === 'Monitor') {
+    if (catFilter) catFilter.value = 'Monitor';
+    if (statusFilter) statusFilter.value = 'all';
+  } else if (target === 'storage') {
+    if (catFilter) catFilter.value = 'all';
+    if (statusFilter) statusFilter.value = 'in_storage';
+  } else if (target === 'no_photo') {
+    if (catFilter) catFilter.value = 'all';
+    if (statusFilter) statusFilter.value = 'all';
+    activeSpecialFilter = 'no_photo';
+  }
+
+  filterAssets();
+
+  // Scroll smoothly to assets grid
+  const grid = document.getElementById('assets-container');
+  if (grid) {
+    grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
@@ -202,9 +248,12 @@ function filterAssets() {
   const status = document.getElementById('status-filter')?.value || 'all';
 
   const filtered = allAssets.filter(item => {
+    // Special filter check (e.g. no photo)
+    if (activeSpecialFilter === 'no_photo' && item.primary_photo) return false;
+
     // Category match
     if (cat !== 'all') {
-      if (cat === 'PC' && item.category !== 'PC' && item.category !== 'Laptop') return false;
+      if (cat === 'PC' && item.category !== 'PC' && item.category !== 'Laptop' && item.category !== 'Single PC') return false;
       if (cat !== 'PC' && item.category !== cat) return false;
     }
     // Status match

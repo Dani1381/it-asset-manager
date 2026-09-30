@@ -458,12 +458,32 @@ body.rtl .search-icon {
 .search-input {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.75rem;
-  background-color: var(--bg-input);
+  background-color: var(--bg-input) !important;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  color: var(--text-main);
+  color: var(--text-main) !important;
   font-size: 0.95rem;
   transition: all 0.2s ease;
+  position: relative;
+  -webkit-autofill {
+    background-color: var(--bg-input) !important;
+    -webkit-box-shadow: 0 0 0 30px var(--bg-input) inset !important;
+    -webkit-text-fill-color: var(--text-main) !important;
+  }
+  -webkit-autofill:focus {
+    background-color: var(--bg-input) !important;
+    -webkit-box-shadow: 0 0 0 30px var(--bg-input) inset !important;
+    -webkit-text-fill-color: var(--text-main) !important;
+  }
+}
+
+.search-input:-webkit-autofill,
+.search-input:-webkit-autofill:hover,
+.search-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-input) inset !important;
+  -webkit-text-fill-color: var(--text-main) !important;
+  caret-color: var(--text-main);
+  background-color: var(--bg-input) !important;
 }
 
 body.rtl .search-input {
