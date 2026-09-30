@@ -584,6 +584,28 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // GET /api/download/scanner-linux (Download dynamic asset-scanner.sh for Linux clients)
+    if (method === 'GET' && pathname === '/api/download/scanner-linux') {
+      const host = req.headers.host || '192.168.10.194:3000';
+      const protocol = req.socket?.encrypted ? 'https' : 'http';
+      const serverUrl = `${protocol}://${host}`;
+
+      const scannerTemplatePath = path.join(__dirname, 'client-scripts', 'asset-scanner.sh');
+      let shContent = '';
+      if (fs.existsSync(scannerTemplatePath)) {
+        shContent = fs.readFileSync(scannerTemplatePath, 'utf8');
+        // Replace server URL dynamically
+        shContent = shContent.replace(/SERVER_URL="\$\{IAM_SERVER:-.*?\}"/, `SERVER_URL="\${IAM_SERVER:-${serverUrl}}"`);
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'application/x-sh',
+        'Content-Disposition': 'attachment; filename="asset-scanner.sh"'
+      });
+      res.end(shContent);
+      return;
+    }
+
     // GET /api/assets/next-id
     if (method === 'GET' && pathname === '/api/assets/next-id') {
       return sendJson(res, 200, { nextPropertyId: getNextPropertyId() });
