@@ -1184,6 +1184,76 @@ Respond ONLY in JSON format:
       return sendJson(res, 200, { success: true, settings: queries.getSettings() });
     }
 
+    // POST /api/login (User Authentication with Roles: admin / viewer)
+    if (method === 'POST' && pathname === '/api/login') {
+      const data = await parseRequestBody(req);
+      const username = (data.username || '').trim();
+      const password = (data.password || '').trim();
+
+      if (!username || !password) {
+        return sendJson(res, 400, { error: 'نام کاربری و کلمه عبور الزامی است.' });
+      }
+
+      const user = queries.authenticateUser(username, password);
+      if (!user) {
+        queries.addLog('WARN', 'AUTH', `ورود ناموفق با نام کاربری: ${username}`, '', req.socket?.remoteAddress || '');
+        return sendJson(res, 401, { error: 'نام کاربری یا کلمه عبور اشتباه است.' });
+      }
+
+      queries.addLog('SUCCESS', 'AUTH', `ورود موفق کاربر: ${user.full_name} (${user.role})`, '', req.socket?.remoteAddress || '');
+      return sendJson(res, 200, {
+        success: true,
+        user: {
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          role: user.role,
+          is_admin: user.is_admin
+        }
+      });
+    }
+
+    // GET /api/users (List all system users)
+    if (method === 'GET' && pathname === '/api/users') {
+      const users = queries.getAllUsers();
+      return sendJson(res, 200, users);
+    }
+
+    // POST /api/users (Create a new user: Admin or Viewer)
+    if (method === 'POST' && pathname === '/api/users') {
+      const data = await parseRequestBody(req);
+      if (!data.username || !data.password || !data.full_name) {
+        return sendJson(res, 400, { error: 'نام کاربری، رمز عبور و نام کامل الزامی است.' });
+      }
+      try {
+        const id = queries.createUser(data.username, data.password, data.full_name, data.role || 'viewer');
+        queries.addLog('INFO', 'USERS', `کاربر جدید ایجاد شد: ${data.username} (${data.role || 'viewer'})`);
+        return sendJson(res, 201, { success: true, id, message: 'کاربر با موفقیت ایجاد شد.' });
+      } catch (err) {
+        return sendJson(res, 400, { error: 'نام کاربری تکراری است یا خطایی رخ داده است.' });
+      }
+    }
+
+    // PUT /api/users/:id
+    const userUpdateMatch = pathname.match(/^\/api\/users\/(\d+)$/);
+    if (method === 'PUT' && userUpdateMatch) {
+      const userId = parseInt(userUpdateMatch[1], 10);
+      const data = await parseRequestBody(req);
+      const ok = queries.updateUser(userId, data.full_name, data.role || 'viewer', data.password);
+      return sendJson(res, 200, { success: ok, message: 'اطلاعات کاربر به‌روزرسانی شد.' });
+    }
+
+    // DELETE /api/users/:id
+    const userDeleteMatch = pathname.match(/^\/api\/users\/(\d+)$/);
+    if (method === 'DELETE' && userDeleteMatch) {
+      const userId = parseInt(userDeleteMatch[1], 10);
+      if (userId === 1) {
+        return sendJson(res, 400, { error: 'کاربر مدیر اصلی سیستم قابل حذف نیست.' });
+      }
+      const ok = queries.deleteUser(userId);
+      return sendJson(res, 200, { success: ok, message: 'کاربر حذف شد.' });
+    }
+
     // POST /api/test-bale
     if (method === 'POST' && pathname === '/api/test-bale') {
       const result = await notifyBale('🔔 *Test Notification* from IT Asset Master!\n\nYour Bale Bot connection is working perfectly.');

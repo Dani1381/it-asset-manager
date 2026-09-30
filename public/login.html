@@ -3,96 +3,281 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ورود - IT Asset Master</title>
+  <title>ورود | مدیریت دارایی ارکا</title>
   <link rel="stylesheet" href="/style.css">
   <style>
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .login-page {
       min-height: 100vh;
-      background: radial-gradient(circle at top, #1e293b, #0b1329);
-    }
-    .login-box {
-      width: 100%;
-      max-width: 400px;
-      padding: 2.25rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-lg);
-    }
-    .login-brand {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
     }
-    .login-brand h1 {
-      font-size: 1.45rem;
-      color: var(--text-main);
-      font-weight: 800;
+
+    .login-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 50%, rgba(59,130,246,0.18) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 50%, rgba(139,92,246,0.18) 0%, transparent 50%);
+      animation: floatBg 20s ease-in-out infinite;
+      z-index: 0;
     }
-    .login-brand .icon {
+
+    @keyframes floatBg {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      50% { transform: translate(30px, -30px) rotate(3deg); }
+    }
+
+    .login-card {
+      position: relative;
+      z-index: 1;
+      background: var(--bg-glass);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: var(--radius-lg);
+      padding: 2.75rem 2.25rem;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+    }
+
+    .login-logo {
+      width: 72px;
+      height: 72px;
+      background: var(--primary-gradient);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 2.2rem;
+      margin: 0 auto 1.25rem;
+      box-shadow: 0 12px 32px rgba(59,130,246,0.45);
+    }
+
+    .login-title {
+      text-align: center;
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+      color: var(--text-main);
+    }
+
+    .login-sub {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .login-field {
+      margin-bottom: 1.2rem;
+    }
+
+    .login-label {
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.45rem;
+    }
+
+    .login-input {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 0.98rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .login-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.25);
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: 0.9rem;
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 0.5rem;
+      box-shadow: 0 8px 24px rgba(59,130,246,0.35);
+    }
+
+    .login-btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .login-error {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: #fca5a5;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.86rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+
+    .role-preview {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .role-chip {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-sm);
+      padding: 0.65rem;
+      text-align: center;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .role-chip:hover {
+      background: rgba(59,130,246,0.12);
+      border-color: rgba(59,130,246,0.4);
+      transform: translateY(-2px);
+    }
+
+    .role-chip-icon { font-size: 1.5rem; display: block; margin-bottom: 0.25rem; }
+    .role-chip-name { font-size: 0.82rem; font-weight: 700; color: var(--text-main); }
+    .role-chip-hint { font-size: 0.7rem; color: var(--text-dim); }
+
+    .top-controls {
+      position: absolute;
+      top: 1.25rem;
+      left: 1.25rem;
+      display: flex;
+      gap: 0.5rem;
+      z-index: 10;
     }
   </style>
 </head>
-<body class="rtl">
-  <div class="login-box">
-    <div class="login-brand">
-      <span class="icon">📦</span>
-      <h1>مدیریت دارایی‌های IT</h1>
-    </div>
-    <p style="color: var(--text-muted); font-size: 0.95rem; text-align: center; margin-bottom: 1.75rem;">
-      برای دسترسی به پنل اموال و ثبت دوربین، رمز عبور را وارد کنید.
-    </p>
-
-    <form onsubmit="handleLogin(event)">
-      <div class="form-group" style="margin-bottom: 1.5rem;">
-        <label class="form-label" for="password">رمز عبور (Password)</label>
-        <input type="password" id="password" class="form-control" placeholder="••••••••" autofocus required style="text-align: center; font-size: 1.2rem;">
-      </div>
-
-      <div id="error-msg" style="color: var(--danger); font-size: 0.9rem; margin-bottom: 1rem; display: none; text-align: center;"></div>
-
-      <button type="submit" class="btn btn-primary" id="btn" style="width: 100%; font-size: 1.05rem; padding: 0.8rem;">
-        ورود به سیستم
-      </button>
-    </form>
+<body>
+  <div class="top-controls">
+    <button id="theme-toggle-btn" class="btn btn-secondary btn-sm" onclick="toggleTheme()">
+      <span id="theme-icon">☀️</span>
+    </button>
   </div>
 
+  <main class="login-page">
+    <div class="login-card">
+      <div class="login-logo">📦</div>
+      <h1 class="login-title">مدیریت دارایی ارکا</h1>
+      <p class="login-sub">سامانه هوشمند ثبت و پایش تجهیزات IT</p>
+
+      <div id="login-error" class="login-error"></div>
+
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="login-field">
+          <label class="login-label">👤 نام کاربری</label>
+          <input type="text" id="login-username" class="login-input" placeholder="نام کاربری..." required>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label">🔒 کلمه عبور</label>
+          <input type="password" id="login-password" class="login-input" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="login-btn" id="login-submit-btn">ورود به سامانه</button>
+      </form>
+
+      <div class="role-preview">
+        <div class="role-chip" onclick="quickFill('admin', 'admin')" title="ورود سریع با نقش ادمین">
+          <span class="role-chip-icon">🛡️</span>
+          <span class="role-chip-name">ورود ادمین</span>
+          <span class="role-chip-hint">دسترسی کامل و تایید اموال</span>
+        </div>
+        <div class="role-chip" onclick="quickFill('viewer', '123')" title="ورود سریع با نقش بیننده">
+          <span class="role-chip-icon">👁️</span>
+          <span class="role-chip-name">ورود بیننده</span>
+          <span class="role-chip-hint">مشاهده و جستجو</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
   <script>
+    // Theme toggle
+    function initTheme() {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      if (savedTheme === 'light') {
+        document.body.classList.add('light-mode');
+        document.getElementById('theme-icon').textContent = '🌙';
+      } else {
+        document.body.classList.remove('light-mode');
+        document.getElementById('theme-icon').textContent = '☀️';
+      }
+    }
+
+    function toggleTheme() {
+      const isLight = document.body.classList.toggle('light-mode');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+      document.getElementById('theme-icon').textContent = isLight ? '🌙' : '☀️';
+    }
+
+    function quickFill(user, pass) {
+      document.getElementById('login-username').value = user;
+      document.getElementById('login-password').value = pass;
+    }
+
     async function handleLogin(e) {
       e.preventDefault();
-      const pw = document.getElementById('password').value;
-      const err = document.getElementById('error-msg');
-      const btn = document.getElementById('btn');
-      err.style.display = 'none';
-      btn.textContent = 'در حال بررسی...';
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+      const errorBox = document.getElementById('login-error');
+      const submitBtn = document.getElementById('login-submit-btn');
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'در حال ورود...';
 
       try {
         const res = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw })
+          body: JSON.stringify({ username, password })
         });
         const data = await res.json();
-        if (data.success) {
-          const next = new URLSearchParams(window.location.search).get('next') || '/';
-          window.location.href = next;
+
+        if (res.ok && data.success) {
+          localStorage.setItem('arka_user', JSON.stringify(data.user));
+          window.location.href = '/';
         } else {
-          err.textContent = 'رمز عبور نادرست است!';
-          err.style.display = 'block';
-          btn.textContent = 'ورود به سیستم';
+          errorBox.textContent = data.error || 'نام کاربری یا کلمه عبور نادرست است.';
+          errorBox.style.display = 'block';
         }
-      } catch (ex) {
-        err.textContent = 'خطا در برقراری ارتباط: ' + ex.message;
-        err.style.display = 'block';
-        btn.textContent = 'ورود به سیستم';
+      } catch (err) {
+        errorBox.textContent = 'خطای اتصال به سرور: ' + err.message;
+        errorBox.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'ورود به سامانه';
       }
     }
+
+    initTheme();
   </script>
 </body>
 </html>

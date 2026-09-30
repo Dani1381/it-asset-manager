@@ -3,12 +3,13 @@
 const TRANSLATIONS = {
   fa: {
     // Nav & General
-    app_name: "سیستم مدیریت دارایی‌های IT",
-    app_subtitle: "مدیریت سخت‌افزار، کیس‌ها و مانیتورها",
+    app_name: "مدیریت دارایی ارکا",
+    app_subtitle: "سامانه هوشمند ثبت و پایش تجهیزات IT و دارایی‌ها",
     nav_inventory: "انبار تجهیزات",
     nav_add: "افزودن دستگاه",
     nav_mobile_link: "اتصال موبایل",
     nav_settings: "تنظیمات",
+    nav_users: "مدیریت کاربران",
     nav_logs: "لاگ‌های سیستم",
     logs_title: "لاگ‌های زنده و رویدادهای سیستم",
     nav_scanner_bat: "اسکنر ویندوز (.bat)",
@@ -16,6 +17,11 @@ const TRANSLATIONS = {
     nav_csv: "خروجی اکسل / CSV",
     nav_back: "بازگشت به لیست",
     lang_toggle: "English",
+    theme_light: "☀️ تم روشن",
+    theme_dark: "🌙 تم تاریک",
+    role_admin: "مدیر سیستم (ادمین)",
+    role_viewer: "کاربر عادی (بیننده)",
+    btn_logout: "خروج",
 
     // Stats
     stat_total: "کل تجهیزات",

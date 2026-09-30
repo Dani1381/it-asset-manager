@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>سیستم مدیریت دارایی‌های IT</title>
+  <title>مدیریت دارایی ارکا | سیستم جامع اموال و سخت‌افزار</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
@@ -16,25 +16,34 @@
     <a href="/" class="nav-brand">
       <div class="nav-brand-icon">📦</div>
       <div>
-        <div data-i18n="app_name">سیستم مدیریت دارایی‌های IT</div>
-        <div style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;" data-i18n="app_subtitle">مدیریت سخت‌افزار، کیس‌ها و مانیتورها</div>
+        <div data-i18n="app_name">مدیریت دارایی ارکا</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;" data-i18n="app_subtitle">سامانه هوشمند ثبت و پایش تجهیزات IT و دارایی‌ها</div>
       </div>
     </a>
     <div class="nav-links">
+      <button onclick="toggleTheme()" class="btn btn-secondary btn-sm" id="theme-toggle-btn" title="تغییر تم بین تاریک و روشن">
+        <span id="theme-btn-icon">☀️</span>
+      </button>
       <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
+      
       <button onclick="openPendingScansModal()" class="btn btn-warning btn-sm" id="pending-scans-btn" style="display: none; background: #d97706; color: white; border-color: #f59e0b;" title="سیستم‌ها و مانیتورهای اسکن‌شده در انتظار تایید و تخصیص شماره اموال">
         📥 <span>تایید اسکن‌ها (<span id="pending-badge-count">0</span>)</span>
       </button>
+
+      <button id="nav-users-btn" onclick="openUsersModal()" class="btn btn-secondary btn-sm" title="مدیریت کاربران و دسترسی‌ها" style="display: none;">
+        👥 <span data-i18n="nav_users">کاربران</span>
+      </button>
+
       <button onclick="openLogsModal()" class="btn btn-secondary btn-sm" title="مشاهده لاگ‌ها و رویدادهای سیستم">
         📋 <span data-i18n="nav_logs">لاگ‌های سیستم</span>
       </button>
       <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="اسکن با گوشی برای باز کردن پنل دوربین">
         📱 <span data-i18n="nav_mobile_link">اتصال موبایل</span>
       </button>
-      <button onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="تنظیمات بات بله و هوش مصنوعی">
+      <button id="nav-settings-btn" onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="تنظیمات بات بله و هوش مصنوعی">
         ⚙️ <span data-i18n="nav_settings">تنظیمات</span>
       </button>
-      <button onclick="syncAllStockPhotos()" class="btn btn-secondary btn-sm" title="دریافت و ست‌کردن خودکار عکس‌های تمیز استوک برای تمام تجهیزات فعال">
+      <button id="nav-sync-photos-btn" onclick="syncAllStockPhotos()" class="btn btn-secondary btn-sm" title="دریافت و ست‌کردن خودکار عکس‌های تمیز استوک برای تمام تجهیزات فعال">
         🌐 <span>عکس‌های استوک</span>
       </button>
       <a href="/api/download/scanner" class="btn btn-secondary btn-sm" download title="دانلود اسکنر خودکار برای کلاینت‌های ویندوز">
@@ -46,9 +55,17 @@
       <a href="/api/export/csv" class="btn btn-secondary btn-sm" download title="دانلود فایل اکسل اموال">
         📥 <span data-i18n="nav_csv">خروجی اکسل</span>
       </a>
-      <a href="/add.html" class="btn btn-primary btn-sm">
+      <a id="nav-add-btn" href="/add.html" class="btn btn-primary btn-sm">
         ➕ <span data-i18n="nav_add">افزودن دستگاه</span>
       </a>
+
+      <!-- Current User Chip & Logout -->
+      <div id="user-chip-container" class="asset-user-chip" style="margin-bottom:0; cursor:pointer;" onclick="logoutUser()" title="کلیک برای خروج از حساب">
+        <span class="user-avatar-icon">👤</span>
+        <span id="current-user-name" class="user-name-text">کاربر</span>
+        <span id="current-user-role" style="font-size:0.75rem; opacity:0.85;">(ادمین)</span>
+        <span style="font-size:0.8rem; margin-right:4px;">🚪</span>
+      </div>
     </div>
   </header>
 
@@ -325,6 +342,60 @@
 
       <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
         <button class="btn btn-secondary" onclick="closeLogsModal()" data-i18n="btn_cancel">بستن</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Management Modal (Admin Only) -->
+  <div id="users-modal" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 760px;">
+      <div class="modal-header">
+        <h3 class="modal-title">👥 <span data-i18n="nav_users">مدیریت کاربران و سطوح دسترسی</span></h3>
+        <button class="modal-close" onclick="closeUsersModal()">&times;</button>
+      </div>
+
+      <div style="font-size: 0.88rem; color: var(--text-dim); margin-bottom: 1rem;">
+        کاربران سامانه را تعریف کنید. دو سطح دسترسی پیش‌فرض وجود دارد:
+        <strong style="color:#fbbf24;">🛡️ ادمین</strong> (دسترسی کامل: تایید اسکن، ویرایش، حذف، تنظیمات)
+        و
+        <strong style="color:#38bdf8;">👁️ بیننده</strong> (فقط مشاهده و جستجو).
+      </div>
+
+      <!-- Create User Form -->
+      <form id="create-user-form" onsubmit="createUser(event)" style="background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem;">
+          <div class="form-group">
+            <label class="form-label">👤 نام کاربری</label>
+            <input type="text" id="new-username" class="form-control" placeholder="username" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🔒 کلمه عبور</label>
+            <input type="password" id="new-password" class="form-control" placeholder="••••••" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">📛 نام کامل</label>
+            <input type="text" id="new-fullname" class="form-control" placeholder="مثال: علی رضایی" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🛡️ سطح دسترسی</label>
+            <select id="new-role" class="form-control">
+              <option value="viewer">👁️ بیننده (فقط مشاهده)</option>
+              <option value="admin">🛡️ ادمین (دسترسی کامل)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 0.85rem;">
+          <button type="submit" class="btn btn-primary btn-sm">➕ ایجاد کاربر</button>
+        </div>
+      </form>
+
+      <!-- Users List -->
+      <div id="users-list" style="display: flex; flex-direction: column; gap: 0.65rem; max-height: 320px; overflow-y: auto;">
+        <!-- Dynamic users rendered by JS -->
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <button class="btn btn-secondary" onclick="closeUsersModal()" data-i18n="btn_cancel">بستن</button>
       </div>
     </div>
   </div>

@@ -1,12 +1,90 @@
-// app.js - Frontend application logic for IT Asset Master
+// app.js - Frontend application logic for Arka Asset Management (مدیریت دارایی ارکا)
 
 // State
 let allAssets = [];
 let networkInfo = null;
+let currentUser = null;
+
+// -------------------------------------------------------------------------
+// Session & Auth Guard
+// -------------------------------------------------------------------------
+function getSession() {
+  try {
+    const raw = localStorage.getItem('arka_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function isAdmin() {
+  return currentUser && currentUser.is_admin;
+}
+
+function logoutUser() {
+  if (!confirm('آیا از خروج از حساب مطمئن هستید؟')) return;
+  localStorage.removeItem('arka_user');
+  window.location.href = '/login.html';
+}
+
+// Apply role-based UI restrictions
+function applyRoleUI() {
+  currentUser = getSession();
+  if (!currentUser) {
+    // Not logged in -> force login page
+    window.location.href = '/login.html';
+    return;
+  }
+
+  const nameEl = document.getElementById('current-user-name');
+  const roleEl = document.getElementById('current-user-role');
+  if (nameEl) nameEl.textContent = currentUser.full_name || currentUser.username;
+  if (roleEl) roleEl.textContent = isAdmin() ? '(🛡️ ادمین)' : '(👁️ بیننده)';
+
+  if (!isAdmin()) {
+    // Viewer role: hide admin-only controls
+    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn'];
+    adminOnly.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+
+    // Pending scans approval is admin-only
+    const pendingBtn = document.getElementById('pending-scans-btn');
+    if (pendingBtn) pendingBtn.style.display = 'none';
+  }
+}
+
+// -------------------------------------------------------------------------
+// Theme Toggle (Light / Dark)
+// -------------------------------------------------------------------------
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  if (saved === 'light') {
+    document.body.classList.add('light-mode');
+    setThemeIcon('🌙');
+  } else {
+    document.body.classList.remove('light-mode');
+    setThemeIcon('☀️');
+  }
+}
+
+function setThemeIcon(icon) {
+  const el = document.getElementById('theme-btn-icon');
+  if (el) el.textContent = icon;
+}
+
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light-mode');
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+  setThemeIcon(isLight ? '🌙' : '☀️');
+}
 
 // DOM Elements
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
+  applyRoleUI();
+  if (currentUser) {
+    initTheme();
+    initApp();
+  }
 });
 
 async function initApp() {
@@ -16,8 +94,8 @@ async function initApp() {
   await checkPendingScans();
   setupEventListeners();
 
-  // Periodic check for new pending scans every 15 seconds
-  setInterval(checkPendingScans, 15000);
+  // Periodic check for new pending scans every 15 seconds (admin only)
+  if (isAdmin()) setInterval(checkPendingScans, 15000);
 }
 
 // Setup Event Listeners
@@ -529,6 +607,142 @@ function openLogsModal() {
 
 function closeLogsModal() {
   document.getElementById('logs-modal').classList.remove('active');
+}
+
+// User Management Modal Functions (Admin Only)
+function openUsersModal() {
+  if (!isAdmin()) {
+    alert('⛔ فقط مدیر سیستم (ادمین) اجازه مدیریت کاربران را دارد.');
+    return;
+  }
+  document.getElementById('users-modal').classList.add('active');
+  loadUsersList();
+}
+
+function closeUsersModal() {
+  document.getElementById('users-modal').classList.remove('active');
+}
+
+async function loadUsersList() {
+  const container = document.getElementById('users-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 1rem;">در حال دریافت لیست کاربران...</div>';
+
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) throw new Error('خطا در دریافت کاربران');
+    const users = await res.json();
+
+    container.innerHTML = users.map(u => {
+      const roleBadge = u.role === 'admin'
+        ? '<span style="background: rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 700;">🛡️ ادمین</span>'
+        : '<span style="background: rgba(6,182,212,0.15); color:#38bdf8; border:1px solid rgba(6,182,212,0.4); padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 700;">👁️ بیننده</span>';
+
+      return `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.85rem 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.85rem; flex: 1; min-width: 200px;">
+            <div style="width: 42px; height: 42px; border-radius: 50%; background: var(--primary-gradient); display:flex; align-items:center; justify-content:center; font-size: 1.15rem; flex-shrink:0;">
+              ${u.role === 'admin' ? '🛡️' : '👁️'}
+            </div>
+            <div style="min-width:0;">
+              <div style="font-weight: 700; color: var(--text-main); font-size: 0.95rem;">${escapeHtml(u.full_name)}</div>
+              <div style="font-size: 0.78rem; color: var(--text-dim); font-family: monospace;">@${escapeHtml(u.username)}</div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            ${roleBadge}
+            <select onchange="changeUserRole(${u.id}, this.value)" class="form-control" style="width: auto; padding: 0.35rem 0.6rem; font-size: 0.8rem;" ${u.id === 1 ? 'disabled title="کاربر مدیر اصلی قابل تغییر نیست"' : ''}>
+              <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>👁️ بیننده</option>
+              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>🛡️ ادمین</option>
+            </select>
+            ${u.id !== 1 ? `<button onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')" class="btn btn-danger btn-sm" style="padding: 0.35rem 0.65rem;">🗑️</button>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function createUser(e) {
+  e.preventDefault();
+  if (!isAdmin()) return alert('⛔ دسترسی غیرمجاز');
+
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value.trim();
+  const fullName = document.getElementById('new-fullname').value.trim();
+  const role = document.getElementById('new-role').value;
+
+  if (!username || !password || !fullName) {
+    return alert('لطفاً تمام فیلدها را کامل کنید.');
+  }
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, full_name: fullName, role })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert('خطا: ' + (data.error || 'ناموفق'));
+      return;
+    }
+
+    alert('✅ کاربر با موفقیت ایجاد شد.');
+    document.getElementById('create-user-form').reset();
+    await loadUsersList();
+  } catch (err) {
+    alert('خطا: ' + err.message);
+  }
+}
+
+async function changeUserRole(userId, role) {
+  if (!isAdmin()) return;
+  if (userId === 1) return;
+
+  try {
+    // We need full_name; fetch current users list
+    const resUsers = await fetch('/api/users');
+    const users = await resUsers.json();
+    const u = users.find(x => x.id === userId);
+    if (!u) return;
+
+    const res = await fetch(`/api/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: u.full_name, role })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('خطا: ' + (data.error || 'ناموفق'));
+      return;
+    }
+    alert('✅ سطح دسترسی کاربر به‌روزرسانی شد.');
+    await loadUsersList();
+  } catch (e) {
+    alert('خطا: ' + e.message);
+  }
+}
+
+async function deleteUser(userId, username) {
+  if (!isAdmin()) return;
+  if (!confirm(`آیا از حذف کاربر «${username}» مطمئن هستید؟`)) return;
+
+  try {
+    const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('خطا: ' + (data.error || 'ناموفق'));
+      return;
+    }
+    await loadUsersList();
+  } catch (e) {
+    alert('خطا: ' + e.message);
+  }
 }
 
 async function loadSystemLogs() {

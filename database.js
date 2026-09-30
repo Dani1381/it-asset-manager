@@ -97,18 +97,36 @@ function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_pending_scans_status ON pending_scans(status);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Default settings
   const checkSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
   const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   
-  insertSetting.run('company_name', 'Company IT Asset Management');
+  insertSetting.run('company_name', 'مدیریت دارایی ارکا (Arka Asset Management)');
   insertSetting.run('asset_tag_prefix', 'AST-');
   insertSetting.run('bale_token', '');
   insertSetting.run('bale_chat_id', '');
   insertSetting.run('gemini_api_key', '');
   insertSetting.run('gemini_model', 'gemini-3.6-flash');
+
+  // Default Users (Admin & Viewer)
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  if (userCount === 0) {
+    const now = new Date().toISOString();
+    const insertUser = db.prepare('INSERT INTO users (username, password, full_name, role, created_at) VALUES (?, ?, ?, ?, ?)');
+    insertUser.run('admin', 'admin', 'مدیر سیستم ارکا', 'admin', now);
+    insertUser.run('viewer', '123', 'کاربر بیننده (میهمان)', 'viewer', now);
+  }
 }
 
 // Generate the next property ID (e.g. AST-0001, AST-0002)
@@ -871,6 +889,45 @@ const queries = {
   clearLogs() {
     db.prepare('DELETE FROM system_logs').run();
     return true;
+  },
+
+  // User Authentication & Roles (Admin / Viewer)
+  authenticateUser(username, password) {
+    const user = db.prepare('SELECT id, username, password, full_name, role FROM users WHERE LOWER(username) = LOWER(?)').get(username);
+    if (!user) return null;
+    if (user.password !== password) return null;
+    return {
+      id: user.id,
+      username: user.username,
+      full_name: user.full_name,
+      role: user.role,
+      is_admin: user.role === 'admin'
+    };
+  },
+
+  getAllUsers() {
+    return db.prepare('SELECT id, username, full_name, role, created_at FROM users ORDER BY id ASC').all();
+  },
+
+  createUser(username, password, fullName, role = 'viewer') {
+    const now = new Date().toISOString();
+    const res = db.prepare(`
+      INSERT INTO users (username, password, full_name, role, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(username.trim(), password.trim(), fullName.trim(), role, now);
+    return Number(res.lastInsertRowid);
+  },
+
+  updateUser(id, fullName, role, password = null) {
+    if (password && password.trim()) {
+      return db.prepare('UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?').run(fullName.trim(), role, password.trim(), id).changes > 0;
+    }
+    return db.prepare('UPDATE users SET full_name = ?, role = ? WHERE id = ?').run(fullName.trim(), role, id).changes > 0;
+  },
+
+  deleteUser(id) {
+    if (id === 1) return false; // Never delete root admin
+    return db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
   }
 };
 

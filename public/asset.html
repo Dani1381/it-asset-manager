@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>مشخصات دستگاه - IT Asset Master</title>
+  <title>مشخصات دستگاه - مدیریت دارایی ارکا</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
   <script src="/qrcode.js"></script>
@@ -15,9 +15,12 @@
   <header class="navbar">
     <a href="/" class="nav-brand">
       <div class="nav-brand-icon">📦</div>
-      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+      <span data-i18n="app_name">مدیریت دارایی ارکا</span>
     </a>
     <div class="nav-links">
+      <button onclick="toggleTheme()" class="btn btn-secondary btn-sm" id="theme-toggle-btn" title="تغییر تم بین تاریک و روشن">
+        <span id="theme-btn-icon">☀️</span>
+      </button>
       <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
       <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
     </div>
@@ -300,6 +303,37 @@
   </div>
 
   <script>
+    // Session & Auth Guard
+    let currentUser = null;
+    try {
+      const raw = localStorage.getItem('arka_user');
+      currentUser = raw ? JSON.parse(raw) : null;
+    } catch (e) {}
+    if (!currentUser) {
+      window.location.href = '/login.html';
+    }
+    const isAdmin = () => currentUser && currentUser.is_admin;
+
+    // Theme Toggle
+    function initTheme() {
+      const saved = localStorage.getItem('theme') || 'dark';
+      const el = document.getElementById('theme-btn-icon');
+      if (saved === 'light') {
+        document.body.classList.add('light-mode');
+        if (el) el.textContent = '🌙';
+      } else {
+        document.body.classList.remove('light-mode');
+        if (el) el.textContent = '☀️';
+      }
+    }
+
+    function toggleTheme() {
+      const isLight = document.body.classList.toggle('light-mode');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+      const el = document.getElementById('theme-btn-icon');
+      if (el) el.textContent = isLight ? '🌙' : '☀️';
+    }
+
     let currentAsset = null;
     const urlParams = new URLSearchParams(window.location.search);
     const assetId = urlParams.get('id');
