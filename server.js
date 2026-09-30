@@ -754,28 +754,45 @@ const server = http.createServer(async (req, res) => {
         req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
       );
 
-      // Bale notification for incoming scan waiting for approval
+      // Bale notification
       const settings = queries.getSettings();
       if (settings.bale_token && settings.bale_chat_id) {
         const host = req.headers.host || '192.168.10.194:3000';
         const protocol = req.socket?.encrypted ? 'https' : 'http';
         const queueLink = `${protocol}://${host}`;
 
-        const itemsSummary = result.items.map((it, idx) => `  ${idx + 1}. [${it.category}] ${it.name}`).join('\n');
-
-        const text = `📥 *دریافت اسکن جدید (در انتظار تخصیص شماره اموال)*\n\n` +
-          `💻 *نام سیستم:* ${compName || 'N/A'}\n` +
-          `👤 *کاربر:* ${data.user_name || data.userName || 'N/A'}\n` +
-          `🌐 *آدرس IP:* ${data.ip_address || data.ip || 'N/A'}\n\n` +
-          `📦 *دارایی‌های تفکیک‌شده (${result.items_count} مورد):*\n${itemsSummary}\n\n` +
-          `🔔 *توجه:* برای تخصیص شماره اموال فیزیکی و تایید نهایی، وارد پنل شوید:\n` +
-          `🔗 [ورود به پنل و تایید اموال](${queueLink})`;
+        let text = '';
+        if (result.is_update) {
+          text = `🔄 *به‌روزرسانی خودکار مشخصات سیستم (اسکن مجدد)*\n\n` +
+            `💻 *نام سیستم:* ${compName || 'N/A'}\n` +
+            `🏷️ *کد اموال:* ${result.property_id || 'N/A'}\n` +
+            `👤 *کاربر:* ${data.user_name || data.userName || 'N/A'}\n` +
+            `🌐 *آدرس IP:* ${data.ip_address || data.ip || 'N/A'}\n\n` +
+            `✅ مشخصات سخت‌افزاری دستگاه در انبار خودکار به‌روزرسانی شد.`;
+        } else if (result.is_pending_update) {
+          text = `ℹ️ *به‌روزرسانی اسکن در انتظار تایید*\n\n` +
+            `💻 *نام سیستم:* ${compName || 'N/A'}\n` +
+            `👤 *کاربر:* ${data.user_name || data.userName || 'N/A'}\n\n` +
+            `🔔 مشخصات دستگاه در صف انتظار به‌روز شد.`;
+        } else {
+          const itemsSummary = result.items.map((it, idx) => `  ${idx + 1}. [${it.category}] ${it.name}`).join('\n');
+          text = `📥 *دریافت اسکن جدید (در انتظار تخصیص شماره اموال)*\n\n` +
+            `💻 *نام سیستم:* ${compName || 'N/A'}\n` +
+            `👤 *کاربر:* ${data.user_name || data.userName || 'N/A'}\n` +
+            `🌐 *آدرس IP:* ${data.ip_address || data.ip || 'N/A'}\n\n` +
+            `📦 *دارایی‌های تفکیک‌شده (${result.items_count} مورد):*\n${itemsSummary}\n\n` +
+            `🔔 *توجه:* برای تخصیص شماره اموال فیزیکی و تایید نهایی، وارد پنل شوید:\n` +
+            `🔗 [ورود به پنل و تایید اموال](${queueLink})`;
+        }
         notifyBale(text).catch(() => {});
       }
 
       return sendJson(res, 200, {
         success: true,
-        message: `Scan ingested into approval queue. ${result.items_count} items ready for Property ID assignment.`,
+        is_update: !!result.is_update,
+        is_pending_update: !!result.is_pending_update,
+        property_id: result.property_id,
+        message: result.message,
         batch_id: result.batch_id,
         items_count: result.items_count,
         items: result.items

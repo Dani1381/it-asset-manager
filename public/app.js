@@ -200,7 +200,10 @@ function renderAssets(assets) {
             </div>
           `}
           <div class="asset-tag-badge">${escapeHtml(asset.property_id)}</div>
-          <div class="asset-status-badge ${statusBadgeClass}">${statusText}</div>
+          <div class="asset-status-badge ${statusBadgeClass}">
+            <span class="status-dot"></span>
+            <span>${statusText}</span>
+          </div>
         </div>
 
         <div class="asset-body">

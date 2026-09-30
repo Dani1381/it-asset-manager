@@ -327,20 +327,126 @@ const queries = {
     return true;
   },
 
-  // Ingest scan from .bat script into the PENDING APPROVAL QUEUE (and auto-split PC & Monitors!)
+  // Ingestion from network scanner (.bat / .sh) with Intelligent Duplicate Detection & Re-scan Auto-Update
   ingestScan(scanData) {
     const now = new Date().toISOString();
+    const compName = (scanData.computer_name || '').trim();
+    const serialNum = (scanData.serial_number || '').trim();
+    const isSerialValid = serialNum && serialNum.toLowerCase() !== 'unknown' && serialNum.toLowerCase() !== 'to be filled by o.e.m.' && serialNum.length > 3;
+
+    // 1. Check if this machine is ALREADY registered as an approved asset in `assets` table!
+    let existingAsset = null;
+    if (isSerialValid) {
+      existingAsset = db.prepare('SELECT * FROM assets WHERE LOWER(serial_number) = LOWER(?)').get(serialNum);
+    }
+    if (!existingAsset && compName && compName.toLowerCase() !== 'linux-host') {
+      existingAsset = db.prepare('SELECT * FROM assets WHERE LOWER(computer_name) = LOWER(?)').get(compName);
+    }
+
+    if (existingAsset) {
+      // SMART RE-SCAN UPDATE: Update the existing registered asset's specs without creating duplicate pending items!
+      db.prepare(`
+        UPDATE assets SET
+          user_name = COALESCE(?, user_name),
+          os_version = COALESCE(?, os_version),
+          ip_address = COALESCE(?, ip_address),
+          cpu = COALESCE(?, cpu),
+          ram = COALESCE(?, ram),
+          storage_drives = COALESCE(?, storage_drives),
+          c_space = COALESCE(?, c_space),
+          gpu = COALESCE(?, gpu),
+          monitors = COALESCE(?, monitors),
+          last_scanned_at = ?,
+          updated_at = ?
+        WHERE id = ?
+      `).run(
+        scanData.user_name || null,
+        scanData.os_version || null,
+        scanData.ip_address || null,
+        scanData.cpu || null,
+        scanData.ram || null,
+        scanData.storage_drives || null,
+        scanData.c_space || null,
+        scanData.gpu || null,
+        scanData.monitors || null,
+        now,
+        now,
+        existingAsset.id
+      );
+
+      queries.addLog('SUCCESS', 'RESCAN_UPDATE', 
+        `مشخصات سیستم «${existingAsset.computer_name || compName}» با کد اموال «${existingAsset.property_id}» به‌روزرسانی شد.`,
+        `کاربر: ${scanData.user_name || existingAsset.user_name || 'ناشناخته'} | IP: ${scanData.ip_address || existingAsset.ip_address}`
+      );
+
+      return {
+        is_update: true,
+        asset_id: existingAsset.id,
+        property_id: existingAsset.property_id,
+        items_count: 1,
+        items: [{ id: existingAsset.id, category: existingAsset.category, name: existingAsset.manufacturer_model || existingAsset.computer_name, property_id: existingAsset.property_id }],
+        message: `سیستم قبلاً با شماره اموال «${existingAsset.property_id}» در انبار ثبت شده بود؛ تمام مشخصات سخت‌افزاری آن با موفقیت به‌روزرسانی شد.`
+      };
+    }
+
+    // 2. Check if this machine is already sitting in the `pending_scans` queue waiting for approval
+    let existingPending = null;
+    if (isSerialValid) {
+      existingPending = db.prepare("SELECT * FROM pending_scans WHERE LOWER(serial_number) = LOWER(?) AND status = 'pending'").get(serialNum);
+    }
+    if (!existingPending && compName) {
+      existingPending = db.prepare("SELECT * FROM pending_scans WHERE LOWER(computer_name) = LOWER(?) AND category != 'Monitor' AND status = 'pending'").get(compName);
+    }
+
+    if (existingPending) {
+      // Update the pending item specs
+      db.prepare(`
+        UPDATE pending_scans SET
+          user_name = COALESCE(?, user_name),
+          manufacturer_model = COALESCE(?, manufacturer_model),
+          os_version = COALESCE(?, os_version),
+          ip_address = COALESCE(?, ip_address),
+          cpu = COALESCE(?, cpu),
+          ram = COALESCE(?, ram),
+          storage_drives = COALESCE(?, storage_drives),
+          c_space = COALESCE(?, c_space),
+          gpu = COALESCE(?, gpu),
+          created_at = ?
+        WHERE id = ?
+      `).run(
+        scanData.user_name || null,
+        scanData.manufacturer_model || null,
+        scanData.os_version || null,
+        scanData.ip_address || null,
+        scanData.cpu || null,
+        scanData.ram || null,
+        scanData.storage_drives || null,
+        scanData.c_space || null,
+        scanData.gpu || null,
+        now,
+        existingPending.id
+      );
+
+      return {
+        is_pending_update: true,
+        batch_id: existingPending.batch_id,
+        items_count: 1,
+        items: [{ id: existingPending.id, category: existingPending.category, name: existingPending.manufacturer_model || existingPending.computer_name }],
+        message: 'اسکن این سیستم از قبل در صف تایید اموال موجود بود؛ مشخصات در انتظار آن به‌روزرسانی شد.'
+      };
+    }
+
+    // 3. BRAND NEW SCAN: Ingest main device + split monitors into pending queue
     const batchId = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const createdItems = [];
 
-    // 1. Determine PC/Laptop Category
+    // Determine PC / Laptop Category
     let mainCategory = 'PC';
     const m = (scanData.manufacturer_model || '').toLowerCase();
-    if (m.includes('laptop') || m.includes('notebook') || m.includes('latitude 54') || m.includes('thinkpad') || m.includes('elitebook') || m.includes('probook')) {
+    if (m.includes('laptop') || m.includes('notebook') || m.includes('latitude') || m.includes('thinkpad') || m.includes('elitebook') || m.includes('probook')) {
       mainCategory = 'Laptop';
     }
 
-    // Insert Main Device (Case / PC / Laptop) into pending queue
     const insertPending = db.prepare(`
       INSERT INTO pending_scans (
         batch_id, category, user_name, computer_name, manufacturer_model, serial_number,
@@ -368,7 +474,7 @@ const queries = {
 
     createdItems.push({ id: Number(pcRes.lastInsertRowid), category: mainCategory, name: scanData.manufacturer_model || scanData.computer_name });
 
-    // 2. Auto-Split Connected Monitors as separate individual assets!
+    // Auto-Split Connected Monitors as separate individual assets
     const rawMonitors = scanData.monitors || '';
     if (rawMonitors && rawMonitors.trim() && rawMonitors.toLowerCase() !== 'default display') {
       const monList = rawMonitors.split(/[\/,;]+/)
@@ -385,7 +491,7 @@ const queries = {
           scanData.user_name || null,
           scanData.computer_name ? `${scanData.computer_name}-MON${i + 1}` : null,
           monModel,
-          null, // Serial to be inspected/filled or scanned
+          null,
           null,
           scanData.ip_address || null,
           null,
@@ -405,7 +511,8 @@ const queries = {
       batch_id: batchId,
       items_count: createdItems.length,
       items: createdItems,
-      is_new: true
+      is_new: true,
+      message: `اسکن دریافت شد؛ ${createdItems.length} قلم دارایی تفکیک و در صف تایید اموال قرار گرفت.`
     };
   },
 
