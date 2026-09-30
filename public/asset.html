@@ -104,6 +104,9 @@
                 <span>📷</span> <span data-i18n="tab_photos">تصاویر دستگاه</span> (<span id="photo-count-badge">0</span>)
               </h3>
               <div style="display: flex; gap: 0.4rem;">
+                <button onclick="openPhotoLibraryModal()" class="btn btn-secondary btn-sm" title="انتخاب و استفاده از عکس‌های موجود در آرشیو اموال">
+                  🖼️ <span data-i18n="btn_use_existing_photo">استفاده از عکس موجود</span>
+                </button>
                 <button id="fetch-stock-btn" onclick="fetchStockPhotoForCurrentAsset()" class="btn btn-secondary btn-sm" title="دریافت عکس استوک تمیز و باکیفیت مدل از اینترنت">
                   🌐 <span>عکس رسمی مدل</span>
                 </button>
@@ -259,6 +262,31 @@
               <button type="submit" class="btn btn-primary" data-i18n="btn_save">ذخیره تغییرات</button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <!-- Photo Library Modal -->
+      <div id="photo-library-modal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 850px;">
+          <div class="modal-header">
+            <h3 class="modal-title" style="display: flex; align-items: center; gap: 0.6rem;">
+              <span>🖼️</span> <span>آرشیو عکس‌های موجود در انبار</span>
+              <span id="library-total-count" class="badge-count" style="font-size: 0.75rem; background: var(--primary);">0</span>
+            </h3>
+            <button type="button" onclick="closePhotoLibraryModal()" class="modal-close">&times;</button>
+          </div>
+
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+            می‌توانید هر یک از عکس‌های ثبت‌شده برای سایر دستگاه‌های انبار را انتخاب کنید تا بلافاصله به عنوان عکس این دستگاه ست شود:
+          </p>
+
+          <div style="margin-bottom: 1.25rem;">
+            <input type="text" id="library-search" class="form-control" placeholder="جستجو بر اساس مدل، پلاک اموال یا کاربر..." oninput="filterPhotoLibrary(this.value)">
+          </div>
+
+          <div id="library-photo-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; max-height: 520px; overflow-y: auto; padding: 0.5rem 0.2rem;">
+            <!-- Populated dynamically via JS -->
+          </div>
         </div>
       </div>
 
@@ -640,6 +668,88 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+    }
+
+    // Photo Library (Use Existing Photo)
+    let photoLibraryCache = [];
+    async function openPhotoLibraryModal() {
+      try {
+        const res = await fetch('/api/photos/library');
+        const data = await res.json();
+        photoLibraryCache = data.photos || [];
+        document.getElementById('library-total-count').textContent = photoLibraryCache.length;
+        renderPhotoLibraryList(photoLibraryCache);
+        document.getElementById('photo-library-modal').classList.add('active');
+      } catch (e) {
+        alert('خطا در دریافت آرشیو عکس‌ها: ' + e.message);
+      }
+    }
+
+    function closePhotoLibraryModal() {
+      document.getElementById('photo-library-modal').classList.remove('active');
+    }
+
+    function filterPhotoLibrary(keyword) {
+      const kw = (keyword || '').trim().toLowerCase();
+      const filtered = !kw ? photoLibraryCache : photoLibraryCache.filter(p => 
+        (p.manufacturer_model || '').toLowerCase().includes(kw) ||
+        (p.property_id || '').toLowerCase().includes(kw) ||
+        (p.user_name || '').toLowerCase().includes(kw) ||
+        (p.category || '').toLowerCase().includes(kw)
+      );
+      renderPhotoLibraryList(filtered);
+    }
+
+    function renderPhotoLibraryList(photos) {
+      const container = document.getElementById('library-photo-list');
+      if (!photos || photos.length === 0) {
+        container.innerHTML = `<div style="text-align: center; padding: 2.5rem; color: var(--text-dim); grid-column: 1/-1;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.75rem; opacity: 0.5;">📭</div>
+          <div>هیچ عکسی در آرشیو انبار موجود نیست.</div>
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = photos.map((p, idx) => `
+        <div class="photo-library-card" style="animation: fadeIn 0.25s ease ${idx * 0.04}s backwards; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column;"
+             onmouseover="this.style.transform='translateY(-3px)'; this.style.borderColor='rgba(59,130,246,0.5)';"
+             onmouseout="this.style.transform=''; this.style.borderColor='rgba(255,255,255,0.08)';"
+             onclick="attachPhotoFromLibrary('${escapeHtml(p.file_name)}', '${escapeHtml(p.caption || 'متصل از آرشیو')}')">
+          <div style="height: 140px; overflow: hidden; background: #0b1329; position: relative;">
+            <img src="/uploads/${p.file_name}" alt="${escapeHtml(p.manufacturer_model || p.file_name)}" style="width: 100%; height: 100%; object-fit: cover;">
+            ${p.is_camera_photo ? '<div style="position: absolute; top: 6px; right: 6px; background: rgba(6,182,212,0.85); color: #fff; padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700;">📷 دوربین</div>' : '<div style="position: absolute; top: 6px; right: 6px; background: rgba(59,130,246,0.85); color: #fff; padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700;">🌐 استوک</div>'}
+          </div>
+          <div style="padding: 0.75rem; flex: 1; display: flex; flex-direction: column; gap: 0.35rem;">
+            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(p.manufacturer_model || p.property_id || 'نامشخص')}</div>
+            <div style="font-size: 0.75rem; color: var(--text-dim); font-family: monospace;">🏷️ ${escapeHtml(p.property_id || 'N/A')}</div>
+            ${p.user_name ? `<div style="font-size: 0.75rem; color: var(--text-muted);">👤 ${escapeHtml(p.user_name)}</div>` : ''}
+            <button style="margin-top: auto; width: 100%; padding: 0.5rem; background: var(--primary-gradient); color: white; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.82rem;">
+              📎 استفاده از این عکس
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function attachPhotoFromLibrary(fileName, caption) {
+      try {
+        const res = await fetch(`/api/assets/${assetId}/attach-existing-photo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_name: fileName, caption: caption })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert('خطا: ' + (data.error || 'ناموفق'));
+          return;
+        }
+        alert('✅ عکس با موفقیت به دارایی متصل شد.');
+        closePhotoLibraryModal();
+        await loadAssetDetails();
+        await loadStats();
+      } catch (e) {
+        alert('خطا: ' + e.message);
+      }
     }
   </script>
 </body>

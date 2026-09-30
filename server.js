@@ -972,6 +972,45 @@ Respond ONLY in JSON format:
       }
     }
 
+    // GET /api/photos/library (Get all unique photos stored in inventory)
+    if (method === 'GET' && pathname === '/api/photos/library') {
+      const search = parsedUrl.searchParams.get('search') || '';
+      const library = queries.getPhotoLibrary(search);
+      return sendJson(res, 200, { success: true, count: library.length, photos: library });
+    }
+
+    // POST /api/assets/:id/attach-existing-photo (Attach a photo from library to this asset)
+    const attachExistingMatch = pathname.match(/^\/api\/assets\/(\d+)\/attach-existing-photo$/);
+    if (method === 'POST' && attachExistingMatch) {
+      const assetId = parseInt(attachExistingMatch[1], 10);
+      const asset = queries.getAssetById(assetId);
+      if (!asset) return sendJson(res, 404, { error: 'Asset not found' });
+
+      const data = await parseRequestBody(req);
+      const fileName = data.file_name || data.fileName;
+      if (!fileName) {
+        return sendJson(res, 400, { error: 'file_name is required' });
+      }
+
+      const filePath = path.join(UPLOADS_DIR, fileName);
+      if (!fs.existsSync(filePath)) {
+        return sendJson(res, 404, { error: 'Photo file not found on disk' });
+      }
+
+      const photoId = queries.attachExistingPhoto(assetId, fileName, data.caption || `انتخاب از گالری (${asset.manufacturer_model || asset.property_id})`);
+      
+      queries.addLog('SUCCESS', 'PHOTO_ATTACH', 
+        `عکس «${fileName}» از آرشیو به دارایی ${asset.property_id} متصل شد.`,
+        `مدل: ${asset.manufacturer_model || 'N/A'}`
+      );
+
+      return sendJson(res, 200, {
+        success: true,
+        photo_id: photoId,
+        message: 'عکس با موفقیت به دارایی متصل شد.'
+      });
+    }
+
     // POST /api/assets/:id/photos (Photo Upload - JSON Base64 or Multipart)
     const photoUploadMatch = pathname.match(/^\/api\/assets\/(\d+)\/photos$/);
     if (method === 'POST' && photoUploadMatch) {

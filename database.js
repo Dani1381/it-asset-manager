@@ -623,6 +623,52 @@ const queries = {
     return true;
   },
 
+  // Get all unique photos in the library across the entire inventory
+  getPhotoLibrary(search = '') {
+    const s = `%${(search || '').trim()}%`;
+    const rows = db.prepare(`
+      SELECT 
+        p.id,
+        p.file_name,
+        p.original_name,
+        p.caption,
+        p.created_at,
+        a.id as asset_id,
+        a.property_id,
+        a.manufacturer_model,
+        a.category,
+        a.user_name,
+        CASE WHEN p.file_name LIKE 'asset_%' OR p.file_name LIKE 'photo_%' THEN 1 ELSE 0 END as is_camera_photo
+      FROM asset_photos p
+      LEFT JOIN assets a ON p.asset_id = a.id
+      WHERE (a.manufacturer_model LIKE ? OR a.property_id LIKE ? OR p.caption LIKE ? OR a.category LIKE ? OR ? = '%%')
+      GROUP BY p.file_name
+      ORDER BY is_camera_photo DESC, p.id DESC
+      LIMIT 100
+    `).all(s, s, s, s, s);
+
+    // Verify file actually exists on disk
+    return rows.filter(r => {
+      const p = path.join(__dirname, 'uploads', r.file_name);
+      return fs.existsSync(p);
+    });
+  },
+
+  // Attach an existing photo file to a target asset
+  attachExistingPhoto(targetAssetId, fileName, caption = '') {
+    // Check if target asset already has this exact photo attached
+    const existing = db.prepare('SELECT id FROM asset_photos WHERE asset_id = ? AND file_name = ?').get(targetAssetId, fileName);
+    if (existing) return existing.id;
+
+    const now = new Date().toISOString();
+    const res = db.prepare(`
+      INSERT INTO asset_photos (asset_id, file_name, original_name, caption, created_at)
+      VALUES (?, ?, 'Attached from Library', ?, ?)
+    `).run(targetAssetId, fileName, caption || 'Attached from Photo Library', now);
+
+    return Number(res.lastInsertRowid);
+  },
+
   // Find existing photo of the same or similar model (PRIORITIZES REAL USER CAMERA PHOTOS)
   getExistingPhotoForModel(modelName) {
     if (!modelName || !modelName.trim()) return null;
