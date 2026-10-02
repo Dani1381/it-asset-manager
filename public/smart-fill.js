@@ -29,13 +29,24 @@ const CHIP_PRESETS = {
   ],
 
   manufacturer_model: [
-    { label: '🖥️ HP 800 G3 SFF', value: 'HP EliteDesk 800 G3 SFF' },
-    { label: '🖥️ HP 800 G4 SFF', value: 'HP EliteDesk 800 G4 SFF' },
-    { label: '🖥️ Dell OptiPlex 7050', value: 'Dell OptiPlex 7050' },
-    { label: '🖥️ Dell OptiPlex 780', value: 'Dell OptiPlex 780' },
-    { label: '💻 Dell Latitude 5420', value: 'Dell Latitude 5420' },
-    { label: '📺 Samsung 27"', value: 'Samsung S27C31x' },
-    { label: '📺 Samsung 22"', value: 'Samsung S22F350' }
+    { label: '🖥️ HP 800 G3 SFF', value: 'HP EliteDesk 800 G3 SFF', cat: 'PC' },
+    { label: '🖥️ HP 800 G4 SFF', value: 'HP EliteDesk 800 G4 SFF', cat: 'PC' },
+    { label: '🖥️ HP ProDesk 600 G3', value: 'HP ProDesk 600 G3 SFF', cat: 'PC' },
+    { label: '🖥️ Dell OptiPlex 7050', value: 'Dell OptiPlex 7050', cat: 'PC' },
+    { label: '🖥️ Dell OptiPlex 780', value: 'Dell OptiPlex 780', cat: 'PC' },
+    { label: '💻 Dell Latitude 5420', value: 'Dell Latitude 5420', cat: 'Laptop' },
+    { label: '💻 HP ProBook 450 G8', value: 'HP ProBook 450 G8', cat: 'Laptop' },
+    { label: '💻 Lenovo ThinkPad T14', value: 'Lenovo ThinkPad T14', cat: 'Laptop' },
+    { label: '📺 Samsung 27"', value: 'Samsung S27C31x', cat: 'Monitor' },
+    { label: '📺 Samsung 22"', value: 'Samsung S22F350', cat: 'Monitor' },
+    { label: '📺 LG 24"', value: 'LG 24MK430H', cat: 'Monitor' },
+    { label: '📺 Dell 24"', value: 'Dell P2422H', cat: 'Monitor' },
+    { label: '🖨️ HP LaserJet M404dn', value: 'HP LaserJet Pro M404dn', cat: 'Printer' },
+    { label: '🖨️ Canon MF3010', value: 'Canon i-SENSYS MF3010', cat: 'Printer' },
+    { label: '🖨️ HP LaserJet M130', value: 'HP LaserJet Pro MFP M130', cat: 'Printer' },
+    { label: '🌐 Cisco 2960', value: 'Cisco Catalyst 2960', cat: 'Network' },
+    { label: '🌐 MikroTik hEX', value: 'MikroTik hEX RB750Gr3', cat: 'Network' },
+    { label: '🌐 TP-Link 24-Port', value: 'TP-Link TL-SG1024D', cat: 'Network' }
   ],
 
   monitors: [
@@ -177,36 +188,109 @@ const SHORTHAND_RULES = {
   ]
 };
 
+// ---------------------------------------------------------------------------
+// Category-aware suggestions
+// When "Monitor" is selected only monitor models are suggested, when a
+// PC / case is selected only PC models, etc. Hardware chips (CPU/RAM/...)
+// are only shown for computer-type devices.
+// ---------------------------------------------------------------------------
+let SMART_DB = {};
+
+// Map a category value to the family used for filtering suggestions
+function categoryFamily(cat) {
+  const c = String(cat || '').trim().toLowerCase();
+  if (c === 'pc' || c === 'single pc' || c === 'case' || c === 'all-in-one') return 'pc';
+  if (c === 'laptop') return 'laptop';
+  if (c === 'monitor') return 'monitor';
+  if (c === 'printer') return 'printer';
+  if (c === 'network') return 'network';
+  return 'other';
+}
+
+const COMPUTER_FAMILIES = new Set(['pc', 'laptop']);
+
+// Recent DB models for one category family (falls back to [] if server is old)
+function dbModelsForFamily(family) {
+  const byCat = SMART_DB.models_by_category;
+  if (!byCat || typeof byCat !== 'object') return [];
+  const out = [];
+  for (const [cat, list] of Object.entries(byCat)) {
+    if (categoryFamily(cat) === family && Array.isArray(list)) out.push(...list);
+  }
+  return out;
+}
+
+function presetModelsForFamily(family) {
+  return CHIP_PRESETS.manufacturer_model.filter(c => categoryFamily(c.cat) === family);
+}
+
+// Field ids for the two forms that use smart chips
+const SMART_FORMS = [
+  {
+    category: 'category', model: 'manufacturer_model', modelCallback: true,
+    hw: { cpu: 'cpu', ram: 'ram', storage: 'storage_drives', gpu: 'gpu' },
+    monitors: 'monitors', location: 'location', department: 'department'
+  },
+  {
+    category: 'edit-category', model: 'edit-model', modelCallback: false,
+    hw: { cpu: 'edit-cpu', ram: 'edit-ram', storage: 'edit-storage', gpu: 'edit-gpu' },
+    monitors: 'edit-monitors', location: 'edit-location', department: 'edit-department'
+  }
+];
+
+function renderCategoryChips(form) {
+  const catEl = document.getElementById(form.category);
+  if (!catEl) return;
+  const family = categoryFamily(catEl.value);
+  const isComputer = COMPUTER_FAMILIES.has(family);
+
+  // Model chips: only models of the selected device type
+  setupFieldChips(
+    form.model,
+    presetModelsForFamily(family),
+    dbModelsForFamily(family),
+    form.modelCallback ? applyModelPreset : undefined
+  );
+
+  // Hardware chips only make sense for computers
+  setupFieldChips(form.hw.cpu, isComputer ? CHIP_PRESETS.cpu : [], isComputer ? SMART_DB.cpus : []);
+  setupFieldChips(form.hw.ram, isComputer ? CHIP_PRESETS.ram : [], isComputer ? SMART_DB.rams : []);
+  setupFieldChips(form.hw.storage, isComputer ? CHIP_PRESETS.storage_drives : [], isComputer ? SMART_DB.storages : []);
+  setupFieldChips(form.hw.gpu, isComputer ? CHIP_PRESETS.gpu : [], isComputer ? SMART_DB.gpus : []);
+
+  // Monitor field: relevant for computers (attached screens) and monitors themselves
+  const showMon = isComputer || family === 'monitor';
+  setupFieldChips(form.monitors, showMon ? CHIP_PRESETS.monitors : [], showMon ? SMART_DB.monitors : []);
+}
+
+// Public hook: re-render chips after a form's category is set from code
+function refreshSmartChips() {
+  SMART_FORMS.forEach(renderCategoryChips);
+}
+window.refreshSmartChips = refreshSmartChips;
+
 // Main Initialization
 async function initSmartFill() {
-  let dbSuggestions = {};
   try {
     const res = await fetch('/api/suggestions');
     if (res.ok) {
-      dbSuggestions = await res.json();
+      SMART_DB = await res.json();
     }
   } catch (e) {
     console.warn('Could not load suggestions:', e);
   }
 
-  // Render suggestion chips container for each input
-  setupFieldChips('manufacturer_model', CHIP_PRESETS.manufacturer_model, dbSuggestions.models, applyModelPreset);
-  setupFieldChips('storage_drives', CHIP_PRESETS.storage_drives, dbSuggestions.storages);
-  setupFieldChips('ram', CHIP_PRESETS.ram, dbSuggestions.rams);
-  setupFieldChips('cpu', CHIP_PRESETS.cpu, dbSuggestions.cpus);
-  setupFieldChips('monitors', CHIP_PRESETS.monitors, dbSuggestions.monitors);
-  setupFieldChips('gpu', CHIP_PRESETS.gpu, dbSuggestions.gpus);
-  setupFieldChips('location', CHIP_PRESETS.location, dbSuggestions.locations);
-  setupFieldChips('department', CHIP_PRESETS.department, dbSuggestions.departments);
+  SMART_FORMS.forEach(form => {
+    renderCategoryChips(form);
+    setupFieldChips(form.location, CHIP_PRESETS.location, SMART_DB.locations);
+    setupFieldChips(form.department, CHIP_PRESETS.department, SMART_DB.departments);
 
-  // Edit modal fields
-  setupFieldChips('edit-model', CHIP_PRESETS.manufacturer_model, dbSuggestions.models);
-  setupFieldChips('edit-storage', CHIP_PRESETS.storage_drives, dbSuggestions.storages);
-  setupFieldChips('edit-ram', CHIP_PRESETS.ram, dbSuggestions.rams);
-  setupFieldChips('edit-cpu', CHIP_PRESETS.cpu, dbSuggestions.cpus);
-  setupFieldChips('edit-monitors', CHIP_PRESETS.monitors, dbSuggestions.monitors);
-  setupFieldChips('edit-location', CHIP_PRESETS.location, dbSuggestions.locations);
-  setupFieldChips('edit-department', CHIP_PRESETS.department, dbSuggestions.departments);
+    const catEl = document.getElementById(form.category);
+    if (catEl && !catEl.dataset.smartBound) {
+      catEl.dataset.smartBound = '1';
+      catEl.addEventListener('change', () => renderCategoryChips(form));
+    }
+  });
 
   // Attach text expansions
   setupShorthand('storage_drives', SHORTHAND_RULES.storage);
@@ -261,36 +345,13 @@ function setupFieldChips(inputId, defaultChips = [], dbItems = [], callback) {
   // Create chips container
   const container = document.createElement('div');
   container.className = 'chips-container';
-  container.style.display = 'flex';
-  container.style.flexWrap = 'wrap';
-  container.style.gap = '0.35rem';
-  container.style.marginTop = '0.45rem';
 
-  combined.slice(0, 7).forEach(chip => {
+  combined.slice(0, 8).forEach(chip => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'chip-btn';
+    btn.className = 'chip-btn' + (chip.isRecent ? ' chip-recent' : '');
     btn.textContent = chip.label;
-    btn.style.padding = '0.25rem 0.6rem';
-    btn.style.fontSize = '0.8rem';
-    btn.style.backgroundColor = chip.isRecent ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.08)';
-    btn.style.border = chip.isRecent ? '1px solid #3b82f6' : '1px solid var(--border-color)';
-    btn.style.borderRadius = '20px';
-    btn.style.color = chip.isRecent ? '#93c5fd' : 'var(--text-muted)';
-    btn.style.cursor = 'pointer';
-    btn.style.transition = 'all 0.15s ease';
-    btn.style.whiteSpace = 'nowrap';
-
-    btn.onmouseover = () => {
-      btn.style.backgroundColor = 'var(--primary)';
-      btn.style.color = '#ffffff';
-      btn.style.borderColor = 'var(--primary)';
-    };
-    btn.onmouseout = () => {
-      btn.style.backgroundColor = chip.isRecent ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.08)';
-      btn.style.color = chip.isRecent ? '#93c5fd' : 'var(--text-muted)';
-      btn.style.borderColor = chip.isRecent ? '1px solid #3b82f6' : 'var(--border-color)';
-    };
+    btn.title = chip.value;
 
     btn.onclick = (e) => {
       e.preventDefault();
@@ -329,7 +390,10 @@ function applyModelPreset(modelName) {
       if (storage && (!storage.value || storage.value === '.') && preset.storage_drives) storage.value = preset.storage_drives;
       if (gpu && (!gpu.value || gpu.value === '.') && preset.gpu) gpu.value = preset.gpu;
       if (monitors && !monitors.value && preset.monitors) monitors.value = preset.monitors;
-      if (cat && preset.category) cat.value = preset.category;
+      if (cat && preset.category && cat.value !== preset.category) {
+        cat.value = preset.category;
+        cat.dispatchEvent(new Event('change'));
+      }
       break;
     }
   }
@@ -403,7 +467,7 @@ async function lookupModelOnline() {
     // Category
     if (s.category) {
       const cat = document.getElementById('category') || document.getElementById('edit-category');
-      if (cat) cat.value = s.category;
+      if (cat) { cat.value = s.category; cat.dispatchEvent(new Event('change')); }
     }
 
     // Default CPU

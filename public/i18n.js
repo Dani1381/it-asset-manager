@@ -130,7 +130,13 @@ const TRANSLATIONS = {
     setting_bale_token: "توکن بات بله (Token)",
     setting_bale_chat_id: "شناسه چت / کانال بله (Chat ID)",
     btn_test_bale: "🔔 تست ارسال پیام به بله",
-    btn_save_settings: "ذخیره تنظیمات"
+    btn_save_settings: "ذخیره تنظیمات",
+    settings_saved: "تنظیمات با موفقیت ذخیره شد.",
+    setting_photo_priority: "اولویت نمایش عکس دستگاه‌ها",
+    photo_priority_camera: "📱 اول عکس گرفته‌شده با گوشی (پیشنهادی)",
+    photo_priority_newest: "🕒 جدیدترین عکس آپلود‌شده",
+    photo_priority_stock: "🌐 اول عکس کاتالوگ / اینترنت",
+    photo_priority_hint: "عکسی که در صفحه اصلی و صفحه جزئیات اول نمایش داده می‌شود. در صفحه هر دستگاه می‌توانید با ⭐ یک عکس را دستی به‌عنوان عکس اصلی انتخاب کنید."
   },
 
   en: {
@@ -256,7 +262,13 @@ const TRANSLATIONS = {
     setting_bale_token: "Bale Bot Token",
     setting_bale_chat_id: "Bale Chat ID",
     btn_test_bale: "🔔 Test Bale Notification",
-    btn_save_settings: "Save Settings"
+    btn_save_settings: "Save Settings",
+    settings_saved: "Settings saved successfully.",
+    setting_photo_priority: "Device photo display priority",
+    photo_priority_camera: "📱 Phone camera photos first (recommended)",
+    photo_priority_newest: "🕒 Newest uploaded photo",
+    photo_priority_stock: "🌐 Catalog / internet photos first",
+    photo_priority_hint: "Which photo is shown first on the dashboard and detail page. On each device page you can pick a cover photo manually with ⭐."
   }
 };
 

@@ -208,6 +208,15 @@ function initDb() {
   insertSetting.run('bale_chat_id', '');
   insertSetting.run('gemini_api_key', '');
   insertSetting.run('gemini_model', 'gemini-3.6-flash');
+  // Which photo is shown first on the dashboard / detail page:
+  // camera = phone photos first, newest = most recent upload first, stock = catalog images first
+  insertSetting.run('photo_priority', 'camera');
+
+  // Migration: manual "cover photo" flag per asset
+  const photoCols = db.prepare('PRAGMA table_info(asset_photos)').all().map(c => c.name);
+  if (!photoCols.includes('is_primary')) {
+    db.exec('ALTER TABLE asset_photos ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0');
+  }
 
   // Default Users (Admin & Viewer)
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
@@ -243,6 +252,37 @@ function getNextPropertyId() {
   return `${prefix}${nextNum}`;
 }
 
+// Photo ordering — decides which photo becomes the cover image.
+// 1) a photo manually marked as cover always wins
+// 2) then the global "photo_priority" setting
+const CAMERA_PHOTO_SQL = (a) => `(${a}file_name LIKE 'asset\\_%' ESCAPE '\\' OR ${a}file_name LIKE 'photo\\_%' ESCAPE '\\')`;
+const PHOTO_PRIORITIES = ['camera', 'newest', 'stock'];
+
+function getPhotoPriority() {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'photo_priority'").get();
+    return row && PHOTO_PRIORITIES.includes(row.value) ? row.value : 'camera';
+  } catch (e) {
+    return 'camera';
+  }
+}
+
+function photoOrderSql(alias = '') {
+  const a = alias ? `${alias}.` : '';
+  const isCamera = CAMERA_PHOTO_SQL(a);
+  const base = `COALESCE(${a}is_primary, 0) DESC`;
+  switch (getPhotoPriority()) {
+    case 'newest':
+      return `${base}, ${a}id DESC`;
+    case 'stock':
+      return `${base}, CASE WHEN ${isCamera} THEN 1 ELSE 0 END, ${a}id ASC`;
+    case 'camera':
+    default:
+      // phone photos first; among them the most recent shot is shown
+      return `${base}, CASE WHEN ${isCamera} THEN 0 ELSE 1 END, ${a}id DESC`;
+  }
+}
+
 // Asset queries
 const queries = {
   // Get all assets with optional search & filter
@@ -250,7 +290,7 @@ const queries = {
     let sql = `
       SELECT a.*, 
              (SELECT COUNT(*) FROM asset_photos p WHERE p.asset_id = a.id) as photo_count,
-             (SELECT p.file_name FROM asset_photos p WHERE p.asset_id = a.id ORDER BY CASE WHEN p.file_name LIKE 'asset_%' OR p.file_name LIKE 'photo_%' THEN 0 ELSE 1 END, p.id ASC LIMIT 1) as primary_photo
+             (SELECT p.file_name FROM asset_photos p WHERE p.asset_id = a.id ORDER BY ${photoOrderSql('p')} LIMIT 1) as primary_photo
       FROM assets a
       WHERE 1=1
     `;
@@ -291,7 +331,7 @@ const queries = {
   getAssetById(id) {
     const asset = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!asset) return null;
-    const photos = db.prepare(`SELECT * FROM asset_photos WHERE asset_id = ? ORDER BY CASE WHEN file_name LIKE 'asset_%' OR file_name LIKE 'photo_%' THEN 0 ELSE 1 END, id ASC`).all(id);
+    const photos = db.prepare(`SELECT * FROM asset_photos WHERE asset_id = ? ORDER BY ${photoOrderSql()}`).all(id);
     return { ...asset, photos };
   },
 
@@ -746,6 +786,23 @@ const queries = {
     return photoId;
   },
 
+  // Mark one photo as the cover image of its asset (clears the flag on the others)
+  setPrimaryPhoto(photoId) {
+    const photo = db.prepare('SELECT id, asset_id FROM asset_photos WHERE id = ?').get(photoId);
+    if (!photo) return false;
+    db.exec('BEGIN');
+    try {
+      db.prepare('UPDATE asset_photos SET is_primary = 0 WHERE asset_id = ?').run(photo.asset_id);
+      db.prepare('UPDATE asset_photos SET is_primary = 1 WHERE id = ?').run(photoId);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    scheduleBackup();
+    return true;
+  },
+
   deletePhoto(photoId) {
     const photo = db.prepare('SELECT * FROM asset_photos WHERE id = ?').get(photoId);
     if (!photo) return false;
@@ -928,7 +985,24 @@ const queries = {
       return rows.map(r => r.val).filter(Boolean);
     };
 
+    // Recent models grouped by category so the add/edit forms can suggest
+    // only monitors when "Monitor" is selected, only PCs for a case, etc.
+    const modelRows = db.prepare(`
+      SELECT category, manufacturer_model as val, MAX(updated_at) as last_used
+      FROM assets
+      WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != ''
+      GROUP BY category, manufacturer_model
+      ORDER BY last_used DESC
+    `).all();
+    const modelsByCategory = {};
+    for (const r of modelRows) {
+      const cat = r.category || 'Other';
+      if (!modelsByCategory[cat]) modelsByCategory[cat] = [];
+      if (modelsByCategory[cat].length < 20) modelsByCategory[cat].push(r.val);
+    }
+
     return {
+      models_by_category: modelsByCategory,
       models: getDistinct('manufacturer_model'),
       cpus: getDistinct('cpu'),
       rams: getDistinct('ram'),

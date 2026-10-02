@@ -42,10 +42,10 @@
               🤖 اسکن خودکار شبکه
             </span>
           </div>
-          <h1 id="asset-heading" style="font-size: 1.7rem; font-weight: 800;">HP EliteDesk 800 G3</h1>
+          <h1 id="asset-heading" style="font-size: clamp(1.25rem, 4.5vw, 1.7rem); font-weight: 800; overflow-wrap: anywhere;">HP EliteDesk 800 G3</h1>
         </div>
 
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <div class="detail-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm viewer-hide">
             📷 <span data-i18n="btn_snap">عکس گرفتن / آپلود</span>
           </button>
@@ -65,7 +65,7 @@
       <input type="file" id="photo-upload-input" accept="image/*" capture="environment" style="display:none;" onchange="uploadDevicePhoto(event)">
 
       <!-- Layout: 2 Columns (Specs & Photos) -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; align-items: start;">
+      <div class="detail-grid">
         
         <!-- Left: Specifications -->
         <div class="form-card" style="margin: 0; max-width: 100%;">
@@ -99,21 +99,21 @@
         </div>
 
         <!-- Right: Photo Gallery & Sticker Preview -->
-        <div>
+        <div class="detail-photos">
           <!-- Photo Gallery Card -->
           <div class="form-card" style="margin: 0; max-width: 100%; margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
               <h3 style="font-size: 1.25rem; color: #60a5fa; display: flex; align-items: center; gap: 0.5rem;">
                 <span>📷</span> <span data-i18n="tab_photos">تصاویر دستگاه</span> (<span id="photo-count-badge">0</span>)
               </h3>
-              <div style="display: flex; gap: 0.4rem;">
-                <button onclick="openPhotoLibraryModal()" class="btn btn-secondary btn-sm" title="انتخاب و استفاده از عکس‌های موجود در آرشیو اموال">
+              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                <button onclick="openPhotoLibraryModal()" class="btn btn-secondary btn-sm viewer-hide" title="انتخاب و استفاده از عکس‌های موجود در آرشیو اموال">
                   🖼️ <span data-i18n="btn_use_existing_photo">استفاده از عکس موجود</span>
                 </button>
-                <button id="fetch-stock-btn" onclick="fetchStockPhotoForCurrentAsset()" class="btn btn-secondary btn-sm" title="دریافت عکس استوک تمیز و باکیفیت مدل از اینترنت">
+                <button id="fetch-stock-btn" onclick="fetchStockPhotoForCurrentAsset()" class="btn btn-secondary btn-sm viewer-hide" title="دریافت عکس استوک تمیز و باکیفیت مدل از اینترنت">
                   🌐 <span>عکس رسمی مدل</span>
                 </button>
-                <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm">
+                <button onclick="document.getElementById('photo-upload-input').click()" class="btn btn-primary btn-sm viewer-hide">
                   ➕ <span data-i18n="btn_add_photo">افزودن عکس</span>
                 </button>
               </div>
@@ -121,6 +121,7 @@
 
             <div id="ai-extract-status" style="margin-bottom: 0.75rem; font-size: 0.9rem; display: none;"></div>
 
+            <div id="photo-cover" class="photo-cover" style="display: none;"></div>
             <div id="photo-gallery" class="photo-gallery"></div>
             <div id="no-photos-msg" style="text-align: center; padding: 2rem; color: var(--text-dim); display: none;">
               هیچ تصویری ثبت نشده است. روی دکمه <strong>افزودن عکس</strong> بزنید تا با دوربین گوشی عکس بگیرید!
@@ -424,28 +425,84 @@
         });
       }
 
+      // Mark spec rows without a value (hidden on phones to keep the page short)
+      document.querySelectorAll('.specs-table tr').forEach(tr => {
+        const v = tr.querySelector('.val-col');
+        const txt = v ? v.textContent.trim() : '';
+        tr.classList.toggle('row-empty', !txt || txt === '-');
+      });
+
       // Photos
       renderPhotos(a.photos || []);
     }
 
+    // A photo taken with the phone camera / uploaded by a user (vs. stock / catalog image)
+    function isCameraPhoto(p) {
+      const n = String(p.file_name || '');
+      return n.startsWith('asset_') || n.startsWith('photo_');
+    }
+
+    // photos arrive already sorted by the server: index 0 is the cover photo
     function renderPhotos(photos) {
       const container = document.getElementById('photo-gallery');
+      const cover = document.getElementById('photo-cover');
       const emptyMsg = document.getElementById('no-photos-msg');
       document.getElementById('photo-count-badge').textContent = photos.length;
 
       if (!photos || photos.length === 0) {
         container.innerHTML = '';
+        cover.innerHTML = '';
+        cover.style.display = 'none';
         emptyMsg.style.display = 'block';
         return;
       }
 
       emptyMsg.style.display = 'none';
-      container.innerHTML = photos.map(p => `
-        <div class="photo-thumb">
-          <img src="/uploads/${p.file_name}" alt="${escapeHtml(p.caption || 'Photo')}" onclick="openLightbox('/uploads/${p.file_name}')">
-          <button type="button" class="photo-delete-btn" onclick="deletePhoto(${p.id})">&times;</button>
-        </div>
-      `).join('');
+      const admin = isAdmin();
+      const lbl = (fa, en) => (typeof CURRENT_LANG !== 'undefined' && CURRENT_LANG === 'en') ? en : fa;
+
+      const first = photos[0];
+      const firstUrl = `/uploads/${encodeURIComponent(first.file_name)}`;
+      cover.style.display = 'block';
+      cover.innerHTML = `
+        <img src="${firstUrl}" alt="${escapeHtml(first.caption || 'Photo')}" onclick="openLightbox('${firstUrl}')">
+        <div class="photo-badges">
+          <span class="photo-badge badge-cover">⭐ ${lbl('عکس اصلی', 'Cover')}</span>
+          ${isCameraPhoto(first) ? `<span class="photo-badge badge-camera">📱 ${lbl('عکس گوشی', 'Phone photo')}</span>` : `<span class="photo-badge">🌐 ${lbl('عکس کاتالوگ', 'Catalog')}</span>`}
+        </div>`;
+
+      // Thumbnails (only needed when there's more than one photo)
+      if (photos.length === 1) {
+        container.innerHTML = admin ? `
+          <div style="display:flex; justify-content:flex-end;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="deletePhoto(${first.id})">🗑️ ${lbl('حذف عکس', 'Delete photo')}</button>
+          </div>` : '';
+        return;
+      }
+
+      container.innerHTML = photos.map((p, i) => {
+        const url = `/uploads/${encodeURIComponent(p.file_name)}`;
+        return `
+        <div class="photo-thumb ${i === 0 ? 'is-cover' : ''}">
+          <img src="${url}" alt="${escapeHtml(p.caption || 'Photo')}" loading="lazy" onclick="openLightbox('${url}')">
+          ${admin ? `<button type="button" class="photo-delete-btn" onclick="deletePhoto(${p.id})" title="${lbl('حذف', 'Delete')}">&times;</button>` : ''}
+          ${admin && i !== 0 ? `<button type="button" class="photo-cover-btn" onclick="setCoverPhoto(${p.id})" title="${lbl('انتخاب به‌عنوان عکس اصلی', 'Set as cover')}">⭐</button>` : ''}
+          <div class="photo-badges">
+            ${i === 0 ? `<span class="photo-badge badge-cover">⭐</span>` : ''}
+            ${isCameraPhoto(p) ? `<span class="photo-badge badge-camera">📱</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function setCoverPhoto(photoId) {
+      try {
+        const res = await fetch(`/api/photos/${photoId}/primary`, { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await loadAssetDetails();
+      } catch (e) {
+        alert('خطا در انتخاب عکس اصلی: ' + e.message);
+      }
     }
 
     async function fetchStockPhotoForCurrentAsset() {
@@ -601,6 +658,7 @@
       if (!currentAsset) return;
       document.getElementById('edit-property-id').value = currentAsset.property_id || '';
       document.getElementById('edit-category').value = currentAsset.category || 'PC';
+      if (window.refreshSmartChips) window.refreshSmartChips();
       document.getElementById('edit-status').value = currentAsset.status || 'active';
       document.getElementById('edit-user').value = currentAsset.user_name || '';
       document.getElementById('edit-comp-name').value = currentAsset.computer_name || '';

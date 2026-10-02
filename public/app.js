@@ -300,7 +300,9 @@ function renderAssets(assets) {
 
   container.innerHTML = assets.map(asset => {
     const hasPhoto = asset.primary_photo;
-    const photoUrl = hasPhoto ? `/uploads/${asset.primary_photo}` : null;
+    const photoUrl = hasPhoto ? `/uploads/${encodeURIComponent(asset.primary_photo)}` : null;
+    // Photos taken with a phone fill the card; catalog images are shown whole
+    const isCameraPhoto = hasPhoto && /^(asset_|photo_)/.test(asset.primary_photo);
     
     // Category Icon
     let catIcon = '🖥️';
@@ -319,7 +321,8 @@ function renderAssets(assets) {
       <div class="asset-card" data-id="${asset.id}">
         <div class="asset-header">
           ${photoUrl ? `
-            <img src="${photoUrl}" alt="${escapeHtml(asset.property_id)}" loading="lazy">
+            <img src="${photoUrl}" alt="${escapeHtml(asset.property_id)}" loading="lazy" class="${isCameraPhoto ? 'is-camera' : 'is-stock'}">
+            ${isCameraPhoto ? `<span class="card-photo-src" title="${getTranslation('photo_priority_camera')}">📱</span>` : ''}
           ` : `
             <div class="no-photo">
               <span class="no-photo-icon">${catIcon}</span>
@@ -582,6 +585,8 @@ async function openSettingsModal() {
       }
       document.getElementById('setting-bale-token').value = s.bale_token || '';
       document.getElementById('setting-bale-chat-id').value = s.bale_chat_id || '';
+      const pp = document.getElementById('setting-photo-priority');
+      if (pp) pp.value = s.photo_priority || 'camera';
     }
   } catch (e) {
     console.error(e);
@@ -614,13 +619,15 @@ async function saveSettings(event) {
         gemini_api_key: geminiKey,
         gemini_model: geminiModel,
         bale_token: baleToken,
-        bale_chat_id: baleChatId
+        bale_chat_id: baleChatId,
+        photo_priority: document.getElementById('setting-photo-priority') ? document.getElementById('setting-photo-priority').value : 'camera'
       })
     });
 
     if (res.ok) {
-      alert('Settings saved successfully!');
+      alert(getTranslation('settings_saved') || 'تنظیمات ذخیره شد.');
       closeSettingsModal();
+      loadAssets();
     } else {
       alert('Failed to save settings');
     }

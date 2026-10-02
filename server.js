@@ -1145,6 +1145,15 @@ Respond ONLY in JSON format:
       }
     }
 
+    // POST /api/photos/:id/primary (choose the cover photo of an asset)
+    const photoPrimaryMatch = pathname.match(/^\/api\/photos\/(\d+)\/primary$/);
+    if (method === 'POST' && photoPrimaryMatch) {
+      const photoId = parseInt(photoPrimaryMatch[1], 10);
+      const ok = queries.setPrimaryPhoto(photoId);
+      if (!ok) return sendJson(res, 404, { error: 'Photo not found' });
+      return sendJson(res, 200, { success: true });
+    }
+
     // DELETE /api/photos/:id
     const photoDeleteMatch = pathname.match(/^\/api\/photos\/(\d+)$/);
     if (method === 'DELETE' && photoDeleteMatch) {
