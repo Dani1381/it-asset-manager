@@ -596,6 +596,10 @@ async function openSettingsModal() {
       }
       document.getElementById('setting-bale-token').value = s.bale_token || '';
       document.getElementById('setting-bale-chat-id').value = s.bale_chat_id || '';
+      setInputValue('setting-9router-url', s.nine_router_url || '');
+      setInputValue('setting-9router-key', s.nine_router_key || '');
+      setInputValue('setting-9router-model', s.nine_router_model || '');
+      ['9router', 'gemini'].forEach(p => { const el = document.getElementById(`test-${p}-result`); if (el) { el.textContent = ''; el.className = 'ai-test-result'; } });
       const pp = document.getElementById('setting-photo-priority');
       if (pp) pp.value = s.photo_priority || 'camera';
     }
@@ -631,7 +635,10 @@ async function saveSettings(event) {
         gemini_model: geminiModel,
         bale_token: baleToken,
         bale_chat_id: baleChatId,
-        photo_priority: document.getElementById('setting-photo-priority') ? document.getElementById('setting-photo-priority').value : 'camera'
+        photo_priority: document.getElementById('setting-photo-priority') ? document.getElementById('setting-photo-priority').value : 'camera',
+        nine_router_url: getInputValue('setting-9router-url'),
+        nine_router_key: getInputValue('setting-9router-key'),
+        nine_router_model: getInputValue('setting-9router-model')
       })
     });
 
@@ -1110,3 +1117,54 @@ document.addEventListener('click', (e) => {
   if (menu && !menu.contains(e.target)) closeNavMenu();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNavMenu(); });
+
+
+// -------------------------------------------------------------------------
+// Settings: AI connection tests (uses the values currently typed in the form)
+// -------------------------------------------------------------------------
+function setInputValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+function getInputValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+async function testAiConnection(provider) {
+  const btn = document.getElementById(`test-${provider}-btn`);
+  const out = document.getElementById(`test-${provider}-result`);
+  if (!out) return;
+  const body = provider === 'gemini'
+    ? { provider, key: getInputValue('setting-gemini-key') }
+    : { provider, url: getInputValue('setting-9router-url'), key: getInputValue('setting-9router-key'), model: getInputValue('setting-9router-model') };
+
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ در حال تست...'; }
+  out.className = 'ai-test-result';
+  out.textContent = '';
+
+  try {
+    const res = await fetch('/api/test-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      out.className = 'ai-test-result is-ok';
+      out.textContent = provider === 'gemini'
+        ? `✅ کلید معتبر است (${data.latency_ms}ms)`
+        : `✅ وصل شد — مدل ${data.model}، پاسخ در ${data.latency_ms}ms${data.reply ? ` («${data.reply}»)` : ''}`;
+    } else {
+      out.className = 'ai-test-result is-error';
+      out.textContent = `❌ ${data.error || 'اتصال برقرار نشد'}`;
+    }
+  } catch (e) {
+    out.className = 'ai-test-result is-error';
+    out.textContent = `❌ ${e.message}`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+}

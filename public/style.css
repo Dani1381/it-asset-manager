@@ -1818,3 +1818,11 @@ body.light-mode .btn-settings { color: #3730a3; background: #eef2ff; border-colo
 @media (max-width: 768px) {
   body.rtl .nav-links, .nav-links { -webkit-mask-image: none; mask-image: none; }
 }
+
+/* Settings: AI connection test */
+.ai-test-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.ai-test-result { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.ai-test-result.is-ok { color: #34d399; }
+.ai-test-result.is-error { color: #f87171; }
+body.light-mode .ai-test-result.is-ok { color: #047857; }
+body.light-mode .ai-test-result.is-error { color: #b91c1c; }

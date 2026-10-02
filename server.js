@@ -145,53 +145,62 @@ const MIME_TYPES = {
   '.csv': 'text/csv; charset=utf-8'
 };
 
-// 9Router Gateway Configuration
-const NINE_ROUTER_URL = process.env.NINE_ROUTER_URL || 'http://127.0.0.1:20128/v1/chat/completions';
-// API key comes from the environment only (never commit keys to the repository)
-const NINE_ROUTER_KEY = process.env.DANI_API_KEY || process.env.NINE_ROUTER_KEY || '';
-const NINE_ROUTER_MODEL = process.env.NINE_ROUTER_MODEL || 'opus';
+// 9Router Gateway Configuration (local OpenAI-compatible gateway)
+// Priority: values saved in Settings (admin panel) > environment variables > defaults.
+// The API key is never stored in the repository.
+const NINE_ROUTER_DEFAULT_URL = 'http://127.0.0.1:20128/v1/chat/completions';
 
-// Helper: Call 9Router AI Gateway (OpenAI Compatible)
-async function call9Router(promptText, base64Image = null) {
-  if (!NINE_ROUTER_KEY) {
-    throw new Error('9Router API key is not configured (set the DANI_API_KEY environment variable)');
-  }
-  const content = [];
-  content.push({ type: 'text', text: promptText });
+// Accepts a full endpoint or just the base address (http://host:port or http://host:port/v1)
+function normalizeNineRouterUrl(url) {
+  let u = String(url || '').trim();
+  if (!u) return NINE_ROUTER_DEFAULT_URL;
+  if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+  u = u.replace(/\/+$/, '');
+  if (/\/chat\/completions$/i.test(u)) return u;
+  if (/\/v1$/i.test(u)) return u + '/chat/completions';
+  return u + '/v1/chat/completions';
+}
 
-  if (base64Image) {
-    let fullDataUrl = base64Image;
-    if (!base64Image.startsWith('data:')) {
-      fullDataUrl = `data:image/jpeg;base64,${base64Image}`;
-    }
-    content.push({
-      type: 'image_url',
-      image_url: { url: fullDataUrl }
-    });
-  }
-
-  const payload = {
-    model: NINE_ROUTER_MODEL,
-    messages: [
-      {
-        role: 'user',
-        content: content
-      }
-    ]
+function getNineRouterConfig(overrides = {}) {
+  const s = queries.getSettings();
+  return {
+    url: normalizeNineRouterUrl(overrides.url || s.nine_router_url || process.env.NINE_ROUTER_URL || NINE_ROUTER_DEFAULT_URL),
+    key: String(overrides.key || s.nine_router_key || process.env.DANI_API_KEY || process.env.NINE_ROUTER_KEY || '').trim(),
+    model: String(overrides.model || s.nine_router_model || process.env.NINE_ROUTER_MODEL || 'opus').trim()
   };
+}
 
-  const res = await fetch(NINE_ROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${NINE_ROUTER_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
+// Low-level request: returns the assistant's text (handles JSON and SSE replies)
+async function nineRouterChat(messages, cfg, { timeoutMs = 120000, maxTokens } = {}) {
+  if (!cfg.key) {
+    throw new Error('9Router API key is not set (Settings → AI / 9Router)');
+  }
+  const payload = { model: cfg.model, messages };
+  if (maxTokens) payload.max_tokens = maxTokens;
+
+  let res;
+  try {
+    res = await fetch(cfg.url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (err) {
+    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error(`9Router did not answer within ${Math.round(timeoutMs / 1000)}s (${cfg.url})`);
+    }
+    const code = err && err.cause && err.cause.code ? ` [${err.cause.code}]` : '';
+    throw new Error(`Cannot reach 9Router at ${cfg.url}${code} — is it running?`);
+  }
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`9Router error ${res.status}: ${errText.slice(0, 150)}`);
+    const hint = res.status === 401 || res.status === 403 ? ' (API key rejected)' : '';
+    throw new Error(`9Router error ${res.status}${hint}: ${errText.slice(0, 150)}`);
   }
 
   const raw = await res.text();
@@ -199,13 +208,11 @@ async function call9Router(promptText, base64Image = null) {
 
   // Handle SSE streaming or standard JSON response
   if (raw.includes('data:')) {
-    const lines = raw.split('\n');
-    for (const line of lines) {
+    for (const line of raw.split('\n')) {
       if (line.startsWith('data: ') && !line.includes('[DONE]')) {
         try {
           const chunk = JSON.parse(line.slice(6));
-          const delta = chunk.choices?.[0]?.delta?.content || '';
-          fullText += delta;
+          fullText += chunk.choices?.[0]?.delta?.content || '';
         } catch {}
       }
     }
@@ -217,6 +224,19 @@ async function call9Router(promptText, base64Image = null) {
       fullText = raw;
     }
   }
+  return fullText;
+}
+
+// Helper: Call 9Router AI Gateway and parse a JSON answer
+async function call9Router(promptText, base64Image = null) {
+  const content = [{ type: 'text', text: promptText }];
+
+  if (base64Image) {
+    const fullDataUrl = base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
+    content.push({ type: 'image_url', image_url: { url: fullDataUrl } });
+  }
+
+  const fullText = await nineRouterChat([{ role: 'user', content }], getNineRouterConfig());
 
   const cleanJson = fullText.replace(/```json/gi, '').replace(/```/g, '').trim();
   const firstBrace = cleanJson.indexOf('{');
@@ -225,6 +245,45 @@ async function call9Router(promptText, base64Image = null) {
     return JSON.parse(cleanJson.substring(firstBrace, lastBrace + 1));
   }
   return JSON.parse(cleanJson);
+}
+
+// Connection tests for the Settings panel
+async function testNineRouter(overrides) {
+  const cfg = getNineRouterConfig(overrides);
+  const started = Date.now();
+  const reply = await nineRouterChat(
+    [{ role: 'user', content: 'Connection test. Reply with exactly: OK' }],
+    cfg,
+    { timeoutMs: 25000, maxTokens: 10 }
+  );
+  return {
+    ok: true,
+    provider: '9router',
+    url: cfg.url,
+    model: cfg.model,
+    latency_ms: Date.now() - started,
+    reply: String(reply || '').trim().slice(0, 60)
+  };
+}
+
+async function testGeminiKey(key) {
+  const k = String(key || queries.getSettings().gemini_api_key || '').trim();
+  if (!k) throw new Error('Gemini API key is empty');
+  const started = Date.now();
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(k)}`, {
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch (err) {
+    throw new Error('Cannot reach Google (generativelanguage.googleapis.com) from this server');
+  }
+  if (!res.ok) {
+    let msg = '';
+    try { msg = (await res.json()).error?.message || ''; } catch {}
+    throw new Error(`Gemini rejected the key (${res.status})${msg ? ': ' + msg.slice(0, 120) : ''}`);
+  }
+  return { ok: true, provider: 'gemini', latency_ms: Date.now() - started };
 }
 
 // Call 9Router AI to extract specs from photo
@@ -1353,7 +1412,7 @@ Respond ONLY in JSON format:
     // POST /api/settings
     if (method === 'POST' && pathname === '/api/settings') {
       const raw = await parseRequestBody(req);
-      const ALLOWED_SETTINGS = ['company_name', 'asset_tag_prefix', 'bale_token', 'bale_chat_id', 'gemini_api_key', 'gemini_model', 'photo_priority'];
+      const ALLOWED_SETTINGS = ['company_name', 'asset_tag_prefix', 'bale_token', 'bale_chat_id', 'gemini_api_key', 'gemini_model', 'photo_priority', 'nine_router_url', 'nine_router_key', 'nine_router_model'];
       const data = {};
       for (const k of ALLOWED_SETTINGS) if (raw[k] !== undefined && raw[k] !== null) data[k] = String(raw[k]).slice(0, 500);
       if (data.photo_priority && !['camera', 'newest', 'stock'].includes(data.photo_priority)) delete data.photo_priority;
@@ -1459,6 +1518,22 @@ Respond ONLY in JSON format:
       }
       const ok = queries.deleteUser(userId);
       return sendJson(res, 200, { success: ok, message: 'کاربر حذف شد.' });
+    }
+
+    // POST /api/test-ai  { provider: '9router' | 'gemini', url?, key?, model? }
+    // Tests the values typed in the Settings form (or the saved ones when empty)
+    if (method === 'POST' && pathname === '/api/test-ai') {
+      const data = await parseRequestBody(req);
+      try {
+        const result = data.provider === 'gemini'
+          ? await testGeminiKey(data.key)
+          : await testNineRouter({ url: data.url, key: data.key, model: data.model });
+        queries.addLog('SUCCESS', 'AI_TEST', `تست اتصال ${result.provider} موفق بود (${result.latency_ms}ms)`);
+        return sendJson(res, 200, result);
+      } catch (err) {
+        queries.addLog('WARN', 'AI_TEST', `تست اتصال ${data.provider === 'gemini' ? 'Gemini' : '9Router'} ناموفق بود`, err.message);
+        return sendJson(res, 200, { ok: false, provider: data.provider || '9router', error: err.message });
+      }
     }
 
     // POST /api/test-bale

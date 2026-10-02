@@ -133,7 +133,7 @@ Click the **⚙️ Settings** icon in the dashboard to set:
 - **Roles:** `viewer` accounts are read-only. Changing data, and reading settings, users, logs, backups and scanner downloads, is admin-only.
 - **Default accounts:** `admin / admin` and `viewer / 123`. A red banner is shown to admins until the admin password is changed — change it before exposing the server to the internet.
 - **Scanners** authenticate with a random scanner key that is embedded automatically when an admin downloads `AssetScanner.bat` / `asset-scanner.sh`. Scanners downloaded before this version must be downloaded again. Setting the `SITE_PASSWORD` environment variable adds a second accepted scanner key.
-- **AI gateway key:** set `DANI_API_KEY` (or `NINE_ROUTER_KEY`) in the environment; no key is stored in the code.
+- **AI gateway (9Router):** set the address, API key and model in **Settings → 9Router** and press **Test connection**. Values are stored only in the server database (environment variables `NINE_ROUTER_URL`, `DANI_API_KEY`, `NINE_ROUTER_MODEL` are used as fallback); no key is stored in the code.
 - Failed logins are rate-limited (10 attempts per 15 minutes per IP).
 
 ## 📁 Project Structure

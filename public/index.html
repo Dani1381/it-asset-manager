@@ -265,12 +265,44 @@
 
         <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
 
+        <h4 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: #34d399;">🧠 هوش مصنوعی محلی (9Router)</h4>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.85rem;">
+          استخراج مشخصات از عکس و استعلام مدل‌ها از طریق 9Router روی همین سیستم انجام می‌شود. کلید فقط در دیتابیس سرور ذخیره می‌شود و داخل کد نیست.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label">آدرس 9Router</label>
+          <input type="text" id="setting-9router-url" class="form-control" dir="ltr" placeholder="http://127.0.0.1:20128">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label">کلید API (API Key)</label>
+          <input type="password" id="setting-9router-key" class="form-control" dir="ltr" placeholder="sk-..." autocomplete="off">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label">مدل</label>
+          <input type="text" id="setting-9router-model" class="form-control" dir="ltr" placeholder="opus">
+        </div>
+
+        <div class="ai-test-row">
+          <button type="button" class="btn btn-secondary btn-sm" id="test-9router-btn" onclick="testAiConnection('9router')">🔌 تست اتصال 9Router</button>
+          <div id="test-9router-result" class="ai-test-result" aria-live="polite"></div>
+        </div>
+
+        <hr style="border-color: var(--border-color); margin: 1.25rem 0;">
+
         <h4 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: #a78bfa;">✨ <span data-i18n="ai_box_title">هوش مصنوعی جمینای (Gemini AI)</span></h4>
 
         <div class="form-group" style="margin-bottom: 1rem;">
           <label class="form-label" data-i18n="setting_gemini_key">کلید API جمینای (Gemini API Key)</label>
           <input type="password" id="setting-gemini-key" class="form-control" placeholder="AIzaSy...">
           <small style="color: var(--text-dim); font-size: 0.8rem;">کلید رایگان خود را از aistudio.google.com دریافت و اینجا وارد کنید.</small>
+        </div>
+
+        <div class="ai-test-row" style="margin-bottom: 1rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="test-gemini-btn" onclick="testAiConnection('gemini')">🔌 تست کلید Gemini</button>
+          <div id="test-gemini-result" class="ai-test-result" aria-live="polite"></div>
         </div>
 
         <div class="form-group" style="margin-bottom: 1.25rem;">
