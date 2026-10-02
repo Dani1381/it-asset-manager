@@ -1711,3 +1711,110 @@ body.light-mode .disk-level.level-critical { color: #b91c1c; }
 @media (prefers-reduced-motion: reduce) {
   .btn-add-hero, .fab-add { animation: none; }
 }
+
+/* ==========================================================================
+   Navbar: clear Settings button + Tools dropdown
+   ========================================================================== */
+.btn-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e0e7ff;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(129, 140, 248, 0.55);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+.btn-settings:hover { background: rgba(99, 102, 241, 0.32); transform: translateY(-1px); }
+.btn-settings-icon { font-size: 1.15rem; display: inline-block; transition: transform 0.4s ease; }
+.btn-settings:hover .btn-settings-icon { transform: rotate(90deg); }
+body.light-mode .btn-settings { color: #3730a3; background: #eef2ff; border-color: #a5b4fc; }
+
+.nav-menu { position: relative; }
+.nav-menu-btn { font-weight: 700; }
+.nav-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  inset-inline-end: 0;
+  min-width: 240px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 0.4rem;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+}
+.nav-menu-panel[hidden] { display: none; }
+.nav-menu-panel > button,
+.nav-menu-panel > a {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: start;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.nav-menu-panel > button:hover,
+.nav-menu-panel > a:hover,
+.nav-menu-panel > button:focus-visible,
+.nav-menu-panel > a:focus-visible { background: var(--primary-light); outline: none; }
+.nav-menu-sep { height: 1px; background: var(--border-color); margin: 0.3rem 0.4rem; }
+
+@media (max-width: 768px) {
+  /* toolbar now fits on one row: no scrolling / fade needed */
+  .nav-links {
+    overflow: visible;
+    -webkit-mask-image: none;
+            mask-image: none;
+    padding-inline-end: 0;
+    justify-content: space-between;
+  }
+  .btn-settings { padding: 0.45rem 0.85rem; font-size: 0.88rem; }
+  #user-chip-container .user-name-text { max-width: 90px; }
+  .nav-menu-panel {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    min-width: 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 0.6rem 0.6rem calc(0.8rem + env(safe-area-inset-bottom, 0px));
+    z-index: 1100;
+  }
+  .nav-menu-panel > button, .nav-menu-panel > a { padding: 0.8rem 0.9rem; font-size: 1rem; }
+}
+@media (max-width: 768px) {
+  /* backdrop-filter would trap the fixed bottom-sheet menu inside the header */
+  .navbar { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: var(--bg-card-solid); }
+  .nav-links { flex-wrap: wrap; justify-content: flex-start; row-gap: 0.5rem; }
+  #user-chip-container { margin-inline-start: auto; }
+  .nav-menu-backdrop-open::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1050;
+  }
+}
+@media (max-width: 768px) {
+  body.nav-menu-backdrop-open .navbar { z-index: 1100; }
+}
+@media (max-width: 768px) {
+  body.rtl .nav-links, .nav-links { -webkit-mask-image: none; mask-image: none; }
+}

@@ -27,43 +27,54 @@
       <span data-i18n="nav_add">افزودن دستگاه</span>
     </a>
     <div class="nav-links">
-      <button onclick="toggleTheme()" class="btn btn-secondary btn-sm" id="theme-toggle-btn" title="تغییر تم بین تاریک و روشن">
-        <span id="theme-btn-icon">☀️</span>
-      </button>
-      <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
-      
       <button onclick="openPendingScansModal()" class="btn btn-warning btn-sm" id="pending-scans-btn" style="display: none; background: #d97706; color: white; border-color: #f59e0b;" title="سیستم‌ها و مانیتورهای اسکن‌شده در انتظار تایید و تخصیص شماره اموال">
         📥 <span>تایید اسکن‌ها (<span id="pending-badge-count">0</span>)</span>
       </button>
 
-      <button id="nav-users-btn" onclick="openUsersModal()" class="btn btn-secondary btn-sm" title="مدیریت کاربران و دسترسی‌ها" style="display: none;">
-        👥 <span data-i18n="nav_users">کاربران</span>
+      <!-- Settings: always visible, clearly labelled -->
+      <button id="nav-settings-btn" onclick="openSettingsModal()" class="btn btn-settings" title="تنظیمات سیستم، بات بله و هوش مصنوعی">
+        <span class="btn-settings-icon" aria-hidden="true">⚙️</span>
+        <span data-i18n="nav_settings">تنظیمات</span>
       </button>
 
-      <button onclick="openLogsModal()" class="btn btn-secondary btn-sm" title="مشاهده لاگ‌ها و رویدادهای سیستم">
-        📋 <span data-i18n="nav_logs">لاگ‌های سیستم</span>
-      </button>
-      <button onclick="openMobileQrModal()" class="btn btn-secondary btn-sm" title="اسکن با گوشی برای باز کردن پنل دوربین">
-        📱 <span data-i18n="nav_mobile_link">اتصال موبایل</span>
-      </button>
-      <button id="nav-settings-btn" onclick="openSettingsModal()" class="btn btn-secondary btn-sm" title="تنظیمات بات بله و هوش مصنوعی">
-        ⚙️ <span data-i18n="nav_settings">تنظیمات</span>
-      </button>
-      <button id="nav-sync-photos-btn" onclick="syncAllStockPhotos()" class="btn btn-secondary btn-sm" title="دریافت و ست‌کردن خودکار عکس‌های تمیز استوک برای تمام تجهیزات فعال">
-        🌐 <span>عکس‌های استوک</span>
-      </button>
-      <a href="/api/download/scanner" class="btn btn-secondary btn-sm" download title="دانلود اسکنر خودکار برای کلاینت‌های ویندوز">
-        🪟 <span data-i18n="nav_scanner_bat">اسکنر ویندوز (.bat)</span>
-      </a>
-      <a href="/api/download/scanner-linux" class="btn btn-secondary btn-sm" download title="دانلود اسکنر خودکار برای سیستم‌های لینوکس">
-        🐧 <span data-i18n="nav_scanner_sh">اسکنر لینوکس (.sh)</span>
-      </a>
-      <a href="/api/export/csv" class="btn btn-secondary btn-sm" download title="دانلود فایل اکسل اموال">
-        📥 <span data-i18n="nav_csv">خروجی اکسل</span>
-      </a>
-      <a href="/api/backup/db" id="nav-backup-btn" class="btn btn-secondary btn-sm" download title="دانلود نسخه پشتیبان کامل از دیتابیس">
-        💾 <span data-i18n="nav_backup_db">پشتیبان دیتابیس</span>
-      </a>
+      <!-- Everything else lives in one tidy menu -->
+      <div class="nav-menu" id="nav-menu">
+        <button type="button" class="btn btn-secondary btn-sm nav-menu-btn" id="nav-menu-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleNavMenu(event)">
+          ☰ <span data-i18n="nav_tools">ابزارها</span>
+        </button>
+        <div class="nav-menu-panel" id="nav-menu-panel" role="menu" hidden>
+          <button id="nav-users-btn" role="menuitem" onclick="closeNavMenu(); openUsersModal()">
+            👥 <span data-i18n="nav_users">کاربران</span>
+          </button>
+          <button id="nav-logs-btn" role="menuitem" onclick="closeNavMenu(); openLogsModal()">
+            📋 <span data-i18n="nav_logs">لاگ‌های سیستم</span>
+          </button>
+          <button role="menuitem" onclick="closeNavMenu(); openMobileQrModal()">
+            📱 <span data-i18n="nav_mobile_link">اتصال موبایل</span>
+          </button>
+          <button id="nav-sync-photos-btn" role="menuitem" onclick="closeNavMenu(); syncAllStockPhotos()">
+            🌐 <span>عکس‌های استوک</span>
+          </button>
+          <div class="nav-menu-sep"></div>
+          <a id="nav-scanner-win" role="menuitem" href="/api/download/scanner" download>
+            🪟 <span data-i18n="nav_scanner_bat">اسکنر ویندوز (.bat)</span>
+          </a>
+          <a id="nav-scanner-linux" role="menuitem" href="/api/download/scanner-linux" download>
+            🐧 <span data-i18n="nav_scanner_sh">اسکنر لینوکس (.sh)</span>
+          </a>
+          <a role="menuitem" href="/api/export/csv" download>
+            📥 <span data-i18n="nav_csv">خروجی اکسل</span>
+          </a>
+          <a id="nav-backup-btn" role="menuitem" href="/api/backup/db" download>
+            💾 <span data-i18n="nav_backup_db">پشتیبان دیتابیس</span>
+          </a>
+          <div class="nav-menu-sep"></div>
+          <button role="menuitem" onclick="toggleTheme()" id="theme-toggle-btn">
+            <span id="theme-btn-icon">☀️</span> <span data-i18n="nav_theme">تغییر تم روشن / تاریک</span>
+          </button>
+          <button role="menuitem" onclick="toggleLanguage()" id="lang-toggle-btn">English</button>
+        </div>
+      </div>
 
       <!-- Current User Chip & Logout -->
       <div id="user-chip-container" class="asset-user-chip" style="margin-bottom:0; cursor:pointer;" onclick="logoutUser()" title="کلیک برای خروج از حساب">

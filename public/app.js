@@ -43,7 +43,7 @@ function applyRoleUI() {
 
   if (!isAdmin()) {
     // Viewer role: hide admin-only controls
-    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn'];
+    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn', 'nav-logs-btn', 'nav-scanner-win', 'nav-scanner-linux'];
     adminOnly.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
@@ -1081,3 +1081,32 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+
+// -------------------------------------------------------------------------
+// Toolbar "Tools" dropdown
+// -------------------------------------------------------------------------
+function toggleNavMenu(e) {
+  if (e) e.stopPropagation();
+  const panel = document.getElementById('nav-menu-panel');
+  const btn = document.getElementById('nav-menu-btn');
+  if (!panel) return;
+  const open = panel.hasAttribute('hidden');
+  if (open) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('nav-menu-backdrop-open', open);
+}
+
+function closeNavMenu() {
+  const panel = document.getElementById('nav-menu-panel');
+  const btn = document.getElementById('nav-menu-btn');
+  if (panel) panel.setAttribute('hidden', '');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('nav-menu-backdrop-open');
+}
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('nav-menu');
+  if (menu && !menu.contains(e.target)) closeNavMenu();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNavMenu(); });
