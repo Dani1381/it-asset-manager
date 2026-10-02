@@ -210,6 +210,19 @@ function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_pending_scans_status ON pending_scans(status);
 
+    -- Photo intake queue: photos taken now, AI-processed in the background, reviewed and approved later
+    CREATE TABLE IF NOT EXISTS photo_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      photo_files TEXT NOT NULL,
+      form TEXT,
+      result TEXT,
+      error TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
@@ -763,6 +776,61 @@ const queries = {
 
   normalizeModelName(name) {
     return normalizeModelName(name);
+  },
+
+  // ---- Photo intake queue ----
+  createPhotoJob(photoFiles, form, createdBy) {
+    const now = new Date().toISOString();
+    const r = db.prepare('INSERT INTO photo_jobs (status, photo_files, form, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('queued', JSON.stringify(photoFiles), JSON.stringify(form || {}), createdBy || null, now, now);
+    return Number(r.lastInsertRowid);
+  },
+
+  getPhotoJob(id) {
+    const j = db.prepare('SELECT * FROM photo_jobs WHERE id = ?').get(id);
+    if (!j) return null;
+    const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
+    return { ...j, photo_files: parse(j.photo_files, []), form: parse(j.form, {}), result: parse(j.result, null) };
+  },
+
+  listPhotoJobs() {
+    return db.prepare('SELECT id FROM photo_jobs ORDER BY id ASC').all().map(r => queries.getPhotoJob(r.id));
+  },
+
+  updatePhotoJob(id, { status, result, error, photo_files }) {
+    const cur = db.prepare('SELECT * FROM photo_jobs WHERE id = ?').get(id);
+    if (!cur) return false;
+    db.prepare('UPDATE photo_jobs SET status = ?, result = ?, error = ?, photo_files = ?, updated_at = ? WHERE id = ?').run(
+      status ?? cur.status,
+      result !== undefined ? (result === null ? null : JSON.stringify(result)) : cur.result,
+      error !== undefined ? error : cur.error,
+      photo_files !== undefined ? JSON.stringify(photo_files) : cur.photo_files,
+      new Date().toISOString(), id);
+    return true;
+  },
+
+  deletePhotoJob(id) {
+    return db.prepare('DELETE FROM photo_jobs WHERE id = ?').run(id).changes > 0;
+  },
+
+  nextQueuedPhotoJob() {
+    const r = db.prepare("SELECT id FROM photo_jobs WHERE status = 'queued' ORDER BY id ASC LIMIT 1").get();
+    return r ? queries.getPhotoJob(r.id) : null;
+  },
+
+  // Jobs that were mid-processing when the server stopped go back in the queue
+  requeueStalePhotoJobs() {
+    db.prepare("UPDATE photo_jobs SET status = 'queued' WHERE status = 'processing'").run();
+  },
+
+  // A queued photo becomes a regular camera photo of the new asset
+  attachQueueFileToAsset(assetId, queueFile, caption = 'Device Photo') {
+    if (!/^queue_[A-Za-z0-9_.-]+$/.test(queueFile)) return null;
+    const src = path.join(__dirname, 'uploads', queueFile);
+    if (!fs.existsSync(src)) return null;
+    const newName = `asset_${assetId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}${path.extname(queueFile) || '.jpg'}`;
+    fs.renameSync(src, path.join(__dirname, 'uploads', newName));
+    return queries.addPhoto(assetId, newName, queueFile, caption);
   },
 
   findAssetBySerial(serial) {

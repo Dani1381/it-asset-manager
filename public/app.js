@@ -1031,6 +1031,18 @@ async function checkPendingScans() {
       }
     }
   } catch (e) {}
+
+  // Photo intake queue counter
+  try {
+    const res = await fetch('/api/photo-jobs');
+    if (!res.ok) return;
+    const { jobs, counts } = await res.json();
+    const qb = document.getElementById('photo-queue-btn');
+    if (qb) {
+      document.getElementById('photo-queue-count').textContent = counts.ready ? `${counts.ready} آماده از ${jobs.length}` : jobs.length;
+      qb.style.display = jobs.length ? 'inline-flex' : 'none';
+    }
+  } catch (e) {}
 }
 
 function openPendingScansModal() {

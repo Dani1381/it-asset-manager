@@ -103,7 +103,7 @@ const PUBLIC_PATHS = new Set(['/login.html', '/login', '/style.css', '/i18n.js',
 // Scanner ingestion: session OR scanner key
 const SCANNER_PATHS = new Set(['/api/scan', '/api/assets/scan']);
 // Sensitive GET endpoints that only admins may read
-const ADMIN_READ_PREFIXES = ['/api/settings', '/api/users', '/api/backup', '/api/logs', '/api/download/', '/api/pending-scans'];
+const ADMIN_READ_PREFIXES = ['/api/settings', '/api/users', '/api/backup', '/api/logs', '/api/download/', '/api/pending-scans', '/api/photo-jobs'];
 
 // Simple in-memory brute-force protection for /api/login
 const loginFailures = new Map(); // ip -> { count, first }
@@ -510,6 +510,51 @@ Return STRICT JSON only:
   const parsed = await call9Router(prompt);
   if (!parsed || typeof parsed !== 'object' || typeof parsed.fields !== 'object') throw new Error('Reconcile answer has no fields');
   return parsed;
+}
+
+// ---------------------------------------------------------------------------
+// Photo intake queue worker: one job at a time, in order. Results wait for review.
+// ---------------------------------------------------------------------------
+let photoQueueBusy = false;
+async function runPhotoQueue() {
+  if (photoQueueBusy) return;
+  photoQueueBusy = true;
+  try {
+    let job;
+    while ((job = queries.nextQueuedPhotoJob())) {
+      queries.updatePhotoJob(job.id, { status: 'processing', error: null });
+      try {
+        const images = job.photo_files.map(f => {
+          const buf = fs.readFileSync(path.join(UPLOADS_DIR, f));
+          return `data:image/jpeg;base64,${buf.toString('base64')}`;
+        });
+        const result = await smartScanPhotos(images, images);
+        queries.updatePhotoJob(job.id, { status: 'ready', result });
+        queries.addLog('SUCCESS', 'PHOTO_QUEUE', `صف عکس #${job.id} پردازش شد`, `مدل: ${result.fields.manufacturer_model || '-'} | اموال: ${result.fields.property_id || '-'}`);
+      } catch (err) {
+        queries.updatePhotoJob(job.id, { status: 'failed', error: err.message });
+        queries.addLog('ERROR', 'PHOTO_QUEUE', `پردازش صف عکس #${job.id} ناموفق بود`, err.message);
+      }
+    }
+  } finally {
+    photoQueueBusy = false;
+  }
+}
+
+function savePhotoJobImage(dataUrl, jobKey, index) {
+  const m = String(dataUrl).match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+  if (!m) throw new Error('Invalid image');
+  const ext = m[1] === 'png' ? '.png' : m[1] === 'webp' ? '.webp' : '.jpg';
+  const name = `queue_${jobKey}_${index}${ext}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, name), Buffer.from(m[2], 'base64'));
+  return name;
+}
+
+function removeQueueFiles(files) {
+  for (const f of files || []) {
+    if (!/^queue_[A-Za-z0-9_.-]+$/.test(f)) continue;
+    try { fs.unlinkSync(path.join(UPLOADS_DIR, f)); } catch {}
+  }
 }
 
 // Fill empty spec fields from the online model lookup. Computers: CPU / GPU only (RAM and disks vary per unit).
@@ -1218,6 +1263,67 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { results: queries.searchModels(q, category, 8) });
     }
 
+    // ---- Photo intake queue ----
+    // POST /api/photo-jobs { images: [dataUrl], form: {...fields typed so far} }
+    if (method === 'POST' && pathname === '/api/photo-jobs') {
+      const data = await parseRequestBody(req);
+      const images = (Array.isArray(data.images) ? data.images : []).filter(x => typeof x === 'string' && x.length > 100).slice(0, SMART_SCAN_MAX_IMAGES);
+      if (!images.length) return sendJson(res, 400, { error: 'هیچ عکسی ارسال نشد' });
+      const key = `${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+      let files = [];
+      try {
+        files = images.map((img, i) => savePhotoJobImage(img, key, i + 1));
+      } catch (err) {
+        removeQueueFiles(files);
+        return sendJson(res, 400, { error: 'فرمت عکس نامعتبر است' });
+      }
+      const form = data.form && typeof data.form === 'object' ? data.form : {};
+      const id = queries.createPhotoJob(files, form, sessionUser ? sessionUser.username : null);
+      queries.addLog('INFO', 'PHOTO_QUEUE', `دستگاه با ${files.length} عکس به صف پردازش اضافه شد (#${id})`, '', req.socket?.remoteAddress || '');
+      runPhotoQueue();
+      return sendJson(res, 201, { success: true, id });
+    }
+
+    // GET /api/photo-jobs (all jobs, oldest first)
+    if (method === 'GET' && pathname === '/api/photo-jobs') {
+      const jobs = queries.listPhotoJobs().map(j => ({
+        id: j.id, status: j.status, error: j.error, created_at: j.created_at, created_by: j.created_by,
+        photos: j.photo_files.map(f => `/uploads/${f}`),
+        cover: j.result && j.result.cover_photo ? j.result.cover_photo : 1,
+        model: j.result && j.result.fields ? j.result.fields.manufacturer_model || null : null,
+        category: j.result && j.result.fields ? j.result.fields.category || j.form.category || null : j.form.category || null,
+        property_id: (j.result && j.result.fields && j.result.fields.property_id) || j.form.property_id || null,
+        warnings: j.result && Array.isArray(j.result.warnings) ? j.result.warnings.length : 0
+      }));
+      const counts = jobs.reduce((c, j) => (c[j.status] = (c[j.status] || 0) + 1, c), {});
+      return sendJson(res, 200, { jobs, counts });
+    }
+
+    const photoJobMatch = pathname.match(/^\/api\/photo-jobs\/(\d+)(\/retry)?$/);
+    if (photoJobMatch) {
+      const jobId = parseInt(photoJobMatch[1], 10);
+      const job = queries.getPhotoJob(jobId);
+      if (!job) return sendJson(res, 404, { error: 'این مورد در صف پیدا نشد' });
+
+      // GET /api/photo-jobs/:id (full result for the review form)
+      if (method === 'GET' && !photoJobMatch[2]) {
+        return sendJson(res, 200, { ...job, photos: job.photo_files.map(f => ({ file: f, url: `/uploads/${f}` })) });
+      }
+      // POST /api/photo-jobs/:id/retry
+      if (method === 'POST' && photoJobMatch[2]) {
+        queries.updatePhotoJob(jobId, { status: 'queued', error: null, result: null });
+        runPhotoQueue();
+        return sendJson(res, 200, { success: true });
+      }
+      // DELETE /api/photo-jobs/:id?keep_files=1 (keep_files: photos were moved to the new asset)
+      if (method === 'DELETE' && !photoJobMatch[2]) {
+        if (job.status === 'processing') return sendJson(res, 409, { error: 'این مورد در حال پردازش است؛ کمی صبر کنید.' });
+        if (parsedUrl.searchParams.get('keep_files') !== '1') removeQueueFiles(job.photo_files);
+        queries.deletePhotoJob(jobId);
+        return sendJson(res, 200, { success: true });
+      }
+    }
+
     // POST /api/ai/smart-scan { images: [base64...] } — read every photo, then reconcile all findings
     if (method === 'POST' && pathname === '/api/ai/smart-scan') {
       const data = await parseRequestBody(req);
@@ -1885,6 +1991,12 @@ Respond ONLY in JSON format:
         const data = await parseRequestBody(req);
 
         // Option A: Use existing photo from another asset of same model
+        if (data.queue_file) {
+          const photoId = queries.attachQueueFileToAsset(assetId, String(data.queue_file), data.caption || 'Device Photo');
+          if (!photoId) return sendJson(res, 404, { error: 'Queued photo not found' });
+          return sendJson(res, 201, { success: true, photo: { id: photoId, asset_id: assetId } });
+        }
+
         if (data.existing_photo_id) {
           const photoId = queries.attachExistingPhotoToAsset(assetId, data.existing_photo_id, data.caption || 'Device Photo');
           if (photoId) {
@@ -2257,6 +2369,9 @@ Respond ONLY in JSON format:
 
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
+  // Resume the photo queue (jobs interrupted by a restart start over)
+  queries.requeueStalePhotoJobs();
+  setTimeout(runPhotoQueue, 2000);
   const ips = getLocalIpAddresses();
   console.log(`=======================================================`);
   console.log(`🚀 IT Asset Manager Server is running!`);

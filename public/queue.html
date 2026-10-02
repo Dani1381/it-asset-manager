@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>صف عکس‌ها - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <a href="/add.html" class="btn btn-primary btn-sm">📸 عکس دستگاه بعدی</a>
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container" style="max-width: 960px;">
+    <div class="queue-head">
+      <h2>📸 صف پردازش عکس‌ها</h2>
+      <p id="queue-summary" class="queue-summary">در حال بارگذاری...</p>
+      <p class="queue-help">در صفحه ثبت دستگاه، بعد از گرفتن عکس‌ها «بفرست به صف» را بزنید و سراغ دستگاه بعدی بروید.
+        هوش مصنوعی عکس‌ها را به ترتیب پردازش می‌کند؛ هر مورد که «آماده تأیید» شد، بازش کنید، نتیجه را چک کنید و ثبت کنید.</p>
+      <button type="button" id="review-next-btn" class="btn btn-success" hidden onclick="reviewNext()">✅ بررسی و تأیید موارد آماده (یکی‌یکی)</button>
+    </div>
+    <div id="queue-list" class="queue-list"></div>
+  </main>
+
+  <script>
+    try {
+      const u = JSON.parse(localStorage.getItem('arka_user') || 'null');
+      if (!u) location.href = '/login.html';
+      else if (!u.is_admin) { alert('این صفحه فقط برای مدیر سیستم است.'); location.href = '/'; }
+    } catch (e) { location.href = '/login.html'; }
+
+    const STATUS = {
+      queued:     { label: '⏳ در صف', cls: 'is-queued' },
+      processing: { label: '🤖 در حال پردازش...', cls: 'is-processing' },
+      ready:      { label: '✅ آماده تأیید', cls: 'is-ready' },
+      failed:     { label: '⚠️ خطا', cls: 'is-failed' }
+    };
+    let jobs = [];
+    let timer = null;
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/photo-jobs');
+        if (res.status === 401) { location.href = '/login.html'; return; }
+        const data = await res.json();
+        jobs = data.jobs || [];
+        render(data.counts || {});
+      } catch (e) {
+        document.getElementById('queue-summary').textContent = 'خطا در دریافت صف';
+      }
+      clearTimeout(timer);
+      // Keep refreshing while something is still being processed
+      if (jobs.some(j => j.status === 'queued' || j.status === 'processing')) timer = setTimeout(load, 4000);
+    }
+
+    function render(counts) {
+      const total = jobs.length;
+      document.getElementById('queue-summary').textContent = total
+        ? `${total} دستگاه در صف — ${counts.ready || 0} آماده تأیید، ${(counts.queued || 0) + (counts.processing || 0)} در حال پردازش` + (counts.failed ? `، ${counts.failed} خطا` : '')
+        : 'صف خالی است.';
+      document.getElementById('review-next-btn').hidden = !counts.ready;
+      const list = document.getElementById('queue-list');
+      if (!total) {
+        list.innerHTML = `<div class="queue-empty">📭 چیزی در صف نیست. <a href="/add.html">از دستگاه عکس بگیرید</a> و «بفرست به صف» را بزنید.</div>`;
+        return;
+      }
+      list.innerHTML = jobs.map(j => {
+        const st = STATUS[j.status] || { label: j.status, cls: '' };
+        const cover = j.photos[(j.cover || 1) - 1] || j.photos[0];
+        const title = j.model || (j.status === 'ready' ? 'مدل شناسایی نشد' : 'در انتظار تشخیص مدل');
+        return `
+          <div class="queue-card ${st.cls}">
+            <img class="queue-thumb" src="${esc(cover)}" alt="" loading="lazy">
+            <div class="queue-info">
+              <div class="queue-title">#${j.id} · ${esc(title)}</div>
+              <div class="queue-meta">
+                ${j.category ? `${categoryIcon(j.category)} ${esc(categoryLabel(j.category))} · ` : ''}
+                ${j.property_id ? `🏷️ ${esc(j.property_id)} · ` : ''}
+                📷 ${j.photos.length} عکس
+                ${j.warnings ? ` · <span class="queue-warn">⚠️ ${j.warnings} نکته برای بررسی</span>` : ''}
+              </div>
+              ${j.status === 'failed' ? `<div class="queue-error">${esc(j.error || '')}</div>` : ''}
+              <span class="queue-status">${st.label}</span>
+            </div>
+            <div class="queue-actions">
+              ${j.status === 'ready' ? `<a class="btn btn-success btn-sm" href="/add.html?job=${j.id}">بررسی و تأیید</a>` : ''}
+              ${j.status === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="retry(${j.id})">🔄 دوباره</button>
+                                         <a class="btn btn-secondary btn-sm" href="/add.html?job=${j.id}">تکمیل دستی</a>` : ''}
+              ${j.status !== 'processing' ? `<button class="btn btn-danger btn-sm" onclick="removeJob(${j.id})">🗑️</button>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function reviewNext() {
+      const next = jobs.find(j => j.status === 'ready');
+      if (next) location.href = `/add.html?job=${next.id}`;
+    }
+
+    async function retry(id) {
+      await fetch(`/api/photo-jobs/${id}/retry`, { method: 'POST' });
+      load();
+    }
+
+    async function removeJob(id) {
+      if (!confirm(`مورد #${id} و عکس‌هایش از صف حذف شود؟`)) return;
+      const res = await fetch(`/api/photo-jobs/${id}`, { method: 'DELETE' });
+      if (!res.ok) alert((await res.json().catch(() => ({}))).error || 'حذف نشد');
+      load();
+    }
+
+    load();
+  </script>
+</body>
+</html>

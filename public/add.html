@@ -113,6 +113,7 @@
       <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
     </a>
     <div class="nav-links">
+      <a href="/queue.html" id="queue-link" class="btn btn-sm btn-secondary queue-link" hidden>📸 صف عکس‌ها</a>
       <button onclick="toggleLanguage()" class="btn btn-sm btn-lang" id="lang-toggle-btn">English</button>
       <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
     </div>
@@ -120,7 +121,11 @@
 
   <main class="container" style="max-width: 800px;">
     <div class="form-card">
-      
+      <div id="review-banner" class="review-banner" hidden>
+        <span id="review-banner-text"></span>
+        <a href="/queue.html" class="btn btn-secondary btn-sm">↩ بازگشت به صف</a>
+      </div>
+
       <!-- Wizard Progress Indicators -->
       <div class="wizard-steps">
         <div class="wizard-step-item active" id="step-nav-1" onclick="goToStep(1)">
@@ -162,6 +167,9 @@
             <div id="ai-scan-box" style="display: none; margin-top: 0.85rem;">
               <button type="button" id="ai-scan-btn" class="btn btn-ai btn-sm" onclick="aiScanPhotos()" style="width: 100%;">
                 ✨ اسکن هوشمند عکس با هوش مصنوعی (پر کردن فرم)
+              </button>
+              <button type="button" id="queue-btn" class="btn btn-secondary btn-sm" onclick="queueCurrentDevice()" style="width: 100%; margin-top: 0.5rem;">
+                📥 بفرست به صف پردازش و دستگاه بعدی
               </button>
               <div id="ai-status" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>
             </div>
@@ -439,11 +447,18 @@
       const healthInput = document.getElementById('health');
       const healthHint = document.getElementById('health-hint');
       const setHealth = buildHealthPicker(document.getElementById('health-picker'), healthInput);
+      window.__setHealth = v => { setHealth(v); showHint(); };
+      catSelect.addEventListener('change', e => { if (e.isTrusted) categoryTouched = true; });
       const showHint = () => { healthHint.textContent = findHealth(healthInput.value).hint; };
       document.getElementById('health-picker').addEventListener('click', showHint);
       setHealth('initial_ok');
       showHint();
+
+      refreshQueueCount();
+      const jobParam = new URLSearchParams(location.search).get('job');
+      if (jobParam) loadReviewJob(parseInt(jobParam, 10));
     });
+    let categoryTouched = false;
 
     // Show the clean, database-consistent spelling as soon as the field is left
     async function normalizeModelInput(input) {
@@ -669,7 +684,7 @@
 
       container.innerHTML = pendingPhotos.map((p, idx) => `
         <div class="photo-thumb${p.isCover ? ' is-cover' : ''}">
-          <img src="${p.isExisting ? p.previewUrl : p.base64}" alt="${escapeHtml(p.original_name)}">
+          <img src="${p.previewUrl || p.base64}" alt="${escapeHtml(p.original_name)}">
           <button type="button" class="photo-delete-btn" onclick="removePendingPhoto(${idx})">&times;</button>
           <button type="button" class="photo-cover-btn" onclick="setCoverPhoto(${idx}, true)" title="عکس اصلی (کاور) دستگاه">${p.isCover ? '⭐ کاور' : '☆'}</button>
         </div>
@@ -749,8 +764,8 @@
       btn.disabled = true;
       btn.textContent = `⏳ در حال خواندن ${fullImages.length} عکس...`;
       status.style.color = '#a78bfa';
-      status.textContent = 'هوش مصنوعی همه عکس‌ها را با هم می‌خواند و هر داده را در فیلد درستش می‌گذارد.';
-      const stageTimer = setTimeout(() => { btn.textContent = '⏳ بررسی دقیق‌تر برچسب‌ها...'; }, 25000);
+      status.textContent = 'هوش مصنوعی همه عکس‌ها را با هم می‌خواند، هر داده را در فیلد درستش می‌گذارد و مشخصات مدل را از اینترنت می‌گیرد.';
+      const stageTimer = setTimeout(() => { btn.textContent = '⏳ گرفتن مشخصات مدل...'; }, 25000);
 
       try {
         // Smaller copies are enough for reading and much faster; the originals are only used to re-read unclear labels
@@ -762,70 +777,7 @@
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'تحلیل عکس‌ها با خطا مواجه شد');
-
-        let coverNote = '';
-        const coverItem = data.cover_photo ? scanned[data.cover_photo - 1] : null;
-        if (coverItem && !coverChosenByHand && pendingPhotos.length > 1) {
-          setCoverPhoto(pendingPhotos.indexOf(coverItem), false);
-          coverNote = `عکس ${data.cover_photo} (نمای کامل دستگاه) به‌عنوان کاور انتخاب شد`;
-        }
-
-        const filled = [], conflicts = [];
-        scanConflicts = {};
-        // Category first, so category-dependent suggestions run against the right type
-        const order = ['category', ...Object.keys(SCAN_FIELD_META).filter(f => f !== 'category')];
-        for (const f of order) {
-          const v = data.fields[f];
-          if (!v) continue;
-          const cur = currentFieldValue(f);
-          if (!cur) {
-            if (setFormField(f, v)) filled.push(f);
-          } else if (cur.toLowerCase() !== String(v).toLowerCase()) {
-            scanConflicts[f] = v;
-            conflicts.push(f);
-          }
-        }
-        if (data.notes) {
-          const notesEl = document.getElementById('notes');
-          if (!notesEl.value.includes(data.notes)) notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `🤖 ${data.notes}`;
-        }
-        if (filled.includes('manufacturer_model') || filled.includes('category')) { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }
-        if (filled.includes('serial_number')) checkSerialDuplicate();
-
-        const src = f => {
-          const s = data.sources && data.sources[f];
-          if (s === 'internet') return '<span class="scan-src">(از مشخصات اینترنتی مدل)</span>';
-          return Array.isArray(s) && s.length ? `<span class="scan-src">(عکس ${s.join('، ')})</span>` : '';
-        };
-        const low = f => data.confidence && data.confidence[f] === 'low' && data.sources?.[f] !== 'internet' ? '<span class="scan-conf-low">⚠️ مطمئن نیست</span>' : '';
-        const valueText = (f, v) => f === 'category' ? categoryLabel(v) : v;
-
-        let html = `<div class="scan-report">`;
-        html += `<div class="scan-section"><h4>✅ ${filled.length} فیلد پر شد</h4><ul>` +
-          (filled.length ? filled.map(f => `<li><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}${low(f)}</li>`).join('')
-                         : '<li>فیلد خالی جدیدی پیدا نشد.</li>') + `</ul></div>`;
-        if (conflicts.length) {
-          html += `<div class="scan-section"><h4>✏️ با مقدار فعلی فرم فرق دارد</h4><ul>` +
-            conflicts.map(f => `<li data-conflict="${f}"><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}
-              <button type="button" class="btn btn-secondary btn-sm" onclick="applyScanConflict('${f}')">جایگزین کن</button></li>`).join('') + `</ul></div>`;
-        }
-        if (data.warnings && data.warnings.length) {
-          html += `<div class="scan-section"><h4>⚠️ نیاز به بررسی</h4><ul>` +
-            data.warnings.map(w => `<li class="scan-warn">${escapeHtml(w)}</li>`).join('') + `</ul></div>`;
-        }
-        const photos = data.photos || [];
-        const failed = photos.filter(p => !p.ok);
-        const meta = [`${photos.length - failed.length} از ${photos.length} عکس خوانده شد`];
-        if (coverNote) meta.push(coverNote);
-        if (data.matched_model) meta.push(`مدل با «${data.matched_model.model}» در انبار تطبیق داده شد`);
-        if (data.damage_seen) meta.push('آسیب ظاهری دیده شد (در توضیحات آمده؛ وضعیت سلامت را خودتان تعیین کنید)');
-        if (data.refined && data.refined.length) meta.push(`${data.refined.map(f => SCAN_FIELD_META[f]).join(' و ')} با کیفیت کامل دوباره خوانده شد`);
-        if (data.stage2 === 'local') meta.push('جمع‌بندی با رأی اکثریت انجام شد');
-        if (data.elapsed_ms) meta.push(`${Math.round(data.elapsed_ms / 1000)} ثانیه`);
-        html += `<div class="scan-section scan-src">${meta.map(escapeHtml).join(' · ')}</div></div>`;
-
-        status.style.color = '';
-        status.innerHTML = html;
+        applyScanResult(data, scanned);
       } catch (err) {
         status.style.color = 'var(--danger)';
         status.textContent = `⚠️ اسکن با خطا مواجه شد: ${err.message}`;
@@ -834,6 +786,197 @@
         btn.disabled = false;
         btn.textContent = '✨ اسکن مجدد با هوش مصنوعی';
       }
+    }
+
+    // Puts a smart-scan result into the form and shows the per-field report.
+    // `scanned` = the pending photos in the order they were sent (for the cover pick).
+    function applyScanResult(data, scanned) {
+      const status = document.getElementById('ai-status');
+      document.getElementById('ai-scan-box').style.display = 'block';
+      status.style.display = 'block';
+
+      let coverNote = '';
+      const coverItem = data.cover_photo ? scanned[data.cover_photo - 1] : null;
+      if (coverItem && !coverChosenByHand && pendingPhotos.length > 1) {
+        setCoverPhoto(pendingPhotos.indexOf(coverItem), false);
+        coverNote = `عکس ${data.cover_photo} (نمای کامل دستگاه) به‌عنوان کاور انتخاب شد`;
+      }
+
+      const filled = [], conflicts = [];
+      scanConflicts = {};
+      // Category first, so category-dependent suggestions run against the right type
+      const order = ['category', ...Object.keys(SCAN_FIELD_META).filter(f => f !== 'category')];
+      for (const f of order) {
+        const v = (data.fields || {})[f];
+        if (!v) continue;
+        const cur = currentFieldValue(f);
+        if (!cur) {
+          if (setFormField(f, v)) filled.push(f);
+        } else if (cur.toLowerCase() !== String(v).toLowerCase()) {
+          scanConflicts[f] = v;
+          conflicts.push(f);
+        }
+      }
+      if (data.notes) {
+        const notesEl = document.getElementById('notes');
+        if (!notesEl.value.includes(data.notes)) notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `🤖 ${data.notes}`;
+      }
+      if (filled.includes('manufacturer_model') || filled.includes('category')) { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }
+      if (filled.includes('serial_number')) checkSerialDuplicate();
+
+      const src = f => {
+        const s = data.sources && data.sources[f];
+        if (s === 'internet') return '<span class="scan-src">(از مشخصات اینترنتی مدل)</span>';
+        return Array.isArray(s) && s.length ? `<span class="scan-src">(عکس ${s.join('، ')})</span>` : '';
+      };
+      const low = f => data.confidence && data.confidence[f] === 'low' && data.sources?.[f] !== 'internet' ? '<span class="scan-conf-low">⚠️ مطمئن نیست</span>' : '';
+      const valueText = (f, v) => f === 'category' ? categoryLabel(v) : v;
+
+      let html = `<div class="scan-report">`;
+      html += `<div class="scan-section"><h4>✅ ${filled.length} فیلد پر شد</h4><ul>` +
+        (filled.length ? filled.map(f => `<li><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}${low(f)}</li>`).join('')
+                       : '<li>فیلد خالی جدیدی پیدا نشد.</li>') + `</ul></div>`;
+      if (conflicts.length) {
+        html += `<div class="scan-section"><h4>✏️ با مقدار فعلی فرم فرق دارد</h4><ul>` +
+          conflicts.map(f => `<li data-conflict="${f}"><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="applyScanConflict('${f}')">جایگزین کن</button></li>`).join('') + `</ul></div>`;
+      }
+      if (data.warnings && data.warnings.length) {
+        html += `<div class="scan-section"><h4>⚠️ نیاز به بررسی</h4><ul>` +
+          data.warnings.map(w => `<li class="scan-warn">${escapeHtml(w)}</li>`).join('') + `</ul></div>`;
+      }
+      const photos = data.photos || [];
+      const failed = photos.filter(p => !p.ok);
+      const meta = [`${photos.length - failed.length} از ${photos.length} عکس خوانده شد`];
+      if (coverNote) meta.push(coverNote);
+      if (data.matched_model) meta.push(`مدل با «${data.matched_model.model}» در انبار تطبیق داده شد`);
+      if (data.enriched && data.enriched.length) meta.push(`${data.enriched.map(f => SCAN_FIELD_META[f] || f).join(' و ')} از مشخصات اینترنتی مدل پر شد`);
+      if (data.damage_seen) meta.push('آسیب ظاهری دیده شد (در توضیحات آمده؛ وضعیت سلامت را خودتان تعیین کنید)');
+      if (data.refined && data.refined.length) meta.push(`${data.refined.map(f => SCAN_FIELD_META[f]).join(' و ')} با کیفیت کامل دوباره خوانده شد`);
+      if (data.stage2 === 'local') meta.push('جمع‌بندی با رأی اکثریت انجام شد');
+      if (data.elapsed_ms) meta.push(`${Math.round(data.elapsed_ms / 1000)} ثانیه`);
+      html += `<div class="scan-section scan-src">${meta.map(escapeHtml).join(' · ')}</div></div>`;
+
+      status.style.color = '';
+      status.innerHTML = html;
+    }
+
+    // ---- Photo intake queue ----
+    const QUEUE_FORM_FIELDS = ['category', 'status', 'health', 'property_id', 'manufacturer_model', 'serial_number', 'user_name',
+      'computer_name', 'location', 'department', 'purchase_date', 'ip_address', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'notes'];
+    let reviewJob = null; // set when this page reviews a queued item (?job=ID)
+
+    // Photos go to the background queue; the form is cleared for the next device
+    async function queueCurrentDevice() {
+      const photos = pendingPhotos.filter(p => !p.isExisting && p.base64);
+      if (!photos.length) { alert('اول از دستگاه عکس بگیرید.'); return; }
+      const btn = document.getElementById('queue-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ در حال ارسال به صف...';
+      // Cover first, so the queue shows the full-device shot
+      const ordered = [...photos].sort((a, b) => (b.isCover ? 1 : 0) - (a.isCover ? 1 : 0));
+      const form = { no_tag: document.getElementById('no_tag').checked };
+      for (const f of QUEUE_FORM_FIELDS) {
+        const el = document.getElementById(f);
+        if (!el) continue;
+        const v = el.value.trim();
+        // The category select always has a value; only keep it when the user changed it
+        if (f === 'category' && !categoryTouched) continue;
+        if (v) form[f] = v;
+      }
+      try {
+        const res = await fetch('/api/photo-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: ordered.map(p => p.base64), form })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'ارسال به صف ناموفق بود');
+        resetFormForNextDevice();
+        showQueueToast(`✅ دستگاه به صف پردازش اضافه شد (#${data.id}). عکس‌های دستگاه بعدی را بگیرید.`);
+        refreshQueueCount();
+      } catch (e) {
+        alert('خطا: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📥 بفرست به صف پردازش و دستگاه بعدی';
+      }
+    }
+
+    // Location / department / user usually stay the same for a batch of devices: keep them
+    function resetFormForNextDevice() {
+      const keep = new Set(['location', 'department', 'user_name', 'status', 'health']);
+      for (const f of QUEUE_FORM_FIELDS) {
+        if (keep.has(f) || f === 'category') continue;
+        const el = document.getElementById(f);
+        if (el) el.value = '';
+      }
+      document.getElementById('no_tag').checked = false;
+      toggleNoTag(false);
+      pendingPhotos = [];
+      coverChosenByHand = false;
+      renderPendingPhotos();
+      ['model-spec-card'].forEach(id => { const el = document.getElementById(id); if (el) el.hidden = true; });
+      const ps = document.getElementById('model-photo-suggest-card'); if (ps) ps.style.display = 'none';
+      const st = document.getElementById('ai-status'); if (st) { st.innerHTML = ''; st.style.display = 'none'; }
+      const ml = document.getElementById('model-lookup-status'); if (ml) ml.style.display = 'none';
+      lastAutoFilledKey = ''; suggestionAppliedKey = ''; currentSuggestedPhoto = null; categoryTouched = false;
+      goToStep(1);
+    }
+
+    function showQueueToast(text) {
+      let t = document.getElementById('queue-toast');
+      if (!t) {
+        t = document.createElement('div');
+        t.id = 'queue-toast';
+        t.className = 'queue-toast';
+        document.body.appendChild(t);
+      }
+      t.textContent = text;
+      t.classList.add('show');
+      clearTimeout(showQueueToast._t);
+      showQueueToast._t = setTimeout(() => t.classList.remove('show'), 4500);
+    }
+
+    async function refreshQueueCount() {
+      try {
+        const res = await fetch('/api/photo-jobs');
+        if (!res.ok) return;
+        const { counts } = await res.json();
+        const total = Object.values(counts || {}).reduce((a, b) => a + b, 0);
+        const link = document.getElementById('queue-link');
+        link.hidden = total === 0;
+        link.innerHTML = `📸 صف عکس‌ها <span class="queue-count">${total}</span>` +
+          (counts.ready ? ` <span class="queue-ready">${counts.ready} آماده تأیید</span>` : '');
+      } catch (e) {}
+    }
+
+    // Review mode: open a processed queue item, fill the form from its photos + AI result
+    async function loadReviewJob(jobId) {
+      const res = await fetch(`/api/photo-jobs/${jobId}`);
+      if (!res.ok) { alert('این مورد در صف پیدا نشد (شاید قبلاً ثبت شده).'); location.href = '/queue.html'; return; }
+      const job = await res.json();
+      reviewJob = job;
+      document.getElementById('review-banner').hidden = false;
+      document.getElementById('review-banner-text').textContent = job.status === 'ready'
+        ? `بررسی مورد #${job.id} از صف: نتیجه اسکن را چک کنید و «ثبت نهایی» را بزنید.`
+        : `مورد #${job.id} هنوز پردازش نشده (${job.status}). می‌توانید دستی تکمیل کنید.`;
+      document.getElementById('queue-btn').hidden = true;
+
+      const f = job.form || {};
+      if (f.no_tag) { document.getElementById('no_tag').checked = true; toggleNoTag(true); }
+      for (const k of QUEUE_FORM_FIELDS) {
+        if (f[k] === undefined || f[k] === '') continue;
+        if (k === 'health') { if (window.__setHealth) window.__setHealth(f[k]); continue; }
+        const el = document.getElementById(k);
+        if (!el) continue;
+        el.value = f[k];
+        if (k === 'category') el.dispatchEvent(new Event('change'));
+      }
+      pendingPhotos = job.photos.map(p => ({ isQueueFile: true, queueFile: p.file, previewUrl: p.url, original_name: p.file }));
+      renderPendingPhotos();
+      if (job.result) applyScanResult(job.result, pendingPhotos);
+      else if (pendingPhotos.length) setCoverPhoto(0, false);
     }
 
     async function submitAsset(event) {
@@ -882,7 +1025,14 @@
         // Upload pending photos (new base64 photos AND cloned existing photos)
         for (const p of pendingPhotos) {
           let upRes;
-          if (p.isExisting) {
+          if (p.isQueueFile) {
+            // Photo from the intake queue: the server moves the file to the new asset
+            upRes = await fetch(`/api/assets/${created.id}/photos`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ queue_file: p.queueFile, caption: 'Device Photo' })
+            });
+          } else if (p.isExisting) {
             // Clone existing photo of the same model (no upload needed, server copies it)
             upRes = await fetch(`/api/assets/${created.id}/photos`, {
               method: 'POST',
@@ -911,9 +1061,24 @@
           }
         }
 
-        alert(created.no_tag
+        const savedMsg = created.no_tag
           ? `دستگاه بدون شماره اموال ثبت شد. کد داخلی: ${created.property_id}`
-          : `دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`);
+          : `دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`;
+
+        if (reviewJob) {
+          // Queue item done (its photos now belong to the asset): continue with the next ready one
+          await fetch(`/api/photo-jobs/${reviewJob.id}?keep_files=1`, { method: 'DELETE' });
+          let next = null;
+          try {
+            const q = await (await fetch('/api/photo-jobs')).json();
+            next = (q.jobs || []).find(j => j.status === 'ready');
+          } catch (e) {}
+          alert(savedMsg + (next ? '\n\nمورد بعدی صف باز می‌شود.' : '\n\nمورد آماده دیگری در صف نیست.'));
+          window.location.href = next ? `/add.html?job=${next.id}` : '/queue.html';
+          return;
+        }
+
+        alert(savedMsg);
         window.location.href = `/asset.html?id=${created.id}`;
       } catch (e) {
         alert('خطا: ' + e.message);
