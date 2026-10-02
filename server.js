@@ -101,7 +101,7 @@ function sessionCookieHeader(token, req) {
 // Reachable without logging in (login page and what it needs)
 const PUBLIC_PATHS = new Set(['/login.html', '/login', '/style.css', '/i18n.js', '/favicon.ico', '/api/login', '/api/auth-status', '/api/logout']);
 // Scanner ingestion: session OR scanner key
-const SCANNER_PATHS = new Set(['/api/scan', '/api/assets/scan']);
+const SCANNER_PATHS = new Set(['/api/scan', '/api/assets/scan', '/api/scanner/log']);
 // Sensitive GET endpoints that only admins may read
 const ADMIN_READ_PREFIXES = ['/api/settings', '/api/users', '/api/backup', '/api/logs', '/api/download/', '/api/pending-scans', '/api/photo-jobs'];
 
@@ -1672,6 +1672,15 @@ const server = http.createServer(async (req, res) => {
     if (method === 'DELETE' && rejectMatch) {
       const pendingId = parseInt(rejectMatch[1], 10);
       queries.rejectPendingScan(pendingId);
+      return sendJson(res, 200, { success: true });
+    }
+
+    // POST /api/scanner/log { stage, message, computer, os } — progress lines from USB scanners (remote troubleshooting)
+    if (method === 'POST' && pathname === '/api/scanner/log') {
+      const d = await parseRequestBody(req, 16 * 1024);
+      const s = v => String(v || '').slice(0, 300);
+      const level = s(d.stage) === 'error' ? 'ERROR' : 'INFO';
+      queries.addLog(level, 'USB_SCANNER', `[${s(d.os) || '?'}] ${s(d.computer) || '?'}: ${s(d.stage)}`, s(d.message), clientIp(req));
       return sendJson(res, 200, { success: true });
     }
 

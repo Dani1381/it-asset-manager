@@ -2,7 +2,7 @@
 Type=Application
 Name=Scan Asset (IT Inventory)
 Comment=Scan this computer for the IT asset inventory
-Exec=sh -c 'cd "$(dirname "%k")" && bash ./Scan-Asset-Linux.sh'
+Exec=bash -c 'cd "$(dirname "$1")" && bash ./Scan-Asset-Linux.sh; echo; read -r -p "Press Enter to close..." _' arka-scan %k
 Terminal=true
 Icon=computer
 Categories=Utility;
