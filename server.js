@@ -389,22 +389,6 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (method === 'POST' && pathname === '/api/login') {
-      const body = await parseRequestBody(req);
-      const pass = body.password || '';
-      if (!AUTH_ENABLED || pass === SITE_PASSWORD) {
-        const cookie = buildSessionCookie();
-        queries.addLog('SUCCESS', 'AUTH', 'ورود موفق به سیستم', '', req.socket?.remoteAddress || '');
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Set-Cookie': `iam_sess=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}`
-        });
-        return res.end(JSON.stringify({ success: true }));
-      }
-      queries.addLog('ERROR', 'AUTH', 'تلاش ناموفق برای ورود (رمز اشتباه)', '', req.socket?.remoteAddress || '');
-      return sendJson(res, 401, { success: false, error: 'Incorrect password' });
-    }
-
     if (method === 'POST' && pathname === '/api/logout') {
       res.writeHead(200, {
         'Content-Type': 'application/json',
@@ -777,8 +761,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { success: true });
     }
 
-    // POST /api/assets/scan (Ingestion Endpoint for .bat / PowerShell scripts)
-    if (method === 'POST' && pathname === '/api/assets/scan') {
+    // POST /api/assets/scan or /api/scan (Ingestion Endpoint for .bat / .sh scripts)
+    if (method === 'POST' && (pathname === '/api/assets/scan' || pathname === '/api/scan')) {
       const data = await parseRequestBody(req);
       const compName = data.computer_name || data.computerName;
       const serialNum = data.serial_number || data.serialNumber;
