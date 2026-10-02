@@ -262,6 +262,8 @@ function initDb() {
   }
   const pendingCols = db.prepare('PRAGMA table_info(pending_scans)').all().map(c => c.name);
   if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
+  // Where a scan came from ('usb-kit' = flash-drive kit, those devices go to storage on approval)
+  if (!pendingCols.includes('source')) db.exec('ALTER TABLE pending_scans ADD COLUMN source TEXT');
 
   // Migration: manual "cover photo" flag per asset
   const photoCols = db.prepare('PRAGMA table_info(asset_photos)').all().map(c => c.name);
@@ -576,8 +578,8 @@ function getModelSpecTemplate(model, category = null, excludeId = null) {
 }
 
 // Fill only the empty spec fields of `data` from the template (fixed-spec categories)
-// Computers of the same model share at least the CPU; RAM / disks differ per unit
-const SAME_MODEL_COMPUTER_FIELDS = ['cpu'];
+// Computers of the same model share CPU and GPU; RAM / disks differ per unit and are never copied
+const SAME_MODEL_COMPUTER_FIELDS = ['cpu', 'gpu'];
 
 function fillFromModelTemplate(data) {
   if (!data || !data.manufacturer_model) return null;
@@ -1291,9 +1293,18 @@ const queries = {
   },
 
   // Approve a pending scan item and assign its official physical Property ID
-  approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = 'active', noTag = false) {
+  markPendingSource(batchId, source) {
+    if (!batchId || !source) return;
+    db.prepare('UPDATE pending_scans SET source = ? WHERE batch_id = ?').run(String(source).slice(0, 30), batchId);
+  },
+
+  approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = null, noTag = false) {
     const item = db.prepare('SELECT * FROM pending_scans WHERE id = ?').get(pendingId);
     if (!item) return null;
+    // Devices scanned with the USB kit are bench / storage machines
+    if (!customStatus) customStatus = item.source === 'usb-kit' ? 'in_storage' : 'active';
+    // With the USB kit the operator types the property number in the "name" prompt; it is not a person
+    if (item.source === 'usb-kit' && /^\d{3,6}$/.test(String(item.user_name || '').trim())) item.user_name = null;
 
     const propertyId = noTag ? getNextNoTagId()
       : (customPropertyId && customPropertyId.trim()) ? customPropertyId.trim() : getNextPropertyId();

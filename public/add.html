@@ -489,6 +489,16 @@
     let lastAutoFilledKey = '';
     let suggestionAppliedKey = '';
 
+    // Same model: monitors / drives / network gear share all specs; computers only CPU and GPU
+    // (RAM and disks differ per unit and are only copied when the user presses the button)
+    const SAME_MODEL_COMPUTER_FIELDS = ['cpu', 'gpu'];
+    function sameModelFields(tpl, fixed) {
+      if (fixed) return tpl;
+      const fields = {};
+      for (const f of SAME_MODEL_COMPUTER_FIELDS) if (tpl.fields && tpl.fields[f]) fields[f] = tpl.fields[f];
+      return { ...tpl, fields };
+    }
+
     function fillSpecsFromTemplate(tpl) {
       const filled = [];
       for (const [field, value] of Object.entries(tpl.fields || {})) {
@@ -528,17 +538,14 @@
         card.innerHTML = `✅ مشخصات کامل این مدل از قبل با شماره <strong>${escapeHtml(data.property_id)}</strong> ثبت شده` +
           (filled.length ? ` و این فیلدها خودکار پر شد: <strong>${filled.map(escapeHtml).join('، ')}</strong>` : ' و فیلدهای مشخصات از روی آن پر شده‌اند.');
       } else {
-        // Computers of the same model share the CPU: fill it; RAM / disks differ per unit, so only offer them
-        let cpuFilled = false;
-        if (lastAutoFilledKey !== key && data.fields && data.fields.cpu) {
-          cpuFilled = fillSpecsFromTemplate({ fields: { cpu: data.fields.cpu } }).length > 0;
-        }
+        // Computers of the same model share CPU / GPU: fill those; RAM / disks differ per unit, so only offer them
+        const filled = lastAutoFilledKey === key ? [] : fillSpecsFromTemplate(sameModelFields(data, false));
         lastAutoFilledKey = key;
         card.className = 'model-spec-card';
         card.innerHTML = `💡 این مدل قبلاً با شماره <strong>${escapeHtml(data.property_id)}</strong> ثبت شده` +
-          (cpuFilled ? ` و <strong>پردازنده</strong> از روی آن پر شد (هم‌مدل‌ها CPU یکسان دارند).` : '.') +
-          ` رم و هارد ممکن است فرق کند.
-          <button type="button" class="btn btn-secondary btn-sm" onclick="applySpecTemplateManually()">📋 کپی بقیه مشخصات</button>`;
+          (filled.length ? ` و <strong>${filled.map(escapeHtml).join(' و ')}</strong> از روی آن پر شد (هم‌مدل‌ها CPU و گرافیک یکسان دارند).` : '.') +
+          ` رم و هارد کپی نمی‌شود چون هر دستگاه ممکن است فرق کند.
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applySpecTemplateManually()">📋 رم و هارد را هم کپی کن</button>`;
       }
       card.hidden = false;
     }
@@ -613,14 +620,14 @@
         filled.push('دسته‌بندی');
       }
 
-      // Specs of that model: the user explicitly chose this device, so copy them for any category
+      // Specs of that model: all of them for fixed-spec devices, only CPU / GPU for computers
       try {
         const res = await fetch(`/api/models/spec-template?model=${encodeURIComponent(s.model)}&category=${encodeURIComponent(s.category || '')}`);
         const tpl = res.ok ? await res.json() : null;
         if (tpl && tpl.found) {
           currentSpecTemplate = tpl;
           lastAutoFilledKey = `${s.model.toLowerCase()}|${catSelect.value}`;
-          filled.push(...fillSpecsFromTemplate(tpl));
+          filled.push(...fillSpecsFromTemplate(sameModelFields(tpl, tpl.fixed)));
         }
       } catch (e) {}
 

@@ -526,15 +526,12 @@ function applyModelPreset(modelName) {
   for (const [key, preset] of Object.entries(MODEL_PRESETS)) {
     if (clean.includes(key)) {
       const cpu = document.getElementById('cpu');
-      const ram = document.getElementById('ram');
-      const storage = document.getElementById('storage_drives');
       const gpu = document.getElementById('gpu');
       const cat = document.getElementById('category');
       const monitors = document.getElementById('monitors');
 
+      // Same model = same CPU / GPU; RAM and disks differ per unit, so they are not filled from presets
       if (cpu && (!cpu.value || cpu.value === '.') && preset.cpu) cpu.value = preset.cpu;
-      if (ram && (!ram.value || ram.value === '0') && preset.ram) ram.value = preset.ram;
-      if (storage && (!storage.value || storage.value === '.') && preset.storage_drives) storage.value = preset.storage_drives;
       if (gpu && (!gpu.value || gpu.value === '.') && preset.gpu) gpu.value = preset.gpu;
       if (monitors && !monitors.value && preset.monitors) monitors.value = preset.monitors;
       if (cat && preset.category && cat.value !== preset.category) {
@@ -617,9 +614,9 @@ async function lookupModelOnline() {
       if (cat) { cat.value = s.category; cat.dispatchEvent(new Event('change')); }
     }
 
-    // Default CPU
+    // Default CPU (only when empty)
     const cpuInput = document.getElementById('cpu') || document.getElementById('edit-cpu');
-    if (cpuInput && s.default_cpu) {
+    if (cpuInput && s.default_cpu && !cpuInput.value.trim()) {
       cpuInput.value = s.default_cpu;
       cpuInput.style.borderColor = '#10b981';
       setTimeout(() => { cpuInput.style.borderColor = ''; }, 1000);
@@ -632,9 +629,13 @@ async function lookupModelOnline() {
       setupFieldChips('edit-cpu', cpuChips, []);
     }
 
+    // Computers: RAM / disks differ per unit, so the factory defaults are only offered as chips below the fields
+    const catEl = document.getElementById('category') || document.getElementById('edit-category');
+    const isComputer = COMPUTER_FAMILIES.has(categoryFamily(catEl ? catEl.value : s.category));
+
     // Default RAM
     const ramInput = document.getElementById('ram') || document.getElementById('edit-ram');
-    if (ramInput && s.default_ram) {
+    if (ramInput && s.default_ram && !isComputer) {
       ramInput.value = s.default_ram;
       ramInput.style.borderColor = '#10b981';
       setTimeout(() => { ramInput.style.borderColor = ''; }, 1000);
@@ -649,7 +650,7 @@ async function lookupModelOnline() {
 
     // Default Storage
     const storageInput = document.getElementById('storage_drives') || document.getElementById('edit-storage');
-    if (storageInput && s.default_storage) {
+    if (storageInput && s.default_storage && !isComputer) {
       storageInput.value = s.default_storage;
       storageInput.style.borderColor = '#10b981';
       setTimeout(() => { storageInput.style.borderColor = ''; }, 1000);

@@ -1100,7 +1100,10 @@ async function loadPendingScansList() {
                 <span style="background: ${catBg}; color: ${catColor}; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 4px; margin-right: 0.5rem;">${catBadge}</span>
               </div>
             </div>
-            <div style="font-size: 0.8rem; color: var(--text-dim);">زمان اسکن: ${timeStr}</div>
+            <div style="font-size: 0.8rem; color: var(--text-dim);">
+              ${it.source === 'usb-kit' ? '<span style="background: rgba(234,179,8,0.15); color: #fde047; padding: 0.1rem 0.45rem; border-radius: 4px; margin-left: 0.4rem;">🔌 اسکن فلش · ثبت در انبار</span>' : ''}
+              زمان اسکن: ${timeStr}
+            </div>
           </div>
 
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem; font-size: 0.86rem; background: rgba(0,0,0,0.25); padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
@@ -1116,7 +1119,7 @@ async function loadPendingScansList() {
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.4rem;">
             <div style="display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 260px;">
               <label style="font-size: 0.82rem; color: #94a3b8; white-space: nowrap;">شماره اموال فیزیکی:</label>
-              <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${nextId}" placeholder="مثال: AST-0010">
+              <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${escapeHtml(usbPropId(it) || nextId)}" placeholder="مثال: AST-0010">
               <label class="no-tag-toggle" style="margin: 0;">
                 <input type="checkbox" id="pending-no-tag-${it.id}" onchange="document.getElementById('pending-prop-id-${it.id}').disabled = this.checked">
                 <span>ندارد</span>
@@ -1138,6 +1141,12 @@ async function loadPendingScansList() {
   } catch (e) {
     container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">خطا در دریافت لیست: ${escapeHtml(e.message)}</div>`;
   }
+}
+
+// USB-kit scans: the operator types the property number in the name prompt
+function usbPropId(it) {
+  const v = String(it.user_name || '').trim();
+  return it.source === 'usb-kit' && /^\d{3,6}$/.test(v) ? v : '';
 }
 
 async function approvePendingItem(id, defaultCategory) {

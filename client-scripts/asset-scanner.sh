@@ -269,7 +269,7 @@ GPU=""
 if command -v lspci >/dev/null 2>&1; then
   GPU=$(LC_ALL=C lspci 2>/dev/null \
     | grep -iE 'vga compatible|3d controller|display controller' \
-    | sed 's/^[^:]*: //; s/[[:space:]]*(rev [0-9a-fx]\{1,\})[[:space:]]*$//' \
+    | sed 's/^[0-9a-fA-F:.]\{1,\} [^:]*: //; s/[[:space:]]*(rev [0-9a-fx]\{1,\})[[:space:]]*$//' \
     | join_slash)
 fi
 [ -z "$GPU" ] && GPU="Standard Graphics"

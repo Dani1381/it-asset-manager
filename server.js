@@ -1654,7 +1654,7 @@ const server = http.createServer(async (req, res) => {
           pendingId,
           data.property_id,
           data.category,
-          data.status || 'active',
+          data.status || null,
           data.no_tag === true || data.no_tag === 1 || data.no_tag === '1'
         );
 
@@ -1712,7 +1712,9 @@ const server = http.createServer(async (req, res) => {
         disk_health: data.disk_health || data.diskHealth || null
       });
 
-      queries.addLog('SUCCESS', 'SCANNER', 
+      if (data.source === 'usb-kit') queries.markPendingSource(result.batch_id, 'usb-kit');
+
+      queries.addLog('SUCCESS', 'SCANNER',
         `اسکن دریافت شد (${result.items_count} دارایی مجزا تفکیک شد): ${compName || serialNum}`,
         `کاربر: ${data.user_name || data.userName || 'ناشناخته'}, اقلام: ${result.items.map(i => i.category + ': ' + i.name).join(' | ')}`,
         req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
