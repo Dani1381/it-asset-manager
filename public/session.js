@@ -38,19 +38,6 @@
     location.href = LOGIN_URL;
   };
 
-  function showDefaultPasswordBanner() {
-    if (document.getElementById('default-pass-banner')) return;
-    const bar = document.createElement('div');
-    bar.id = 'default-pass-banner';
-    bar.className = 'security-banner';
-    const canOpenUsers = typeof window.openUsersModal === 'function';
-    bar.innerHTML = `⚠️ رمز عبور پیش‌فرض ادمین (admin) هنوز تغییر نکرده است. چون سایت از اینترنت هم در دسترس است، همین حالا آن را عوض کنید.` +
-      (canOpenUsers ? ` <button type="button" class="btn btn-sm btn-primary">تغییر رمز</button>` : '');
-    const btn = bar.querySelector('button');
-    if (btn) btn.onclick = () => window.openUsersModal();
-    document.body.insertBefore(bar, document.body.firstChild);
-  }
-
   async function verify() {
     try {
       const res = await nativeFetch('/api/auth-status', { cache: 'no-store' });
@@ -66,10 +53,6 @@
         return;
       }
 
-      if (data.default_password) {
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showDefaultPasswordBanner);
-        else showDefaultPasswordBanner();
-      }
     } catch (e) {
       // Network hiccup: leave the page as is
     }
