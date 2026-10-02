@@ -43,7 +43,7 @@ function applyRoleUI() {
 
   if (!isAdmin()) {
     // Viewer role: hide admin-only controls
-    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn', 'nav-logs-btn', 'nav-scanner-win', 'nav-scanner-linux'];
+    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn', 'nav-logs-btn', 'nav-scanner-win', 'nav-scanner-linux', 'nav-usb-kit', 'nav-usb-import', 'nav-rotate-key'];
     adminOnly.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
@@ -267,6 +267,40 @@ function diskBadgeHtml(status) {
   if (status === 'critical') return `<div class="disk-alert-badge is-critical" title="${getTranslation('disk_critical_hint')}">🔴 ${getTranslation('disk_badge_critical')}</div>`;
   if (status === 'warning') return `<div class="disk-alert-badge is-warning" title="${getTranslation('disk_warning_hint')}">🟠 ${getTranslation('disk_badge_warning')}</div>`;
   return '';
+}
+
+// ---- USB kit: import scan files saved on a flash drive (scans\*.json) ----
+async function importUsbScans(input) {
+  const files = Array.from(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  let ok = 0, failed = [];
+  for (const f of files) {
+    try {
+      const text = await f.text();
+      JSON.parse(text.replace(/^﻿/, '')); // reject non-scan files early
+      const res = await fetch('/api/assets/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text.replace(/^﻿/, '') });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
+      ok++;
+    } catch (e) {
+      failed.push(`${f.name}: ${e.message}`);
+    }
+  }
+  alert(`✅ ${ok} اسکن از فلش وارد شد و در صف «تأیید اسکن‌ها» قرار گرفت.` + (failed.length ? `\n\n⚠️ ناموفق (${failed.length}):\n${failed.join('\n')}` : '') +
+    '\n\nبعد از وارد کردن، می‌توانید فایل‌ها را از پوشه scans فلش پاک کنید.');
+  if (typeof loadPendingCount === 'function') loadPendingCount();
+  if (typeof loadAssets === 'function') loadAssets();
+}
+
+async function rotateScannerKey() {
+  if (!confirm('کلید اسکنر عوض شود؟\nهمه اسکنرها و کیت‌های فلشی که قبلاً دانلود شده‌اند دیگر کار نمی‌کنند و باید دوباره دانلود شوند.')) return;
+  try {
+    const res = await fetch('/api/scanner-key/rotate', { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
+    alert('✅ کلید اسکنر عوض شد. اسکنر ویندوز/لینوکس و کیت فلش را دوباره دانلود کنید.');
+  } catch (e) {
+    alert('خطا: ' + e.message);
+  }
 }
 
 // ---- Card key specs: show what matters for each device type ----

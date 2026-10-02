@@ -881,6 +881,91 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
+// Minimal ZIP writer (stored, no compression) — keeps the project dependency-free
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files) {
+  const locals = [], centrals = [];
+  let offset = 0;
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const name = Buffer.from(f.name, 'utf8');
+    const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data, 'utf8');
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6); // UTF-8 names
+    local.writeUInt16LE(0, 8); local.writeUInt16LE(dosTime, 10); local.writeUInt16LE(dosDate, 12);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26); local.writeUInt16LE(0, 28);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0x0800, 8);
+    central.writeUInt16LE(0, 10); central.writeUInt16LE(dosTime, 12); central.writeUInt16LE(dosDate, 14);
+    central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28); central.writeUInt32LE(f.name.endsWith('/') ? 0x10 : 0, 38); central.writeUInt32LE(offset, 42);
+    locals.push(local, name, data);
+    centrals.push(central, name);
+    offset += local.length + name.length + data.length;
+  }
+  const centralBuf = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralBuf.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralBuf, end]);
+}
+
+// The address other computers should use (a download made on the server itself would otherwise say "localhost")
+function lanServerUrl(req) {
+  const protocol = req.socket?.encrypted ? 'https' : 'http';
+  const host = req.headers.host || `localhost:${PORT}`;
+  if (/^(localhost|127\.|\[::1\])/i.test(host)) {
+    const ip = getLocalIpAddresses().find(a => /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01]))\./.test(a)) || getLocalIpAddresses()[0];
+    if (ip) return `${protocol}://${ip}:${PORT}`;
+  }
+  return `${protocol}://${host}`;
+}
+
+const USB_KIT_README = `﻿کیت اسکن دارایی با فلش — مدیریت دارایی ارکا
+=================================================
+
+آماده‌سازی (یک بار):
+  محتوای این فایل ZIP را مستقیم روی فلش کپی کنید (فایل Scan-Asset.bat و پوشه scans).
+
+استفاده روی هر کامپیوتر:
+  1) فلش را وصل کنید و فایل Scan-Asset.bat را دوبار کلیک کنید.
+     (برای اطلاعات کامل سلامت هارد: راست‌کلیک ← Run as administrator)
+  2) نام کاربر را وارد کنید و صبر کنید تا اسکن تمام شود (حدود ۳۰ ثانیه).
+  3) اگر کامپیوتر به سرور وصل باشد، اطلاعات همان لحظه ارسال می‌شود.
+     اگر وصل نباشد، اطلاعات در پوشه scans روی همین فلش ذخیره می‌شود.
+
+اسکن‌های ذخیره‌شده روی فلش:
+  - دفعه بعد که اسکنر روی کامپیوتری که به سرور وصل است اجرا شود، همه را خودکار می‌فرستد.
+  - یا در پنل: منوی ابزارها ← «وارد کردن اسکن‌های فلش» و فایل‌های پوشه scans را انتخاب کنید.
+  - فایل‌های ارسال‌شده به پوشه scans\\sent منتقل می‌شوند.
+
+بعد از ارسال، دستگاه‌ها در پنل در صف «تأیید اسکن‌ها» می‌آیند تا شماره اموال بدهید.
+
+چرا اجرای خودکار با وصل کردن فلش نیست؟
+  ویندوز از نسخه ۷ اجرای خودکار برنامه از فلش (AutoRun) را برای جلوگیری از ویروس‌ها بسته است؛
+  برای همین یک دوبار کلیک لازم است.
+
+امنیت: این فایل کلید اسکنر سرور را دارد. اگر فلش گم شد، از تنظیمات پنل کلید اسکنر را عوض کنید.
+سرور: {{SERVER_URL}}
+`;
+
 // HTTP Server
 const server = http.createServer(async (req, res) => {
   // CORS Preflight
@@ -1202,6 +1287,36 @@ const server = http.createServer(async (req, res) => {
       });
       res.end(batContent);
       return;
+    }
+
+    // GET /api/download/usb-kit (ZIP for a flash drive: double-click scanner that sends or saves to the USB)
+    if (method === 'GET' && pathname === '/api/download/usb-kit') {
+      const tplPath = path.join(__dirname, 'client-scripts', 'AssetScanner-USB.bat');
+      if (!fs.existsSync(tplPath)) return sendJson(res, 500, { error: 'USB scanner template missing' });
+      const serverUrl = lanServerUrl(req);
+      const bat = fs.readFileSync(tplPath, 'utf8')
+        .replace(/\$SERVER_URL = ".*?"/, () => `$SERVER_URL = "${serverUrl}"`)
+        .replace(/\$SERVER_KEY = ".*?"/, () => `$SERVER_KEY = "${getScannerKey()}"`);
+      const zip = makeZip([
+        { name: 'Scan-Asset.bat', data: bat },
+        { name: 'راهنما.txt', data: USB_KIT_README.replace('{{SERVER_URL}}', serverUrl) },
+        { name: 'scans/', data: Buffer.alloc(0) },
+        { name: 'scans/sent/', data: Buffer.alloc(0) }
+      ]);
+      queries.addLog('INFO', 'USB_KIT', 'کیت اسکن فلش دانلود شد', `سرور: ${serverUrl}`, req.socket?.remoteAddress || '');
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Length': zip.length,
+        'Content-Disposition': 'attachment; filename="Arka-USB-Scanner.zip"'
+      });
+      return res.end(zip);
+    }
+
+    // POST /api/scanner-key/rotate (new scanner key; old scanners and USB kits stop working)
+    if (method === 'POST' && pathname === '/api/scanner-key/rotate') {
+      queries.updateSettings({ scanner_key: crypto.randomBytes(18).toString('base64url') });
+      queries.addLog('WARN', 'SECURITY', 'کلید اسکنر توسط مدیر عوض شد', '', req.socket?.remoteAddress || '');
+      return sendJson(res, 200, { success: true });
     }
 
     // GET /api/download/scanner-linux (Download dynamic asset-scanner.sh for Linux clients)

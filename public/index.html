@@ -62,6 +62,16 @@
           <a id="nav-scanner-linux" role="menuitem" href="/api/download/scanner-linux" download>
             🐧 <span data-i18n="nav_scanner_sh">اسکنر لینوکس (.sh)</span>
           </a>
+          <a id="nav-usb-kit" role="menuitem" href="/api/download/usb-kit" download>
+            🔌 <span>کیت اسکن با فلش (ZIP)</span>
+          </a>
+          <button id="nav-usb-import" role="menuitem" onclick="closeNavMenu(); document.getElementById('usb-import-input').click()">
+            📂 <span>وارد کردن اسکن‌های فلش</span>
+          </button>
+          <button id="nav-rotate-key" role="menuitem" onclick="closeNavMenu(); rotateScannerKey()">
+            🔑 <span>تعویض کلید اسکنر</span>
+          </button>
+          <input type="file" id="usb-import-input" accept=".json,application/json" multiple hidden onchange="importUsbScans(this)">
           <a role="menuitem" href="/api/export/csv" download>
             📥 <span data-i18n="nav_csv">خروجی اکسل</span>
           </a>
