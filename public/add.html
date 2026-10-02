@@ -200,12 +200,12 @@
                 <div style="display: flex; align-items: center; gap: 0.65rem;">
                   <img id="suggested-photo-img" src="" alt="Device photo" style="width: 52px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">
                   <div>
-                    <div style="font-size: 0.86rem; font-weight: 600; color: #93c5fd;">🖼️ عکس این مدل در انبار موجود است</div>
+                    <div style="font-size: 0.86rem; font-weight: 600; color: #93c5fd;">🖼️ دستگاه مشابه در انبار پیدا شد</div>
                     <div id="suggested-photo-caption" style="font-size: 0.78rem; color: var(--text-dim);">ثبت‌شده برای دستگاه قبلی</div>
                   </div>
                 </div>
                 <button type="button" class="btn btn-sm btn-primary" onclick="applySuggestedModelPhoto()" style="white-space: nowrap; font-size: 0.82rem;">
-                  ✅ استفاده از همین عکس
+                  ✅ استفاده از عکس و مشخصات آن
                 </button>
               </div>
             </div>
@@ -224,6 +224,13 @@
                 <option value="repair">🔴 نیازمند تعمیر</option>
                 <option value="retired">⚪ اسقاط / خارج از رده</option>
               </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label class="form-label">🩺 وضعیت سلامت دستگاه</label>
+              <input type="hidden" id="health" value="healthy">
+              <div id="health-picker"></div>
+              <div class="health-hint" id="health-hint"></div>
             </div>
           </div>
 
@@ -424,12 +431,27 @@
       }
       const catSelect = document.getElementById('category');
       if (catSelect) catSelect.addEventListener('change', checkModelSpecTemplate);
+
+      const healthInput = document.getElementById('health');
+      const healthHint = document.getElementById('health-hint');
+      const setHealth = buildHealthPicker(document.getElementById('health-picker'), healthInput);
+      const showHint = () => { healthHint.textContent = findHealth(healthInput.value).hint; };
+      document.getElementById('health-picker').addEventListener('click', showHint);
+      setHealth('healthy');
+      showHint();
     });
+
+    // A model was picked from the "similar models" list: fill the rest right away
+    window.onModelPicked = function () {
+      checkModelPhotoSuggestion();
+      checkModelSpecTemplate();
+    };
 
     // ---- Same-model specs ----
     const SPEC_FIELD_LABELS = { cpu: 'پردازنده', ram: 'رم', storage_drives: 'حافظه', gpu: 'گرافیک', monitors: 'نمایشگر / مشخصات صفحه' };
     let currentSpecTemplate = null;
     let lastAutoFilledKey = '';
+    let suggestionAppliedKey = '';
 
     function fillSpecsFromTemplate(tpl) {
       const filled = [];
@@ -450,6 +472,8 @@
       const category = document.getElementById('category').value;
       const card = document.getElementById('model-spec-card');
       if (model.length < 3) { card.hidden = true; return; }
+      // Already filled from an accepted suggestion: keep that confirmation
+      if (suggestionAppliedKey === `${model.toLowerCase()}|${category}`) return;
 
       let data = null;
       try {
@@ -500,10 +524,11 @@
         const res = await fetch(`/api/models/photo-preview?model=${encodeURIComponent(model)}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.found) {
+          if (data.found && !pendingPhotos.some(p => p.isExisting && p.existingPhotoId === data.photo_id)) {
             currentSuggestedPhoto = data;
             document.getElementById('suggested-photo-img').src = data.url;
-            document.getElementById('suggested-photo-caption').textContent = `از قبل برای اموال ${data.property_id} (${data.model}) ثبت شده`;
+            document.getElementById('suggested-photo-caption').textContent =
+              `${data.model} · ${categoryLabel(data.category)} — اموال ${data.property_id}`;
             card.style.display = 'flex';
             return;
           }
@@ -513,22 +538,55 @@
       if (card) card.style.display = 'none';
     }
 
-    function applySuggestedModelPhoto() {
-      if (!currentSuggestedPhoto) return;
+    // Accepting the suggested photo also takes over that device's name, category and specs
+    async function applySuggestedModelPhoto() {
+      const s = currentSuggestedPhoto;
+      if (!s) return;
 
-      // Add to pendingPhotos as an existing photo clone
-      pendingPhotos.push({
-        isExisting: true,
-        existingPhotoId: currentSuggestedPhoto.photo_id,
-        previewUrl: currentSuggestedPhoto.url,
-        original_name: currentSuggestedPhoto.original_name || 'preset_photo.jpg'
-      });
-
-      renderPendingPhotos();
-
-      // Hide suggestion card after applying
+      if (!pendingPhotos.some(p => p.isExisting && p.existingPhotoId === s.photo_id)) {
+        pendingPhotos.push({
+          isExisting: true,
+          existingPhotoId: s.photo_id,
+          previewUrl: s.url,
+          original_name: s.original_name || 'preset_photo.jpg'
+        });
+        renderPendingPhotos();
+      }
       const card = document.getElementById('model-photo-suggest-card');
       if (card) card.style.display = 'none';
+
+      const filled = [];
+      const modelInput = document.getElementById('manufacturer_model');
+      if (s.model && modelInput.value.trim() !== s.model) {
+        modelInput.value = s.model;
+        filled.push('نام / مدل');
+      }
+      const catSelect = document.getElementById('category');
+      const targetCat = s.category && [...catSelect.options].some(o => o.value === s.category) ? s.category : catSelect.value;
+      suggestionAppliedKey = `${(s.model || modelInput.value).trim().toLowerCase()}|${targetCat}`;
+      if (targetCat !== catSelect.value) {
+        catSelect.value = targetCat;
+        catSelect.dispatchEvent(new Event('change'));
+        filled.push('دسته‌بندی');
+      }
+
+      // Specs of that model: the user explicitly chose this device, so copy them for any category
+      try {
+        const res = await fetch(`/api/models/spec-template?model=${encodeURIComponent(s.model)}&category=${encodeURIComponent(s.category || '')}`);
+        const tpl = res.ok ? await res.json() : null;
+        if (tpl && tpl.found) {
+          currentSpecTemplate = tpl;
+          lastAutoFilledKey = `${s.model.toLowerCase()}|${catSelect.value}`;
+          filled.push(...fillSpecsFromTemplate(tpl));
+        }
+      } catch (e) {}
+
+      const specCard = document.getElementById('model-spec-card');
+      specCard.className = 'model-spec-card is-fixed';
+      specCard.innerHTML = `✅ عکس و اطلاعات دستگاه <strong>${escapeHtml(s.property_id)}</strong> استفاده شد` +
+        (filled.length ? `؛ پر شد: <strong>${filled.map(escapeHtml).join('، ')}</strong>` : '') +
+        ' — اگر این دستگاه فرق دارد، ویرایش کنید.';
+      specCard.hidden = false;
     }
 
     async function checkSerialDuplicate() {
@@ -594,86 +652,135 @@
       renderPendingPhotos();
     }
 
+    const SCAN_FIELD_META = {
+      property_id: 'شماره اموال', category: 'دسته‌بندی', manufacturer_model: 'مدل', serial_number: 'سریال',
+      computer_name: 'نام کامپیوتر', ip_address: 'IP', user_name: 'کاربر', location: 'محل استقرار',
+      department: 'واحد', purchase_date: 'تاریخ خرید', cpu: 'پردازنده', ram: 'رم',
+      storage_drives: 'حافظه', gpu: 'گرافیک', monitors: 'نمایشگر'
+    };
+    let scanConflicts = {};
+
+    function setFormField(field, value) {
+      if (field === 'category') {
+        const sel = document.getElementById('category');
+        if (![...sel.options].some(o => o.value === value)) return false;
+        sel.value = value;
+        sel.dispatchEvent(new Event('change'));
+        return true;
+      }
+      if (field === 'property_id') {
+        const noTag = document.getElementById('no_tag');
+        if (noTag.checked) { noTag.checked = false; toggleNoTag(false); }
+      }
+      const el = document.getElementById(field);
+      if (!el) return false;
+      el.value = value;
+      el.classList.add('spec-autofilled');
+      setTimeout(() => el.classList.remove('spec-autofilled'), 2000);
+      return true;
+    }
+
+    function applyScanConflict(field) {
+      if (!(field in scanConflicts)) return;
+      setFormField(field, scanConflicts[field]);
+      if (field === 'manufacturer_model') { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }
+      if (field === 'serial_number') checkSerialDuplicate();
+      const li = document.querySelector(`[data-conflict="${field}"]`);
+      if (li) li.innerHTML = `<span class="scan-field">${SCAN_FIELD_META[field]}</span> ✅ جایگزین شد: <span class="scan-value">${escapeHtml(scanConflicts[field])}</span>`;
+      delete scanConflicts[field];
+    }
+
+    function currentFieldValue(field) {
+      if (field === 'property_id' && document.getElementById('no_tag').checked) return '';
+      if (field === 'category') return ''; // the select is never empty; the scan decides the category
+      const el = document.getElementById(field);
+      return el ? el.value.trim() : '';
+    }
+
     async function aiScanPhotos() {
-      if (pendingPhotos.length === 0) return;
+      const images = pendingPhotos.filter(p => !p.isExisting && p.base64).map(p => p.base64).slice(0, 6);
       const btn = document.getElementById('ai-scan-btn');
       const status = document.getElementById('ai-status');
+      status.style.display = 'block';
+      if (!images.length) {
+        status.style.color = 'var(--warning)';
+        status.textContent = 'برای اسکن هوشمند، حداقل یک عکس از خود دستگاه یا برچسب‌هایش بگیرید.';
+        return;
+      }
 
       btn.disabled = true;
-      btn.textContent = '⏳ در حال تحلیل هوش مصنوعی...';
-      status.style.display = 'block';
+      btn.textContent = `⏳ مرحله ۱: خواندن ${images.length} عکس...`;
       status.style.color = '#a78bfa';
-      status.textContent = 'هوش مصنوعی جمینای در حال استخراج مشخصات از روی تصویر است...';
+      status.textContent = 'هوش مصنوعی هر عکس را جداگانه می‌خواند، بعد همه را با هم می‌سنجد تا هر داده در فیلد درستش قرار بگیرد.';
+      // One request does both stages; switch the label once stage 1 is probably done
+      const stageTimer = setTimeout(() => { btn.textContent = '⏳ مرحله ۲: جمع‌بندی و جای‌گذاری داده‌ها...'; }, 9000 + images.length * 2500);
 
       try {
-        const photo = pendingPhotos[0];
-        const res = await fetch('/api/gemini/analyze', {
+        const res = await fetch('/api/ai/smart-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: photo.base64 })
+          body: JSON.stringify({ images })
         });
-
         const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'تحلیل عکس با خطا مواجه شد');
-        }
+        if (!res.ok || !data.success) throw new Error(data.error || 'تحلیل عکس‌ها با خطا مواجه شد');
 
-        const s = data.specs;
-        let filledCount = 0;
-
-        if (s.category) {
-          const catSelect = document.getElementById('category');
-          for (let opt of catSelect.options) {
-            if (opt.value.toLowerCase() === s.category.toLowerCase()) {
-              catSelect.value = opt.value;
-              catSelect.dispatchEvent(new Event('change'));
-              filledCount++;
-              break;
-            }
+        const filled = [], conflicts = [];
+        scanConflicts = {};
+        // Category first, so category-dependent suggestions run against the right type
+        const order = ['category', ...Object.keys(SCAN_FIELD_META).filter(f => f !== 'category')];
+        for (const f of order) {
+          const v = data.fields[f];
+          if (!v) continue;
+          const cur = currentFieldValue(f);
+          if (!cur) {
+            if (setFormField(f, v)) filled.push(f);
+          } else if (cur.toLowerCase() !== String(v).toLowerCase()) {
+            scanConflicts[f] = v;
+            conflicts.push(f);
           }
         }
-        if (s.manufacturer_model) {
-          document.getElementById('manufacturer_model').value = s.manufacturer_model;
-          filledCount++;
-          checkModelPhotoSuggestion();
-          checkModelSpecTemplate(); // runs after the AI values, only fills what is still empty
-        }
-        if (s.serial_number) {
-          document.getElementById('serial_number').value = s.serial_number;
-          filledCount++;
-          checkSerialDuplicate();
-        }
-        if (s.cpu) {
-          document.getElementById('cpu').value = s.cpu;
-          filledCount++;
-        }
-        if (s.ram) {
-          document.getElementById('ram').value = s.ram;
-          filledCount++;
-        }
-        if (s.storage_drives) {
-          document.getElementById('storage_drives').value = s.storage_drives;
-          filledCount++;
-        }
-        if (s.gpu) {
-          document.getElementById('gpu').value = s.gpu;
-          filledCount++;
-        }
-        if (s.monitors) {
-          document.getElementById('monitors').value = s.monitors;
-          filledCount++;
-        }
-        if (s.notes) {
+        if (data.notes) {
           const notesEl = document.getElementById('notes');
-          notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `AI Note: ${s.notes}`;
+          if (!notesEl.value.includes(data.notes)) notesEl.value = (notesEl.value ? notesEl.value + '\n' : '') + `🤖 ${data.notes}`;
         }
+        if (filled.includes('manufacturer_model') || filled.includes('category')) { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }
+        if (filled.includes('serial_number')) checkSerialDuplicate();
 
-        status.style.color = 'var(--success)';
-        status.innerHTML = `✅ <strong>${filledCount} فیلد با موفقیت توسط مدل ${escapeHtml(data.model)} پر شد!</strong>`;
+        const src = f => {
+          const s = data.sources && data.sources[f];
+          return Array.isArray(s) && s.length ? `<span class="scan-src">(عکس ${s.join('، ')})</span>` : '';
+        };
+        const low = f => data.confidence && data.confidence[f] === 'low' ? '<span class="scan-conf-low">⚠️ مطمئن نیست</span>' : '';
+        const valueText = (f, v) => f === 'category' ? categoryLabel(v) : v;
+
+        let html = `<div class="scan-report">`;
+        html += `<div class="scan-section"><h4>✅ ${filled.length} فیلد پر شد</h4><ul>` +
+          (filled.length ? filled.map(f => `<li><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}${low(f)}</li>`).join('')
+                         : '<li>فیلد خالی جدیدی پیدا نشد.</li>') + `</ul></div>`;
+        if (conflicts.length) {
+          html += `<div class="scan-section"><h4>✏️ با مقدار فعلی فرم فرق دارد</h4><ul>` +
+            conflicts.map(f => `<li data-conflict="${f}"><span class="scan-field">${SCAN_FIELD_META[f]}</span><span class="scan-value">${escapeHtml(valueText(f, data.fields[f]))}</span>${src(f)}
+              <button type="button" class="btn btn-secondary btn-sm" onclick="applyScanConflict('${f}')">جایگزین کن</button></li>`).join('') + `</ul></div>`;
+        }
+        if (data.warnings && data.warnings.length) {
+          html += `<div class="scan-section"><h4>⚠️ نیاز به بررسی</h4><ul>` +
+            data.warnings.map(w => `<li class="scan-warn">${escapeHtml(w)}</li>`).join('') + `</ul></div>`;
+        }
+        const photos = data.photos || [];
+        const failed = photos.filter(p => !p.ok);
+        const meta = [`${photos.length - failed.length} از ${photos.length} عکس خوانده شد`];
+        if (data.matched_model) meta.push(`مدل با «${data.matched_model.model}» در انبار تطبیق داده شد`);
+        if (data.damage_seen) meta.push('آسیب ظاهری دیده شد (در توضیحات آمده؛ وضعیت سلامت را خودتان تعیین کنید)');
+        if (data.stage2 === 'local') meta.push('جمع‌بندی با رأی اکثریت انجام شد');
+        html += `<div class="scan-section scan-src">${meta.map(escapeHtml).join(' · ')}</div></div>`;
+
+        status.style.color = '';
+        status.innerHTML = html;
       } catch (err) {
         status.style.color = 'var(--danger)';
         status.textContent = `⚠️ اسکن با خطا مواجه شد: ${err.message}`;
       } finally {
+        clearTimeout(stageTimer);
         btn.disabled = false;
         btn.textContent = '✨ اسکن مجدد با هوش مصنوعی';
       }
@@ -690,6 +797,7 @@
         no_tag: document.getElementById('no_tag').checked,
         category: document.getElementById('category').value,
         status: document.getElementById('status').value,
+        health: document.getElementById('health').value || 'healthy',
         user_name: document.getElementById('user_name').value.trim(),
         computer_name: document.getElementById('computer_name').value.trim(),
         manufacturer_model: document.getElementById('manufacturer_model').value.trim(),

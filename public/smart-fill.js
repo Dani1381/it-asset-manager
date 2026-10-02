@@ -328,6 +328,10 @@ async function initSmartFill() {
     }
   });
 
+  // As-you-type suggestions from models already in the database
+  setupModelAutocomplete('manufacturer_model', 'category', it => { if (window.onModelPicked) window.onModelPicked(it); });
+  setupModelAutocomplete('edit-model', 'edit-category');
+
   // Attach text expansions
   setupShorthand('storage_drives', SHORTHAND_RULES.storage);
   setupShorthand('ram', SHORTHAND_RULES.ram);
@@ -340,12 +344,119 @@ async function initSmartFill() {
   setupShorthand('edit-model', SHORTHAND_RULES.model);
 }
 
+// ---------------------------------------------------------------------------
+// Model autocomplete: while typing, similar models already in the database
+// are listed (fuzzy match, typo tolerant). Picking one sets the model name and
+// category and lets the page fill the rest (specs, photo).
+// ---------------------------------------------------------------------------
+function acEscape(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+}
+
+function acHighlight(text, query) {
+  const safe = acEscape(text);
+  const words = String(query || '').toLowerCase().split(/[^a-z0-9؀-ۿ]+/).filter(w => w.length >= 2);
+  if (!words.length) return safe;
+  const re = new RegExp(`(${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  return safe.replace(re, '<mark>$1</mark>');
+}
+
+function setupModelAutocomplete(inputId, categoryId, onPick) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.acBound) return;
+  input.dataset.acBound = '1';
+  input.setAttribute('autocomplete', 'off');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'model-ac-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const list = document.createElement('div');
+  list.className = 'model-ac-list';
+  list.hidden = true;
+  wrap.appendChild(list);
+
+  let items = [];
+  let active = -1;
+  let timer = null;
+  let seq = 0;
+
+  const close = () => { list.hidden = true; active = -1; };
+
+  function render(query) {
+    if (!items.length) { close(); return; }
+    list.innerHTML = `<div class="model-ac-head">🔎 مدل‌های مشابه در انبار</div>` + items.map((it, i) => `
+      <button type="button" class="model-ac-item${i === active ? ' active' : ''}" data-i="${i}">
+        ${it.photo_url ? `<img class="model-ac-thumb" src="${acEscape(it.photo_url)}" alt="" loading="lazy">`
+                       : `<span class="model-ac-thumb">${typeof categoryIcon === 'function' ? categoryIcon(it.category) : '📦'}</span>`}
+        <span class="model-ac-text">
+          <span class="model-ac-name">${acHighlight(it.model, query)}</span>
+          <span class="model-ac-meta">${acEscape(typeof categoryLabel === 'function' ? categoryLabel(it.category) : it.category)} · ${it.count} عدد ثبت‌شده${it.photo_url ? ' · 🖼️ عکس دارد' : ''}</span>
+        </span>
+      </button>`).join('');
+    list.hidden = false;
+  }
+
+  function pick(i) {
+    const it = items[i];
+    if (!it) return;
+    input.value = it.model;
+    close();
+    const cat = categoryId && document.getElementById(categoryId);
+    if (cat && it.category && cat.value !== it.category && [...cat.options].some(o => o.value === it.category)) {
+      cat.value = it.category;
+      cat.dispatchEvent(new Event('change'));
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (onPick) onPick(it);
+  }
+
+  async function search() {
+    const q = input.value.trim();
+    if (q.length < 2) { items = []; close(); return; }
+    const mySeq = ++seq;
+    const cat = categoryId && document.getElementById(categoryId);
+    try {
+      const res = await fetch(`/api/models/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(cat ? cat.value : '')}`);
+      if (!res.ok || mySeq !== seq) return;
+      const data = await res.json();
+      // Nothing to suggest if the only hit is exactly what is already typed
+      items = (data.results || []).filter(r => r.model.toLowerCase() !== q.toLowerCase() || data.results.length > 1);
+      active = -1;
+      if (document.activeElement === input) render(q);
+    } catch (e) { /* offline: no suggestions */ }
+  }
+
+  input.addEventListener('input', e => {
+    if (!e.isTrusted) return; // value set from code (chips, pick, AI) — don't reopen
+    clearTimeout(timer);
+    timer = setTimeout(search, 220);
+  });
+  input.addEventListener('focus', () => { if (input.value.trim().length >= 2) search(); });
+  input.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(input.value); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(input.value); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); e.stopImmediatePropagation(); pick(active); }
+    else if (e.key === 'Escape') close();
+  });
+  // mousedown fires before blur, so the click is not lost
+  list.addEventListener('mousedown', e => {
+    const b = e.target.closest('.model-ac-item');
+    if (b) { e.preventDefault(); pick(Number(b.dataset.i)); }
+  });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+}
+window.setupModelAutocomplete = setupModelAutocomplete;
+
 // Render interactive chips below a form field
 function setupFieldChips(inputId, defaultChips = [], dbItems = [], callback) {
   const input = document.getElementById(inputId);
   if (!input) return;
 
-  const parent = input.parentElement;
+  // The autocomplete wraps the model input; chips belong below the wrapper
+  const acWrap = input.closest('.model-ac-wrap');
+  const parent = acWrap ? acWrap.parentElement : input.parentElement;
   if (!parent) return;
 
   // Remove existing chips if any

@@ -240,6 +240,8 @@ function initDb() {
   if (!assetCols.includes('disk_health_status')) db.exec('ALTER TABLE assets ADD COLUMN disk_health_status TEXT');
   // Items that have no physical property tag get an internal code (NT-0001...) and no_tag = 1
   if (!assetCols.includes('no_tag')) db.exec('ALTER TABLE assets ADD COLUMN no_tag INTEGER NOT NULL DEFAULT 0');
+  // Physical condition set by the operator (default healthy) — values in HEALTH_VALUES
+  if (!assetCols.includes('health')) db.exec("ALTER TABLE assets ADD COLUMN health TEXT NOT NULL DEFAULT 'healthy'");
   const pendingCols = db.prepare('PRAGMA table_info(pending_scans)').all().map(c => c.name);
   if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
 
@@ -279,6 +281,106 @@ function getNextNoTagId() {
 
 function isTruthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+}
+
+const HEALTH_VALUES = ['healthy', 'initial_ok', 'minor_issue', 'needs_check', 'untested', 'broken'];
+function normalizeHealth(v, fallback = 'healthy') {
+  const t = String(v || '').trim().toLowerCase();
+  return HEALTH_VALUES.includes(t) ? t : fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy model search ("as you type" suggestions from models already in the DB)
+// ---------------------------------------------------------------------------
+function compactText(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, '');
+}
+
+function wordTokens(s) {
+  return String(s || '').toLowerCase().split(/[^a-z0-9؀-ۿ]+/).filter(Boolean);
+}
+
+function bigrams(s) {
+  const out = new Map();
+  for (let i = 0; i < s.length - 1; i++) {
+    const g = s.slice(i, i + 2);
+    out.set(g, (out.get(g) || 0) + 1);
+  }
+  return out;
+}
+
+function diceSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const A = bigrams(a);
+  const B = bigrams(b);
+  let inter = 0;
+  for (const [g, n] of A) if (B.has(g)) inter += Math.min(n, B.get(g));
+  return (2 * inter) / (a.length - 1 + b.length - 1);
+}
+
+// 0..1 — how well a stored model name matches what the user is typing
+function modelMatchScore(query, model) {
+  const q = compactText(query);
+  const m = compactText(model);
+  if (!q || !m) return 0;
+  if (q === m) return 1;
+
+  let score = 0;
+  if (m.startsWith(q)) score = Math.max(score, 0.9);
+  else if (m.includes(q)) score = Math.max(score, 0.8);
+
+  // Every typed word found in the model (prefix match per word, order free)
+  const qTok = wordTokens(query);
+  const mTok = wordTokens(model);
+  if (qTok.length) {
+    let hit = 0;
+    for (const t of qTok) {
+      if (mTok.some(w => w.startsWith(t) || (t.length >= 3 && w.includes(t)))) hit += 1;
+      else if (t.length >= 3 && mTok.some(w => diceSimilarity(t, w) >= 0.6)) hit += 0.6;
+    }
+    score = Math.max(score, 0.75 * (hit / qTok.length));
+  }
+
+  // Typos / missing letters ("s27c31" vs "s27c310")
+  score = Math.max(score, 0.85 * diceSimilarity(q, m));
+  return Math.min(1, score);
+}
+
+function searchModels(query, category = null, limit = 8) {
+  const q = String(query || '').trim();
+  if (compactText(q).length < 2) return [];
+
+  const rows = db.prepare(`
+    SELECT a.manufacturer_model AS model, a.category,
+           COUNT(*) AS count, MAX(a.updated_at) AS last_used,
+           MIN(a.property_id) AS sample_property_id,
+           (SELECT p.file_name FROM asset_photos p JOIN assets b ON b.id = p.asset_id
+             WHERE LOWER(TRIM(b.manufacturer_model)) = LOWER(TRIM(a.manufacturer_model))
+             ORDER BY CASE WHEN p.file_name LIKE 'asset\\_%' ESCAPE '\\' OR p.file_name LIKE 'photo\\_%' ESCAPE '\\' THEN 0 ELSE 1 END, p.id DESC
+             LIMIT 1) AS photo
+    FROM assets a
+    WHERE a.manufacturer_model IS NOT NULL AND TRIM(a.manufacturer_model) != ''
+    GROUP BY LOWER(TRIM(a.manufacturer_model)), a.category
+  `).all();
+
+  const scored = [];
+  for (const r of rows) {
+    let s = modelMatchScore(q, r.model);
+    if (s < 0.4) continue;
+    if (category && r.category === category) s += 0.05;
+    scored.push({ ...r, score: Math.round(Math.min(1, s) * 100) / 100 });
+  }
+  scored.sort((a, b) => b.score - a.score || b.count - a.count || String(b.last_used).localeCompare(String(a.last_used)));
+  return scored.slice(0, limit).map(r => ({
+    model: r.model,
+    category: r.category,
+    count: r.count,
+    sample_property_id: r.sample_property_id,
+    photo_url: r.photo ? `/uploads/${r.photo}` : null,
+    score: r.score
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +639,20 @@ const queries = {
     return isFixedSpecCategory(category);
   },
 
+  searchModels(query, category = null, limit = 8) {
+    return searchModels(query, category, limit);
+  },
+
+  findAssetBySerial(serial) {
+    const s = String(serial || '').trim();
+    if (s.length < 4) return null;
+    return db.prepare('SELECT id, property_id, manufacturer_model FROM assets WHERE LOWER(serial_number) = LOWER(?) LIMIT 1').get(s) || null;
+  },
+
+  recentPropertyIds(limit = 8) {
+    return db.prepare('SELECT property_id FROM assets WHERE no_tag = 0 ORDER BY id DESC LIMIT ?').all(limit).map(r => r.property_id);
+  },
+
   getAllAssets({ search, category, status, limit = 200, offset = 0 } = {}) {
     let sql = `
       SELECT a.*, 
@@ -618,13 +734,13 @@ const queries = {
         manufacturer_model, serial_number, os_version, ip_address,
         cpu, ram, storage_drives, c_space, network_devices,
         gpu, monitors, location, department, purchase_date, notes,
-        is_automated, last_scanned_at, created_at, updated_at, no_tag
+        is_automated, last_scanned_at, created_at, updated_at, no_tag, health
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?
       )
     `);
 
@@ -655,7 +771,8 @@ const queries = {
         data.last_scanned_at || null,
         now,
         now,
-        noTag ? 1 : 0
+        noTag ? 1 : 0,
+        normalizeHealth(data.health)
       );
 
       const newId = Number(result.lastInsertRowid);
@@ -717,7 +834,8 @@ const queries = {
         is_automated = ?,
         last_scanned_at = COALESCE(?, last_scanned_at),
         updated_at = ?,
-        no_tag = ?
+        no_tag = ?,
+        health = ?
       WHERE id = ?
     `);
 
@@ -746,6 +864,7 @@ const queries = {
       data.last_scanned_at || null,
       now,
       noTag,
+      data.health !== undefined ? normalizeHealth(data.health, current.health || 'healthy') : (current.health || 'healthy'),
       id
     );
 
@@ -1166,7 +1285,7 @@ const queries = {
     
     // First try exact match prioritizing real user camera photos (file_name starting with asset_ or photo_)
     let photo = db.prepare(`
-      SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id
+      SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id, a.category, a.id AS asset_id
       FROM asset_photos p
       JOIN assets a ON p.asset_id = a.id
       WHERE LOWER(a.manufacturer_model) = LOWER(?)
@@ -1179,7 +1298,7 @@ const queries = {
     // If not found, try partial LIKE match
     if (!photo && clean.length >= 4) {
       photo = db.prepare(`
-        SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id
+        SELECT p.id, p.file_name, p.original_name, a.manufacturer_model, a.property_id, a.category, a.id AS asset_id
         FROM asset_photos p
         JOIN assets a ON p.asset_id = a.id
         WHERE LOWER(a.manufacturer_model) LIKE LOWER(?)
@@ -1326,9 +1445,13 @@ const queries = {
 
     const withPhotos = db.prepare('SELECT COUNT(DISTINCT asset_id) as count FROM asset_photos').get().count;
     const pendingPhotos = total - withPhotos;
+    const broken = db.prepare("SELECT COUNT(*) as count FROM assets WHERE health = 'broken'").get().count;
+    const needsCheck = db.prepare("SELECT COUNT(*) as count FROM assets WHERE health IN ('needs_check', 'initial_ok', 'minor_issue', 'untested')").get().count;
 
     return {
       total,
+      broken,
+      needsCheck,
       diskAlerts,
       noTag,
       active,

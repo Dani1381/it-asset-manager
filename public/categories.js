@@ -76,6 +76,50 @@ if (document.readyState === 'loading') {
   populateCategorySelects();
 }
 
+// Physical condition of a device (default: healthy)
+const HEALTH_STATES = [
+  { value: 'healthy',     icon: '✅', fa: 'سالم',                 en: 'Healthy',              hint: 'کاملاً سالم و تست‌شده' },
+  { value: 'initial_ok',  icon: '🟢', fa: 'سالم در تست اولیه',    en: 'OK on first test',     hint: 'ظاهر و روشن‌شدن اولیه اوکی است، ولی تست کامل نشده' },
+  { value: 'minor_issue', icon: '🟡', fa: 'کار می‌کند، ایراد جزئی', en: 'Works, minor issue',   hint: 'کار می‌کند ولی ایراد کوچکی دارد (خط و خش، پیکسل، باتری ضعیف...)' },
+  { value: 'needs_check', icon: '🟠', fa: 'نیازمند بررسی',        en: 'Needs inspection',     hint: 'رفتار مشکوک دارد و باید بررسی شود' },
+  { value: 'untested',    icon: '⚪', fa: 'تست نشده',             en: 'Not tested',           hint: 'هنوز روشن یا تست نشده' },
+  { value: 'broken',      icon: '🔴', fa: 'خراب',                 en: 'Broken',               hint: 'کار نمی‌کند' }
+];
+
+function findHealth(value) {
+  return HEALTH_STATES.find(h => h.value === value) || HEALTH_STATES[0];
+}
+
+function healthLabel(value) {
+  const h = findHealth(value);
+  const lang = (typeof CURRENT_LANG !== 'undefined') ? CURRENT_LANG : 'fa';
+  return `${h.icon} ${lang === 'en' ? h.en : h.fa}`;
+}
+
+// Segmented picker bound to a hidden <input>. Returns a setter.
+function buildHealthPicker(container, input) {
+  container.classList.add('health-picker');
+  container.innerHTML = HEALTH_STATES.map(h =>
+    `<button type="button" class="health-option health-${h.value}" data-value="${h.value}" title="${h.hint}">${h.icon} ${h.fa}</button>`
+  ).join('');
+  const set = (value) => {
+    const v = findHealth(value).value;
+    input.value = v;
+    container.querySelectorAll('.health-option').forEach(b => b.classList.toggle('active', b.dataset.value === v));
+  };
+  container.addEventListener('click', e => {
+    const b = e.target.closest('.health-option');
+    if (b) set(b.dataset.value);
+  });
+  set(input.value || 'healthy');
+  return set;
+}
+
+window.HEALTH_STATES = HEALTH_STATES;
+window.findHealth = findHealth;
+window.healthLabel = healthLabel;
+window.buildHealthPicker = buildHealthPicker;
+
 window.ASSET_CATEGORIES = ASSET_CATEGORIES;
 window.findCategory = findCategory;
 window.categoryIcon = categoryIcon;

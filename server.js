@@ -368,6 +368,230 @@ Rules:
   }
 }
 
+// ---------------------------------------------------------------------------
+// Smart scan: stage 1 reads every photo on its own, stage 2 reconciles all
+// findings (with database context) and decides which value belongs in which field.
+// ---------------------------------------------------------------------------
+const SMART_SCAN_MAX_IMAGES = 6;
+const SCAN_FIELDS = ['property_id', 'category', 'manufacturer_model', 'serial_number', 'computer_name', 'ip_address',
+  'user_name', 'location', 'department', 'purchase_date', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors'];
+
+const SCAN_CATEGORY_LIST = '"PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other"';
+
+function toLatinDigits(s) {
+  return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+}
+
+function cleanScanValue(v) {
+  if (v === null || v === undefined || typeof v === 'object') return null;
+  const t = String(v).trim();
+  if (!t || /^(null|none|n\/a|na|unknown|-|\.|نامشخص|ندارد)$/i.test(t)) return null;
+  return t.slice(0, 200);
+}
+
+const PHOTO_READ_PROMPT = `
+You are an IT asset inventory assistant. This is ONE of several photos of the SAME device (device body, labels, stickers, screen...).
+Read everything you can see in THIS photo and return STRICT JSON only (no markdown). Use null for anything not visible. Never guess.
+
+{
+  "photo_kind": "property_tag" | "spec_label" | "device_front" | "device_back" | "screen" | "other",
+  "category": ${SCAN_CATEGORY_LIST},
+  "manufacturer_model": "brand + model as printed (e.g. HP EliteDesk 800 G3 SFF, Samsung S24R350)",
+  "serial_number": "S/N, Serial No, Service Tag",
+  "property_id": "organisation property / asset tag number",
+  "computer_name": "host name if shown (e.g. on a sticker or screen)",
+  "ip_address": "IPv4 if written",
+  "mac_address": "MAC if written",
+  "user_name": "person's name written on a label, if any",
+  "location": "room / floor written on a label, if any",
+  "department": "department written on a label, if any",
+  "purchase_date": "purchase / delivery / warranty start date as printed",
+  "cpu": "processor", "ram": "memory size", "storage_drives": "disk / SSD",
+  "gpu": "graphics", "monitors": "screen size / resolution (for monitors, laptops)",
+  "damage": "visible physical damage (cracks, broken parts, burns), else null",
+  "visible_text": "short list of the important printed texts and numbers, verbatim"
+}
+
+How to tell the numbers apart:
+- property_id = the ORGANISATION's tag: a sticker / plate usually saying "اموال", "شماره اموال", "کد اموال", "Asset Tag", "Asset No", "Property of ..." or a company logo with a number / barcode. Copy the number exactly (convert Persian digits to 0-9).
+- serial_number is from the MANUFACTURER (S/N, Serial, SN, Service Tag) — never put it in property_id.
+- Do NOT use P/N, Product No, Model No, Regulatory model, MAC, IMEI, EAN/UPC barcodes as serial or property numbers.
+`;
+
+async function readOnePhoto(base64Image) {
+  const parsed = await call9Router(PHOTO_READ_PROMPT, base64Image);
+  if (!parsed || typeof parsed !== 'object') throw new Error('Empty AI answer');
+  return parsed;
+}
+
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      try { results[i] = { ok: true, value: await fn(items[i], i) }; }
+      catch (err) { results[i] = { ok: false, error: err.message }; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+// Fallback when the reconcile call fails: per field, the value most photos agree on
+// (labels / tags win ties, they are close-ups made for reading)
+function mergeFindingsLocally(findings) {
+  const fields = {}, sources = {}, confidence = {};
+  const kindWeight = { property_tag: 3, spec_label: 3, screen: 2, device_back: 1, device_front: 1, other: 1 };
+  for (const f of SCAN_FIELDS) {
+    const votes = new Map();
+    findings.forEach(p => {
+      const v = cleanScanValue(p.data[f]);
+      if (!v) return;
+      const key = v.toLowerCase().replace(/\s+/g, ' ');
+      const cur = votes.get(key) || { value: v, weight: 0, photos: [] };
+      cur.weight += kindWeight[p.data.photo_kind] || 1;
+      cur.photos.push(p.photo);
+      votes.set(key, cur);
+    });
+    const best = [...votes.values()].sort((a, b) => b.weight - a.weight)[0];
+    if (best) {
+      fields[f] = best.value;
+      sources[f] = best.photos;
+      confidence[f] = votes.size === 1 ? 'high' : 'medium';
+    }
+  }
+  return { fields, sources, confidence, notes: '', warnings: [] };
+}
+
+async function reconcileFindings(findings) {
+  // Database context: how property numbers look here + similar models already registered
+  const settings = queries.getSettings();
+  const knownModels = new Set();
+  for (const p of findings) {
+    const m = cleanScanValue(p.data.manufacturer_model);
+    if (m) queries.searchModels(m, null, 4).forEach(r => knownModels.add(`${r.model} [${r.category}]`));
+  }
+
+  const prompt = `
+You are the final reviewer of an IT asset intake form. Several photos of ONE device were read separately.
+Your job: decide the single best value for every form field and put each value in the RIGHT field.
+
+PHOTO FINDINGS (photo numbers start at 1):
+${JSON.stringify(findings.map(p => ({ photo: p.photo, ...p.data })), null, 1)}
+
+DATABASE CONTEXT:
+- Property-tag prefix used by the app for generated ids: "${settings.asset_tag_prefix || 'AST-'}"
+- Recent property ids already in the database (format examples): ${JSON.stringify(queries.recentPropertyIds(8))}
+- Similar models already registered (prefer these exact spellings when it is clearly the same model): ${JSON.stringify([...knownModels].slice(0, 12))}
+
+RULES:
+1. Use only information present in the findings (including "visible_text"). Never invent values.
+2. Move values that ended up in the wrong field (e.g. an asset-tag number read as serial, a host name read as model).
+3. property_id = the organisation's property / asset tag number. serial_number = the manufacturer's S/N. They are never the same number.
+4. When photos disagree, prefer close-up labels (photo_kind property_tag / spec_label) and values seen in more photos.
+5. Normalise: Latin digits; serial without spaces; ram like "8 GB"; purchase_date as YYYY-MM-DD (convert a Jalali date like 1402/05/10 to Gregorian).
+6. category must be one of: ${SCAN_CATEGORY_LIST}.
+7. "notes": a short PERSIAN summary of other useful facts (MAC address, damage, warranty, anything without a field). Empty string if nothing.
+8. "warnings": PERSIAN strings for doubts the operator should check (conflicting numbers, unreadable digits...).
+
+Return STRICT JSON only:
+{
+  "fields": { ${SCAN_FIELDS.map(f => `"${f}": "value or null"`).join(', ')} },
+  "sources": { "<field>": [photo numbers the value came from] },
+  "confidence": { "<field>": "high" | "medium" | "low" },
+  "notes": "",
+  "warnings": []
+}
+`;
+  const parsed = await call9Router(prompt);
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.fields !== 'object') throw new Error('Reconcile answer has no fields');
+  return parsed;
+}
+
+async function smartScanPhotos(images) {
+  // Stage 1 — read each photo on its own
+  const reads = await mapWithConcurrency(images, 3, img => readOnePhoto(img));
+  const photos = reads.map((r, i) => ({ index: i + 1, ok: r.ok, kind: r.ok ? (r.value.photo_kind || null) : null, error: r.ok ? null : r.error }));
+  const findings = reads.map((r, i) => (r.ok ? { photo: i + 1, data: r.value } : null)).filter(Boolean);
+  if (!findings.length) throw new Error(`هیچ عکسی خوانده نشد: ${reads[0] && reads[0].error ? reads[0].error : 'خطای نامشخص'}`);
+
+  // Stage 2 — reconcile everything (falls back to a local vote if the AI call fails)
+  let merged;
+  let stage2 = 'ai';
+  try {
+    merged = await reconcileFindings(findings);
+  } catch (err) {
+    stage2 = 'local';
+    merged = mergeFindingsLocally(findings);
+    merged.warnings.push('جمع‌بندی هوشمند انجام نشد؛ مقادیر بر اساس رأی اکثریت عکس‌ها انتخاب شدند.');
+  }
+
+  const fields = {};
+  for (const f of SCAN_FIELDS) {
+    let v = cleanScanValue(merged.fields[f]);
+    if (!v) continue;
+    if (['property_id', 'serial_number', 'ip_address', 'purchase_date'].includes(f)) v = toLatinDigits(v);
+    if (f === 'serial_number') v = v.replace(/\s+/g, '');
+    if (f === 'ip_address' && !/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) continue;
+    if (f === 'purchase_date' && !/^\d{4}-\d{2}-\d{2}$/.test(v)) continue;
+    fields[f] = v;
+  }
+  if (fields.category || fields.manufacturer_model) {
+    fields.category = normalizeCategory(fields.category, fields.manufacturer_model) || fields.category;
+  }
+  if (fields.property_id && fields.serial_number && fields.property_id === fields.serial_number) {
+    delete fields.property_id;
+  }
+
+  // Same model already in the database under a slightly different spelling? Use that spelling.
+  let matchedModel = null;
+  if (fields.manufacturer_model) {
+    const best = queries.searchModels(fields.manufacturer_model, fields.category || null, 1)[0];
+    if (best && best.score >= 0.9) {
+      matchedModel = best;
+      fields.manufacturer_model = best.model;
+      if (!fields.category && best.category) fields.category = best.category;
+    }
+  }
+
+  const warnings = Array.isArray(merged.warnings) ? merged.warnings.filter(w => typeof w === 'string').slice(0, 6) : [];
+  const duplicates = {};
+  if (fields.property_id) {
+    const dup = queries.getAssetByPropertyId(fields.property_id);
+    if (dup) {
+      duplicates.property_id = { id: dup.id, property_id: dup.property_id, model: dup.manufacturer_model };
+      warnings.unshift(`شماره اموال ${fields.property_id} قبلاً برای «${dup.manufacturer_model || dup.property_id}» ثبت شده است.`);
+    }
+  }
+  if (fields.serial_number) {
+    const dup = queries.findAssetBySerial(fields.serial_number);
+    if (dup) {
+      duplicates.serial_number = { id: dup.id, property_id: dup.property_id, model: dup.manufacturer_model };
+      warnings.unshift(`سریال ${fields.serial_number} قبلاً با اموال ${dup.property_id} ثبت شده است.`);
+    }
+  }
+
+  // Damage seen in any photo goes into the notes (the condition itself stays the operator's call)
+  const damage = findings.map(p => cleanScanValue(p.data.damage)).filter(Boolean);
+  let notes = cleanScanValue(merged.notes) || '';
+  if (damage.length && !notes.includes(damage[0])) notes = [notes, `آسیب دیده‌شده: ${damage.join('؛ ')}`].filter(Boolean).join('\n');
+
+  return {
+    fields,
+    sources: merged.sources && typeof merged.sources === 'object' ? merged.sources : {},
+    confidence: merged.confidence && typeof merged.confidence === 'object' ? merged.confidence : {},
+    notes,
+    warnings,
+    duplicates,
+    damage_seen: damage.length > 0,
+    matched_model: matchedModel,
+    photos,
+    stage2,
+    model: '9Router'
+  };
+}
+
 // Online Hardware Spec Search by Model name using 9Router AI
 async function lookupSpecsByModelOnline(modelName) {
   const prompt = `
@@ -709,10 +933,39 @@ const server = http.createServer(async (req, res) => {
           url: `/uploads/${photo.file_name}`,
           original_name: photo.original_name,
           property_id: photo.property_id,
-          model: photo.manufacturer_model
+          model: photo.manufacturer_model,
+          category: photo.category,
+          asset_id: photo.asset_id
         });
       }
       return sendJson(res, 200, { found: false });
+    }
+
+    // GET /api/models/search?q=...&category=... (similar models already in the DB, as you type)
+    if (method === 'GET' && pathname === '/api/models/search') {
+      const q = parsedUrl.searchParams.get('q') || '';
+      const category = parsedUrl.searchParams.get('category') || null;
+      return sendJson(res, 200, { results: queries.searchModels(q, category, 8) });
+    }
+
+    // POST /api/ai/smart-scan { images: [base64...] } — read every photo, then reconcile all findings
+    if (method === 'POST' && pathname === '/api/ai/smart-scan') {
+      const data = await parseRequestBody(req);
+      const images = (Array.isArray(data.images) ? data.images : []).filter(x => typeof x === 'string' && x.length > 100);
+      if (!images.length) return sendJson(res, 400, { error: 'هیچ عکسی برای اسکن ارسال نشد' });
+      if (images.length > SMART_SCAN_MAX_IMAGES) {
+        return sendJson(res, 400, { error: `حداکثر ${SMART_SCAN_MAX_IMAGES} عکس در هر اسکن` });
+      }
+      queries.addLog('INFO', 'SMART_SCAN', `اسکن هوشمند ${images.length} عکس شروع شد`, '', req.socket?.remoteAddress || '');
+      try {
+        const result = await smartScanPhotos(images);
+        queries.addLog('SUCCESS', 'SMART_SCAN', `اسکن هوشمند تمام شد: ${Object.keys(result.fields).length} فیلد`,
+          `مدل: ${result.fields.manufacturer_model || '-'} | اموال: ${result.fields.property_id || '-'}`, req.socket?.remoteAddress || '');
+        return sendJson(res, 200, { success: true, ...result });
+      } catch (err) {
+        queries.addLog('ERROR', 'SMART_SCAN', 'اسکن هوشمند ناموفق بود', err.message, req.socket?.remoteAddress || '');
+        return sendJson(res, 500, { error: err.message });
+      }
     }
 
     // GET /api/backup/db or /api/backup/download (Download complete, flushed SQLite database file)
@@ -1423,7 +1676,7 @@ Respond ONLY in JSON format:
         'Manufacturer/Model', 'Serial Number', 'OS Version', 'IP Address',
         'CPU', 'RAM', 'Storage Drives', 'C: Drive Space', 'Network Devices',
         'GPU', 'Monitors', 'Location', 'Department', 'Notes', 'Created At', 'Last Scanned At',
-        'Disk Health', 'Disk Details', 'Has Property Tag'
+        'Disk Health', 'Disk Details', 'Has Property Tag', 'Condition'
       ];
 
       // Short human-readable disk summary for the CSV
@@ -1468,7 +1721,8 @@ Respond ONLY in JSON format:
           csvEscape(a.last_scanned_at),
           csvEscape(a.disk_health_status || ''),
           csvEscape(diskSummary(a.disk_health)),
-          csvEscape(a.no_tag ? 'No' : 'Yes')
+          csvEscape(a.no_tag ? 'No' : 'Yes'),
+          csvEscape(a.health || 'healthy')
         ].join(','))
       ].join('\r\n');
 

@@ -125,6 +125,17 @@ function setupEventListeners() {
       filterAssets();
     });
   }
+
+  const healthFilter = document.getElementById('health-filter');
+  if (healthFilter && typeof HEALTH_STATES !== 'undefined') {
+    for (const h of HEALTH_STATES) {
+      const opt = document.createElement('option');
+      opt.value = h.value;
+      opt.textContent = `${h.icon} ${h.fa}`;
+      healthFilter.appendChild(opt);
+    }
+    healthFilter.addEventListener('change', filterAssets);
+  }
 }
 
 // Quick filter from top stat cards
@@ -139,6 +150,8 @@ function quickFilterStat(target) {
   if (target === 'all') {
     if (catFilter) catFilter.value = 'all';
     if (statusFilter) statusFilter.value = 'all';
+    const healthFilter = document.getElementById('health-filter');
+    if (healthFilter) healthFilter.value = 'all';
   } else if (target === 'PC') {
     if (catFilter) catFilter.value = 'PC';
     if (statusFilter) statusFilter.value = 'all';
@@ -261,8 +274,13 @@ function filterAssets() {
   const search = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
   const cat = document.getElementById('category-filter')?.value || 'all';
   const status = document.getElementById('status-filter')?.value || 'all';
+  const health = document.getElementById('health-filter')?.value || 'all';
 
   const filtered = allAssets.filter(item => {
+    if (health !== 'all') {
+      const h = item.health || 'healthy';
+      if (health === 'not_healthy' ? h === 'healthy' : h !== health) return false;
+    }
     // Special filter check (e.g. no photo)
     if (activeSpecialFilter === 'no_photo' && item.primary_photo) return false;
     if (activeSpecialFilter === 'disk_alert' && !['warning', 'critical'].includes(item.disk_health_status)) return false;
@@ -347,6 +365,7 @@ function renderAssets(assets) {
             <span>${statusText}</span>
           </div>
           ${diskBadgeHtml(asset.disk_health_status)}
+          ${asset.health && asset.health !== 'healthy' ? `<div class="health-badge is-${escapeHtml(asset.health)}" title="${escapeHtml(findHealth(asset.health).hint)}">${escapeHtml(healthLabel(asset.health))}</div>` : ''}
         </div>
 
         <div class="asset-body">
