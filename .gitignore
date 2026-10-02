@@ -3,6 +3,10 @@ inventory.db
 inventory.db-wal
 inventory.db-shm
 
+# Backups
+backups/*
+!backups/.gitkeep
+
 # User uploads (keep directory with .gitkeep)
 uploads/*
 !uploads/.gitkeep

@@ -4,7 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { queries, getNextPropertyId } = require('./database');
+const {
+  queries,
+  getNextPropertyId,
+  DB_PATH,
+  BACKUPS_DIR,
+  checkpointDb,
+  createAutomaticBackup,
+  checkDbIntegrity
+} = require('./database');
 const { generateProductCard } = require('./svg_generator');
 const { fetchMultiSourceProductImages } = require('./multi_store_scraper');
 
@@ -518,22 +526,73 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { found: false });
     }
 
-    // GET /api/backup/db (Download complete SQLite database file)
-    if (method === 'GET' && pathname === '/api/backup/db') {
-      const dbPath = path.join(__dirname, 'asset_database.sqlite');
-      if (!fs.existsSync(dbPath)) {
+    // GET /api/backup/db or /api/backup/download (Download complete, flushed SQLite database file)
+    if (method === 'GET' && (pathname === '/api/backup/db' || pathname === '/api/backup/download')) {
+      // Flush WAL journal to guarantee complete snapshot
+      checkpointDb();
+
+      if (!fs.existsSync(DB_PATH)) {
         return sendJson(res, 404, { error: 'Database file not found' });
       }
 
-      const stat = fs.statSync(dbPath);
+      const stat = fs.statSync(DB_PATH);
+      const today = new Date().toISOString().slice(0, 10);
       res.writeHead(200, {
         'Content-Type': 'application/x-sqlite3',
         'Content-Length': stat.size,
-        'Content-Disposition': `attachment; filename="asset_database_backup_${Date.now()}.sqlite"`
+        'Content-Disposition': `attachment; filename="arka_inventory_backup_${today}.db"`
       });
-      const readStream = fs.createReadStream(dbPath);
+      const readStream = fs.createReadStream(DB_PATH);
       readStream.pipe(res);
       return;
+    }
+
+    // GET /api/backup/status (Inspect database integrity, file sizes, and backup counts)
+    if (method === 'GET' && pathname === '/api/backup/status') {
+      checkpointDb();
+      const dbStat = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH) : null;
+      const walPath = `${DB_PATH}-wal`;
+      const walStat = fs.existsSync(walPath) ? fs.statSync(walPath) : null;
+      
+      let backupCount = 0;
+      let latestBackup = null;
+      if (fs.existsSync(BACKUPS_DIR)) {
+        const files = fs.readdirSync(BACKUPS_DIR)
+          .filter(f => f.startsWith('inventory_') && f.endsWith('.db'))
+          .map(f => ({ name: f, path: path.join(BACKUPS_DIR, f), mtime: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        backupCount = files.length;
+        if (files[0]) {
+          latestBackup = {
+            filename: files[0].name,
+            modified_at: new Date(files[0].mtime).toISOString()
+          };
+        }
+      }
+
+      const isHealthy = checkDbIntegrity();
+      const stats = queries.getStats();
+
+      return sendJson(res, 200, {
+        healthy: isHealthy,
+        integrity: isHealthy ? 'OK (Pristine)' : 'WARNING',
+        database_size_bytes: dbStat ? dbStat.size : 0,
+        wal_size_bytes: walStat ? walStat.size : 0,
+        total_assets: stats ? stats.total : 0,
+        backups_count: backupCount,
+        latest_backup: latestBackup,
+        auto_backup_enabled: true
+      });
+    }
+
+    // POST /api/backup/create (Force create manual snapshot now)
+    if (method === 'POST' && pathname === '/api/backup/create') {
+      const snap = createAutomaticBackup('manual');
+      if (snap) {
+        queries.addLog('SUCCESS', 'BACKUP', `پشتیبان دستی با نام ${snap.filename} ایجاد شد.`);
+        return sendJson(res, 200, { success: true, backup: snap });
+      }
+      return sendJson(res, 500, { error: 'Failed to create backup snapshot' });
     }
 
     // POST /api/backup/restore-db (Restore/Replace SQLite database)
@@ -544,16 +603,12 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const dbPath = path.join(__dirname, 'asset_database.sqlite');
-        const backupPath = path.join(__dirname, `asset_database_bak_${Date.now()}.sqlite`);
-        
-        // Backup current database first
-        if (fs.existsSync(dbPath)) {
-          fs.copyFileSync(dbPath, backupPath);
-        }
+        // Backup current database first before overwriting
+        createAutomaticBackup('pre_restore');
 
         const buffer = Buffer.from(data.database_base64, 'base64');
-        fs.writeFileSync(dbPath, buffer);
+        fs.writeFileSync(DB_PATH, buffer);
+        checkpointDb();
 
         queries.addLog('SUCCESS', 'SYSTEM', 'دیتابیس با موفقیت بازنشانی/مهاجرت داده شد');
         return sendJson(res, 200, { success: true, message: 'Database restored successfully! Reload page.' });

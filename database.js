@@ -4,13 +4,103 @@ const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 
 const DB_PATH = path.join(__dirname, 'inventory.db');
+const BACKUPS_DIR = path.join(__dirname, 'backups');
+
+// Auto-recovery: if main database is missing or empty, restore from the newest snapshot
+function autoRecoverIfMissing() {
+  try {
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    }
+    const dbMissingOrEmpty = !fs.existsSync(DB_PATH) || fs.statSync(DB_PATH).size === 0;
+    if (dbMissingOrEmpty) {
+      const backupFiles = fs.readdirSync(BACKUPS_DIR)
+        .filter(f => f.startsWith('inventory_') && f.endsWith('.db'))
+        .map(f => ({ name: f, path: path.join(BACKUPS_DIR, f), mtime: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+
+      if (backupFiles.length > 0) {
+        console.warn(`[DATA RECOVERY] Main database missing or empty! Restoring from snapshot: ${backupFiles[0].name}`);
+        fs.copyFileSync(backupFiles[0].path, DB_PATH);
+      }
+    }
+  } catch (err) {
+    console.error('[DATA RECOVERY] Check failed:', err.message);
+  }
+}
+
+autoRecoverIfMissing();
 
 // Ensure database connection
 const db = new DatabaseSync(DB_PATH);
 
-// Enable WAL mode and foreign keys
+// Enable WAL mode, NORMAL synchronous, and foreign keys for high durability and crash-safety
 db.exec('PRAGMA journal_mode = WAL;');
+db.exec('PRAGMA synchronous = NORMAL;');
 db.exec('PRAGMA foreign_keys = ON;');
+
+// WAL checkpoint helper - flushes unwritten WAL blocks into main .db file
+function checkpointDb() {
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+  } catch (e) {
+    console.warn('[DB] WAL checkpoint warning:', e.message);
+  }
+}
+
+// Automatic Snapshot Backup
+function createAutomaticBackup(tag = 'auto') {
+  try {
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    }
+    // Flush WAL first so the snapshot has all recent data
+    checkpointDb();
+
+    if (!fs.existsSync(DB_PATH) || fs.statSync(DB_PATH).size === 0) return null;
+
+    const d = new Date();
+    const dateStr = d.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupFile = path.join(BACKUPS_DIR, `inventory_${tag}_${dateStr}.db`);
+    fs.copyFileSync(DB_PATH, backupFile);
+
+    // Keep the latest 50 backups, clean older ones
+    const files = fs.readdirSync(BACKUPS_DIR)
+      .filter(f => f.startsWith('inventory_') && f.endsWith('.db'))
+      .map(f => ({ name: f, path: path.join(BACKUPS_DIR, f), mtime: fs.statSync(path.join(BACKUPS_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (files.length > 50) {
+      files.slice(50).forEach(f => {
+        try { fs.unlinkSync(f.path); } catch (e) {}
+      });
+    }
+
+    return { file: backupFile, filename: path.basename(backupFile), total: files.length };
+  } catch (err) {
+    console.error('[DB] Automatic backup failed:', err.message);
+    return null;
+  }
+}
+
+// Debounced backup on data changes
+let backupDebounceTimer = null;
+function scheduleBackup() {
+  if (backupDebounceTimer) clearTimeout(backupDebounceTimer);
+  backupDebounceTimer = setTimeout(() => {
+    createAutomaticBackup('change');
+  }, 2000);
+}
+
+// Database integrity check
+function checkDbIntegrity() {
+  try {
+    const res = db.prepare('PRAGMA integrity_check;').get();
+    return res && (res.integrity_check === 'ok' || Object.values(res)[0] === 'ok');
+  } catch (e) {
+    return false;
+  }
+}
 
 // Initialize tables
 function initDb() {
@@ -244,41 +334,49 @@ const queries = {
       )
     `);
 
-    const result = stmt.run(
-      propertyId,
-      data.category || 'PC',
-      data.status || 'active',
-      data.user_name || null,
-      data.computer_name || null,
-      data.manufacturer_model || null,
-      data.serial_number || null,
-      data.os_version || null,
-      data.ip_address || null,
-      data.cpu || null,
-      data.ram || null,
-      data.storage_drives || null,
-      data.c_space || null,
-      data.network_devices || null,
-      data.gpu || null,
-      data.monitors || null,
-      data.location || null,
-      data.department || null,
-      data.purchase_date || null,
-      data.notes || null,
-      data.is_automated ? 1 : 0,
-      data.last_scanned_at || null,
-      now,
-      now
-    );
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = stmt.run(
+        propertyId,
+        data.category || 'PC',
+        data.status || 'active',
+        data.user_name || null,
+        data.computer_name || null,
+        data.manufacturer_model || null,
+        data.serial_number || null,
+        data.os_version || null,
+        data.ip_address || null,
+        data.cpu || null,
+        data.ram || null,
+        data.storage_drives || null,
+        data.c_space || null,
+        data.network_devices || null,
+        data.gpu || null,
+        data.monitors || null,
+        data.location || null,
+        data.department || null,
+        data.purchase_date || null,
+        data.notes || null,
+        data.is_automated ? 1 : 0,
+        data.last_scanned_at || null,
+        now,
+        now
+      );
 
-    const newId = Number(result.lastInsertRowid);
+      const newId = Number(result.lastInsertRowid);
 
-    // Auto-attach existing photo if available for same model
-    if (data.manufacturer_model) {
-      queries.autoAttachPhotoIfAvailable(newId, data.manufacturer_model);
+      // Auto-attach existing photo if available for same model
+      if (data.manufacturer_model) {
+        queries.autoAttachPhotoIfAvailable(newId, data.manufacturer_model);
+      }
+
+      db.exec('COMMIT');
+      scheduleBackup();
+      return newId;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
     }
-
-    return newId;
   },
 
   // Update existing asset
@@ -342,6 +440,7 @@ const queries = {
       id
     );
 
+    scheduleBackup();
     return true;
   },
 
@@ -396,6 +495,8 @@ const queries = {
         `مشخصات سیستم «${existingAsset.computer_name || compName}» با کد اموال «${existingAsset.property_id}» به‌روزرسانی شد.`,
         `کاربر: ${scanData.user_name || existingAsset.user_name || 'ناشناخته'} | IP: ${scanData.ip_address || existingAsset.ip_address}`
       );
+
+      scheduleBackup();
 
       return {
         is_update: true,
@@ -457,6 +558,9 @@ const queries = {
     // 3. BRAND NEW SCAN: Ingest main device + split monitors into pending queue
     const batchId = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const createdItems = [];
+
+    db.exec('BEGIN IMMEDIATE');
+    try {
 
     // Determine PC / Laptop Category
     let mainCategory = 'PC';
@@ -525,6 +629,9 @@ const queries = {
       }
     }
 
+    db.exec('COMMIT');
+    scheduleBackup();
+
     return {
       batch_id: batchId,
       items_count: createdItems.length,
@@ -532,7 +639,11 @@ const queries = {
       is_new: true,
       message: `اسکن دریافت شد؛ ${createdItems.length} قلم دارایی تفکیک و در صف تایید اموال قرار گرفت.`
     };
-  },
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+},
 
   // Get all pending scan items waiting for admin review & property ID assignment
   getPendingScans() {
@@ -585,12 +696,14 @@ const queries = {
     // Auto-attach existing photo of the same model if available
     queries.autoAttachPhotoIfAvailable(newId, item.manufacturer_model);
 
+    scheduleBackup();
     return { id: newId, property_id: propertyId };
   },
 
   // Reject / Delete a pending scan item
   rejectPendingScan(pendingId) {
-    db.prepare('DELETE FROM pending_scans WHERE id = ?').run(pendingId);
+    const res = db.prepare('DELETE FROM pending_scans WHERE id = ?').run(pendingId);
+    if (res.changes > 0) scheduleBackup();
     return true;
   },
 
@@ -605,7 +718,11 @@ const queries = {
       }
     }
     const result = db.prepare('DELETE FROM assets WHERE id = ?').run(id);
-    return result.changes > 0;
+    if (result.changes > 0) {
+      scheduleBackup();
+      return true;
+    }
+    return false;
   },
 
   // Photos
@@ -625,6 +742,7 @@ const queries = {
       }
     } catch (e) {}
 
+    scheduleBackup();
     return photoId;
   },
 
@@ -638,6 +756,7 @@ const queries = {
     }
 
     db.prepare('DELETE FROM asset_photos WHERE id = ?').run(photoId);
+    scheduleBackup();
     return true;
   },
 
@@ -684,6 +803,7 @@ const queries = {
       VALUES (?, ?, 'Attached from Library', ?, ?)
     `).run(targetAssetId, fileName, caption || 'Attached from Photo Library', now);
 
+    scheduleBackup();
     return Number(res.lastInsertRowid);
   },
 
@@ -790,6 +910,7 @@ const queries = {
         INSERT INTO asset_photos (asset_id, file_name, original_name, caption, created_at)
         VALUES (?, ?, ?, ?, ?)
       `).run(assetId, newFileName, existing.original_name, caption, now);
+      scheduleBackup();
       return Number(res.lastInsertRowid);
     }
     return null;
@@ -915,19 +1036,26 @@ const queries = {
       INSERT INTO users (username, password, full_name, role, created_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(username.trim(), password.trim(), fullName.trim(), role, now);
+    scheduleBackup();
     return Number(res.lastInsertRowid);
   },
 
   updateUser(id, fullName, role, password = null) {
+    let changed = false;
     if (password && password.trim()) {
-      return db.prepare('UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?').run(fullName.trim(), role, password.trim(), id).changes > 0;
+      changed = db.prepare('UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?').run(fullName.trim(), role, password.trim(), id).changes > 0;
+    } else {
+      changed = db.prepare('UPDATE users SET full_name = ?, role = ? WHERE id = ?').run(fullName.trim(), role, id).changes > 0;
     }
-    return db.prepare('UPDATE users SET full_name = ?, role = ? WHERE id = ?').run(fullName.trim(), role, id).changes > 0;
+    if (changed) scheduleBackup();
+    return changed;
   },
 
   deleteUser(id) {
     if (id === 1) return false; // Never delete root admin
-    return db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
+    const changed = db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
+    if (changed) scheduleBackup();
+    return changed;
   }
 };
 
@@ -936,7 +1064,13 @@ initDb();
 
 module.exports = {
   db,
+  DB_PATH,
+  BACKUPS_DIR,
   initDb,
   getNextPropertyId,
+  checkpointDb,
+  createAutomaticBackup,
+  scheduleBackup,
+  checkDbIntegrity,
   queries
 };

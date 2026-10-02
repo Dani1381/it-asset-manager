@@ -15,6 +15,7 @@ const TRANSLATIONS = {
     nav_scanner_bat: "اسکنر ویندوز (.bat)",
     nav_scanner_sh: "اسکنر لینوکس (.sh)",
     nav_csv: "خروجی اکسل / CSV",
+    nav_backup_db: "پشتیبان دیتابیس",
     nav_back: "بازگشت به لیست",
     lang_toggle: "English",
     theme_light: "☀️ تم روشن",
@@ -145,6 +146,7 @@ const TRANSLATIONS = {
     nav_scanner_bat: "Windows Scanner (.bat)",
     nav_scanner_sh: "Linux Scanner (.sh)",
     nav_csv: "CSV Export",
+    nav_backup_db: "Backup DB",
     nav_back: "Back to Inventory",
     lang_toggle: "فارسی",
 
