@@ -427,7 +427,11 @@
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }, 600);
         });
-        modelInput.addEventListener('blur', () => { checkModelPhotoSuggestion(); checkModelSpecTemplate(); });
+        modelInput.addEventListener('blur', async () => {
+          await normalizeModelInput(modelInput);
+          checkModelPhotoSuggestion();
+          checkModelSpecTemplate();
+        });
       }
       const catSelect = document.getElementById('category');
       if (catSelect) catSelect.addEventListener('change', checkModelSpecTemplate);
@@ -440,6 +444,23 @@
       setHealth('initial_ok');
       showHint();
     });
+
+    // Show the clean, database-consistent spelling as soon as the field is left
+    async function normalizeModelInput(input) {
+      const raw = input.value.trim();
+      if (raw.length < 2) return;
+      try {
+        const res = await fetch(`/api/models/normalize?name=${encodeURIComponent(raw)}`);
+        const data = res.ok ? await res.json() : null;
+        if (data && data.name && data.name !== raw && input.value.trim() === raw) {
+          input.value = data.name;
+          const st = document.getElementById('model-lookup-status');
+          st.style.display = 'block';
+          st.style.color = 'var(--text-dim)';
+          st.textContent = `✏️ نام یکدست شد: «${raw}» ← «${data.name}»`;
+        }
+      } catch (e) {}
+    }
 
     // A model was picked from the "similar models" list: fill the rest right away
     window.onModelPicked = function () {

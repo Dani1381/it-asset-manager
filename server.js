@@ -548,6 +548,7 @@ async function smartScanPhotos(images) {
   // Same model already in the database under a slightly different spelling? Use that spelling.
   let matchedModel = null;
   if (fields.manufacturer_model) {
+    fields.manufacturer_model = queries.normalizeModelName(fields.manufacturer_model);
     const best = queries.searchModels(fields.manufacturer_model, fields.category || null, 1)[0];
     if (best && best.score >= 0.9) {
       matchedModel = best;
@@ -916,6 +917,11 @@ const server = http.createServer(async (req, res) => {
 
       try {
         const result = await lookupSpecsByModelOnline(data.model);
+        if (result && result.canonical_name) result.canonical_name = queries.normalizeModelName(result.canonical_name);
+        // A spec the device does not have comes back as "N/A (...)"; leave those fields empty
+        for (const k of ['default_cpu', 'default_ram', 'default_storage', 'gpu', 'monitors']) {
+          if (result && typeof result[k] === 'string' && /^\s*n\/?a\b/i.test(result[k])) result[k] = null;
+        }
         queries.addLog('SUCCESS', 'GEMINI_LOOKUP', `مشخصات آنلاین مدل «${data.model}» استخراج شد`, `کانفیگ‌های CPU: ${Array.isArray(result.cpu_options) ? result.cpu_options.length : 0} عدد`, req.socket?.remoteAddress || '');
         return sendJson(res, 200, {
           success: true,
@@ -949,6 +955,12 @@ const server = http.createServer(async (req, res) => {
         });
       }
       return sendJson(res, 200, { found: false });
+    }
+
+    // GET /api/models/normalize?name=... (the clean, database-consistent spelling of a model name)
+    if (method === 'GET' && pathname === '/api/models/normalize') {
+      const name = parsedUrl.searchParams.get('name') || '';
+      return sendJson(res, 200, { input: name, name: queries.normalizeModelName(name) });
     }
 
     // GET /api/models/search?q=...&category=... (similar models already in the DB, as you type)

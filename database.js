@@ -242,6 +242,7 @@ function initDb() {
   if (!assetCols.includes('no_tag')) db.exec('ALTER TABLE assets ADD COLUMN no_tag INTEGER NOT NULL DEFAULT 0');
   // Physical condition set by the operator (default healthy) — values in HEALTH_VALUES
   if (!assetCols.includes('health')) db.exec("ALTER TABLE assets ADD COLUMN health TEXT NOT NULL DEFAULT 'healthy'");
+  migrateModelNames();
   // Placeholder specs like "N/A (monitor, no CPU)" were saved by older AI lookups; they are not data
   for (const col of SPEC_PLACEHOLDER_FIELDS) {
     db.exec(`UPDATE assets SET ${col} = NULL WHERE UPPER(TRIM(${col})) IN ('N/A', 'NA') OR UPPER(TRIM(${col})) LIKE 'N/A (%'`);
@@ -285,6 +286,107 @@ function getNextNoTagId() {
 
 function isTruthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+}
+
+// ---------------------------------------------------------------------------
+// Model name normalisation: one spelling per model, so the same device always
+// matches (photos, specs, suggestions). "Dell Inc. Precision Tower 3420" ->
+// "Dell Precision Tower 3420", "HP HP EliteDesk" -> "HP EliteDesk",
+// "c24f390" -> "Samsung C24F390", "Samsung LS22F355HN (Model Code: ...)" -> "Samsung S22F355HN".
+// ---------------------------------------------------------------------------
+const BRAND_CANON = [
+  [/^hewlett[\s-]*packard(\s+enterprise)?$/i, 'HP'], [/^hpe?$/i, m => m.toUpperCase()],
+  [/^dell(\s+inc\.?)?$/i, 'Dell'], [/^lenovo$/i, 'Lenovo'], [/^samsung(\s+electronics)?$/i, 'Samsung'],
+  [/^lg(\s+electronics)?$/i, 'LG'], [/^asus(tek)?$/i, 'ASUS'], [/^acer$/i, 'Acer'], [/^benq$/i, 'BenQ'],
+  [/^philips$/i, 'Philips'], [/^viewsonic$/i, 'ViewSonic'], [/^aoc$/i, 'AOC'], [/^msi$/i, 'MSI'],
+  [/^gigabyte$/i, 'Gigabyte'], [/^apple$/i, 'Apple'], [/^canon$/i, 'Canon'], [/^epson$/i, 'Epson'],
+  [/^tp-?link$/i, 'TP-Link'], [/^d-?link$/i, 'D-Link'], [/^mikrotik$/i, 'MikroTik'], [/^cisco$/i, 'Cisco'],
+  [/^huawei$/i, 'Huawei'], [/^apc$/i, 'APC'], [/^western\s+digital|^wd$/i, 'WD'], [/^seagate$/i, 'Seagate'],
+  [/^kingston$/i, 'Kingston'], [/^adata$/i, 'ADATA'], [/^toshiba$/i, 'Toshiba'], [/^fujitsu$/i, 'Fujitsu'],
+  [/^microsoft$/i, 'Microsoft'], [/^logitech$/i, 'Logitech'], [/^hikvision$/i, 'Hikvision'], [/^dahua$/i, 'Dahua'],
+  [/^ubiquiti$/i, 'Ubiquiti'], [/^grandstream$/i, 'Grandstream'], [/^yealink$/i, 'Yealink'], [/^panasonic$/i, 'Panasonic'],
+  [/^xerox$/i, 'Xerox'], [/^brother$/i, 'Brother'], [/^kyocera$/i, 'Kyocera'], [/^ricoh$/i, 'Ricoh'], [/^sony$/i, 'Sony']
+];
+const BRAND_WORDS = /^(hewlett[\s-]*packard(\s+enterprise)?|hpe?|dell|lenovo|samsung|lg|asus|acer|benq|philips|viewsonic|aoc|msi|gigabyte|apple|canon|epson|tp-?link|d-?link|mikrotik|cisco|huawei|apc|wd|western\s+digital|seagate|kingston|adata|toshiba|fujitsu|microsoft|logitech|hikvision|dahua|ubiquiti|grandstream|yealink|panasonic|xerox|brother|kyocera|ricoh|sony)\b/i;
+const COMPANY_SUFFIX = /\b(inc\.?|corp\.?|corporation|co\.,?\s*ltd\.?|ltd\.?|limited|gmbh|electronics)(?=\s|$)/gi;
+
+function canonBrand(word) {
+  for (const [re, out] of BRAND_CANON) if (re.test(word)) return typeof out === 'function' ? out(word) : out;
+  return word;
+}
+
+function canonicalModelName(raw) {
+  let s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+  // Bracketed extras: "(Model Code: LS22F355HNMCHD)", "(Part No ...)", "(1TB)" stays only if it is not a code note
+  s = s.replace(/\s*[\(\[]\s*(model\s*(code|no\.?|number)?|part\s*(no\.?|number)|p\/n|sku|type)\s*[:#]?[^\)\]]*[\)\]]/gi, '').trim();
+  s = s.replace(COMPANY_SUFFIX, '').replace(/\s+/g, ' ').trim();
+
+  // Brand at the start: canonical spelling, and drop a repeated brand ("HP HP ...", "Hewlett-Packard HP ...")
+  const m = s.match(BRAND_WORDS);
+  if (m) {
+    const brand = canonBrand(m[1]);
+    let rest = s.slice(m[0].length).trim();
+    const again = rest.match(BRAND_WORDS);
+    if (again && canonBrand(again[1]) === brand) rest = rest.slice(again[0].length).trim();
+    s = rest ? `${brand} ${rest}` : brand;
+  }
+
+  // Samsung monitor codes: brand is often missing, sales codes carry an "L" prefix ("LS22F355HN" = "S22F355HN")
+  const samsungCode = /^L?([SCU]\d{2}[A-Z]\d{2,3}[A-Za-z]{0,3})(?:[A-Z]{4})?$/;
+  const parts = s.split(' ');
+  const brandless = !BRAND_WORDS.test(s);
+  const codeIdx = parts.findIndex(p => samsungCode.test(p.toUpperCase().replace(/X$/, 'x')));
+  if (codeIdx >= 0 && (brandless ? parts.length === 1 : /^samsung$/i.test(parts[0]))) {
+    const code = parts[codeIdx];
+    const upper = code.replace(/[a-wyz]/g, c => c.toUpperCase()); // keep a trailing wildcard "x"
+    parts[codeIdx] = upper.replace(samsungCode, '$1');
+    s = (brandless ? ['Samsung', ...parts] : parts).join(' ');
+  }
+
+  // Model codes typed in lower case ("c24f390") -> upper case; mixed case is left alone
+  s = s.split(' ').map(w => (/\d/.test(w) && /[a-z]/.test(w) && w === w.toLowerCase() && w.length > 3) ? w.toUpperCase() : w).join(' ');
+  return s.slice(0, 120);
+}
+
+// Same model already stored under another spelling? Use the stored one.
+function matchExistingModelName(name) {
+  const key = compactText(name);
+  if (key.length < 3) return name;
+  const rows = db.prepare(`SELECT manufacturer_model AS m, COUNT(*) AS n FROM assets
+    WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != '' GROUP BY manufacturer_model ORDER BY n DESC`).all();
+  const hit = rows.find(r => compactText(r.m) === key);
+  return hit ? hit.m : name;
+}
+
+function normalizeModelName(raw) {
+  const c = canonicalModelName(raw);
+  return c ? matchExistingModelName(c) : c;
+}
+
+// One-time clean-up of names stored before the normaliser existed (backup taken first)
+function migrateModelNames() {
+  const done = db.prepare("SELECT value FROM settings WHERE key = 'model_names_normalized_v1'").get();
+  if (done) return;
+  const rows = db.prepare("SELECT DISTINCT manufacturer_model AS m FROM assets WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != ''").all();
+  const changes = rows.map(r => [r.m, canonicalModelName(r.m)]).filter(([a, b]) => b && a !== b);
+  if (changes.length) {
+    try {
+      const dir = path.join(__dirname, 'backups');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `inventory_before_model_names_${Date.now()}.db`).replace(/'/g, "''");
+      db.exec(`VACUUM INTO '${file}'`);
+    } catch (e) {
+      console.error('Model name migration skipped: backup failed', e.message);
+      return;
+    }
+    const upd = db.prepare('UPDATE assets SET manufacturer_model = ? WHERE manufacturer_model = ?');
+    for (const [from, to] of changes) {
+      upd.run(to, from);
+      console.log(`[model names] "${from}" -> "${to}"`);
+    }
+  }
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('model_names_normalized_v1', ?)").run(String(changes.length));
 }
 
 const SPEC_PLACEHOLDER_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
@@ -654,6 +756,10 @@ const queries = {
     return searchModels(query, category, limit);
   },
 
+  normalizeModelName(name) {
+    return normalizeModelName(name);
+  },
+
   findAssetBySerial(serial) {
     const s = String(serial || '').trim();
     if (s.length < 4) return null;
@@ -735,6 +841,7 @@ const queries = {
   createAsset(data) {
     const now = new Date().toISOString();
     stripSpecPlaceholders(data);
+    if (data.manufacturer_model) data.manufacturer_model = normalizeModelName(data.manufacturer_model);
     // Same model already registered? Reuse its specs (monitors, drives, network gear...)
     data._specs_copied = fillFromModelTemplate(data);
     const noTag = isTruthyFlag(data.no_tag);
@@ -809,6 +916,7 @@ const queries = {
     const current = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!current) return false;
     stripSpecPlaceholders(data);
+    if (data.manufacturer_model) data.manufacturer_model = normalizeModelName(data.manufacturer_model);
 
     // "No property tag" switch: tagging an untagged item or removing its tag
     let noTag = current.no_tag ? 1 : 0;
@@ -888,6 +996,7 @@ const queries = {
   // Ingestion from network scanner (.bat / .sh) with Intelligent Duplicate Detection & Re-scan Auto-Update
   ingestScan(scanData) {
     const now = new Date().toISOString();
+    if (scanData.manufacturer_model) scanData.manufacturer_model = normalizeModelName(scanData.manufacturer_model);
     const compName = (scanData.computer_name || '').trim();
     const serialNum = (scanData.serial_number || '').trim();
     const diskHealth = normalizeDiskHealth(scanData.disk_health);
