@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Scan Asset (IT Inventory)
+Comment=Scan this computer for the IT asset inventory
+Exec=sh -c 'cd "$(dirname "%k")" && bash ./Scan-Asset-Linux.sh'
+Terminal=true
+Icon=computer
+Categories=Utility;

@@ -13,7 +13,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-C
 goto :EOF
 #>
 
-$SERVER_URL = "http://192.168.10.194:3000"
+$SERVER_URLS = @("http://192.168.10.194:3000")
+# First address that answers wins (LAN inside the office, public address from outside)
+function Find-Server {
+    foreach ($u in $SERVER_URLS) {
+        try { Invoke-WebRequest -Uri "$u/login.html" -UseBasicParsing -TimeoutSec 5 | Out-Null; return $u } catch {}
+    }
+    return $null
+}
 $SERVER_KEY = "SET-AUTOMATICALLY-ON-DOWNLOAD"
 
 $UserName = $env:USERNAME
@@ -239,7 +246,9 @@ if (-not $IsAdmin) {
     Write-Host "      Tip: run this scanner as Administrator for full SMART data (wear %, temperature, errors)." -ForegroundColor DarkYellow
 }
 
-Write-Host "[5/5] Sending specifications to IT Asset Server ($SERVER_URL)..." -ForegroundColor Yellow
+Write-Host "[5/5] Looking for the IT Asset Server..." -ForegroundColor Yellow
+$SERVER_URL = Find-Server
+if ($SERVER_URL) { Write-Host "      Using $SERVER_URL" -ForegroundColor Gray }
 
 $Payload = [ordered]@{
     userName = $UserName
@@ -279,6 +288,7 @@ $FileName = "${SafeName}_${Stamp}.json"
 
 $Online = $false
 try {
+    if (-not $SERVER_URL) { throw "no server reachable" }
     $res = Send-Scan $Json
     $Online = $true
     [System.IO.File]::WriteAllText((Join-Path $SentDir $FileName), $Json, (New-Object System.Text.UTF8Encoding($false)))
@@ -287,6 +297,10 @@ try {
     Write-Host "Admin can now review it in the dashboard (Pending scans)." -ForegroundColor Green
     Write-Host "========================================================" -ForegroundColor Green
 } catch {
+    # Offline = bench / workshop scan: the screen attached is only a test monitor, so it is left out
+    $Payload.monitors = ""
+    $Payload["offline"] = $true
+    $Json = $Payload | ConvertTo-Json -Depth 6
     [System.IO.File]::WriteAllText((Join-Path $ScanDir $FileName), $Json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "========================================================" -ForegroundColor Yellow
     Write-Host "[SAVED ON USB] Server not reachable from this computer." -ForegroundColor Yellow

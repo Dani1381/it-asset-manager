@@ -12,7 +12,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-C
 goto :EOF
 #>
 
-$SERVER_URL = "http://192.168.10.194:3000"
+$SERVER_URLS = @("http://192.168.10.194:3000")
+# First address that answers wins (LAN inside the office, public address from outside)
+function Find-Server {
+    foreach ($u in $SERVER_URLS) {
+        try { Invoke-WebRequest -Uri "$u/login.html" -UseBasicParsing -TimeoutSec 5 | Out-Null; return $u } catch {}
+    }
+    return $null
+}
 $SERVER_KEY = "SET-AUTOMATICALLY-ON-DOWNLOAD"
 
 $UserName = $env:USERNAME
@@ -238,7 +245,9 @@ if (-not $IsAdmin) {
     Write-Host "      Tip: run this scanner as Administrator for full SMART data (wear %, temperature, errors)." -ForegroundColor DarkYellow
 }
 
-Write-Host "[5/5] Sending specifications to IT Asset Server ($SERVER_URL)..." -ForegroundColor Yellow
+Write-Host "[5/5] Looking for the IT Asset Server..." -ForegroundColor Yellow
+$SERVER_URL = Find-Server
+if ($SERVER_URL) { Write-Host "      Using $SERVER_URL" -ForegroundColor Gray } else { $SERVER_URL = $SERVER_URLS[0] }
 
 $Payload = @{
     userName = $UserName

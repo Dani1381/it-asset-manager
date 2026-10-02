@@ -512,6 +512,31 @@ Return STRICT JSON only:
   return parsed;
 }
 
+// Fill empty spec fields from the online model lookup. Computers: CPU / GPU only (RAM and disks vary per unit).
+async function enrichFromInternet(fields) {
+  const fam = ['PC', 'Single PC', 'Laptop', 'Server'].includes(fields.category) ? 'computer' : (fields.category || 'other');
+  // A same-model record already in the database fills these when the asset is saved; no need to ask online
+  if (queries.getModelSpecTemplate(fields.manufacturer_model, fam === 'computer' ? null : fields.category)) return [];
+
+  const s = await lookupSpecsByModelOnline(fields.manufacturer_model);
+  if (!s || s.recognized === false) return [];
+  const clean = v => (typeof v === 'string' && v.trim() && !/^\s*n\/?a\b|^null$/i.test(v) ? v.trim().slice(0, 200) : null);
+  const plan = fam === 'computer'
+    ? { cpu: s.default_cpu, gpu: s.gpu }
+    : fam === 'Monitor' ? { monitors: s.monitors }
+    : fam === 'Storage' ? { storage_drives: s.default_storage }
+    : {};
+  if (!fields.category) {
+    const c = normalizeCategory(s.category, fields.manufacturer_model);
+    if (c) plan.category = c;
+  }
+  const filled = [];
+  for (const [f, v] of Object.entries(plan)) {
+    if (!fields[f] && clean(v)) { fields[f] = clean(v); filled.push(f); }
+  }
+  return filled;
+}
+
 // Fast path: every photo in ONE request that reads and reconciles at the same time
 async function readAllPhotosAtOnce(images) {
   const settings = queries.getSettings();
@@ -676,6 +701,19 @@ async function smartScanPhotos(images, fullImages = []) {
   let notes = cleanScanValue(merged.notes) || '';
   if (damage.length && !notes.includes(damage[0])) notes = [notes, `آسیب دیده‌شده: ${damage.join('؛ ')}`].filter(Boolean).join('\n');
 
+  // Model known: fetch its specs online right away (no second button press); only empty fields are filled
+  let enriched = [];
+  const sources = merged.sources && typeof merged.sources === 'object' ? merged.sources : {};
+  const confidence = merged.confidence && typeof merged.confidence === 'object' ? merged.confidence : {};
+  if (fields.manufacturer_model) {
+    try {
+      enriched = await enrichFromInternet(fields);
+      for (const f of enriched) { sources[f] = 'internet'; confidence[f] = 'low'; }
+    } catch (err) {
+      console.warn('Online spec lookup after scan failed:', err.message);
+    }
+  }
+
   // Cover photo: the whole device seen from a distance beats label / sticker close-ups
   const kindRank = { device_front: 4, device_back: 2, other: 1, screen: 0, spec_label: -2, property_tag: -3 };
   let coverPhoto = null, coverScore = -Infinity;
@@ -687,8 +725,9 @@ async function smartScanPhotos(images, fullImages = []) {
   return {
     fields,
     cover_photo: coverPhoto,
-    sources: merged.sources && typeof merged.sources === 'object' ? merged.sources : {},
-    confidence: merged.confidence && typeof merged.confidence === 'object' ? merged.confidence : {},
+    sources,
+    confidence,
+    enriched,
     notes,
     warnings,
     duplicates,
@@ -912,10 +951,13 @@ function makeZip(files) {
     local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22);
     local.writeUInt16LE(name.length, 26); local.writeUInt16LE(0, 28);
     const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0x0800, 8);
+    // "made by Unix" so Linux keeps the execute bit of scripts (f.mode, e.g. 0o755)
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(f.mode ? (3 << 8) | 20 : 20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(0x0800, 8);
     central.writeUInt16LE(0, 10); central.writeUInt16LE(dosTime, 12); central.writeUInt16LE(dosDate, 14);
     central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(name.length, 28); central.writeUInt32LE(f.name.endsWith('/') ? 0x10 : 0, 38); central.writeUInt32LE(offset, 42);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE((((f.mode ? (0o100000 | f.mode) : 0) << 16) | (f.name.endsWith('/') ? 0x10 : 0)) >>> 0, 38);
+    central.writeUInt32LE(offset, 42);
     locals.push(local, name, data);
     centrals.push(central, name);
     offset += local.length + name.length + data.length;
@@ -938,18 +980,40 @@ function lanServerUrl(req) {
   return `${protocol}://${host}`;
 }
 
-const USB_KIT_README = `﻿کیت اسکن دارایی با فلش — مدیریت دارایی ارکا
+// Every address a scanner should try, in order: LAN first, then the public address from Settings
+function scannerServerUrls(req) {
+  const list = [lanServerUrl(req)];
+  let pub = String(queries.getSettings().public_server_url || '').trim().replace(/\/+$/, '');
+  if (pub && !/^https?:\/\//i.test(pub)) pub = 'http://' + pub;
+  if (pub) list.push(pub);
+  const viaHost = `${req.socket?.encrypted ? 'https' : 'http'}://${req.headers.host || ''}`;
+  if (req.headers.host && !/^(localhost|127\.|\[::1\])/i.test(req.headers.host)) list.push(viaHost);
+  return [...new Set(list)].filter(u => /^https?:\/\/[A-Za-z0-9.\-\[\]:]+$/.test(u));
+}
+
+// "$SERVER_URLS = @(...)" line injected into the Windows scanners
+function psUrlList(urls) {
+  return `$SERVER_URLS = @(${urls.map(u => `"${u}"`).join(', ')})`;
+}
+
+const USB_KIT_README =`﻿کیت اسکن دارایی با فلش — مدیریت دارایی ارکا
 =================================================
 
 آماده‌سازی (یک بار):
   محتوای این فایل ZIP را مستقیم روی فلش کپی کنید (فایل Scan-Asset.bat و پوشه scans).
 
 استفاده روی هر کامپیوتر:
-  1) فلش را وصل کنید و فایل Scan-Asset.bat را دوبار کلیک کنید.
-     (برای اطلاعات کامل سلامت هارد: راست‌کلیک ← Run as administrator)
+  1) فلش را وصل کنید و:
+     ویندوز: فایل Scan-Asset.bat را دوبار کلیک کنید.
+        (برای اطلاعات کامل سلامت هارد: راست‌کلیک ← Run as administrator)
+     لینوکس: فایل Scan-Asset-Linux.desktop را دوبار کلیک کنید.
+        (بار اول ممکن است بپرسد: Trust / Allow Launching را بزنید؛
+         یا راست‌کلیک روی Scan-Asset-Linux.sh ← Run as a Program)
   2) نام کاربر را وارد کنید و صبر کنید تا اسکن تمام شود (حدود ۳۰ ثانیه).
-  3) اگر کامپیوتر به سرور وصل باشد، اطلاعات همان لحظه ارسال می‌شود.
-     اگر وصل نباشد، اطلاعات در پوشه scans روی همین فلش ذخیره می‌شود.
+  3) اسکنر اول آدرس شبکه داخلی و بعد آدرس عمومی سرور را امتحان می‌کند؛
+     اگر یکی جواب بدهد، اطلاعات همان لحظه ارسال می‌شود.
+     اگر هیچ‌کدام جواب ندهد، اطلاعات در پوشه scans روی همین فلش ذخیره می‌شود.
+     در اسکن‌های بدون شبکه (میز تست) مانیتور ثبت نمی‌شود، چون فقط مانیتور تست وصل است.
 
 اسکن‌های ذخیره‌شده روی فلش:
   - دفعه بعد که اسکنر روی کامپیوتری که به سرور وصل است اجرا شود، همه را خودکار می‌فرستد.
@@ -1276,8 +1340,8 @@ const server = http.createServer(async (req, res) => {
       let batContent = '';
       if (fs.existsSync(scannerTemplatePath)) {
         batContent = fs.readFileSync(scannerTemplatePath, 'utf8');
-        // Replace server URL dynamically
-        batContent = batContent.replace(/\$SERVER_URL = ".*?"/, () => `$SERVER_URL = "${serverUrl}"`);
+        // Server addresses to try (LAN, then public)
+        batContent = batContent.replace(/\$SERVER_URLS = @\(.*?\)/, () => psUrlList(scannerServerUrls(req)));
         batContent = batContent.replace(/\$SERVER_KEY = ".*?"/, () => `$SERVER_KEY = "${getScannerKey()}"`);
       }
 
@@ -1293,12 +1357,26 @@ const server = http.createServer(async (req, res) => {
     if (method === 'GET' && pathname === '/api/download/usb-kit') {
       const tplPath = path.join(__dirname, 'client-scripts', 'AssetScanner-USB.bat');
       if (!fs.existsSync(tplPath)) return sendJson(res, 500, { error: 'USB scanner template missing' });
-      const serverUrl = lanServerUrl(req);
+      const urls = scannerServerUrls(req);
+      const serverUrl = urls.join('  یا  ');
       const bat = fs.readFileSync(tplPath, 'utf8')
-        .replace(/\$SERVER_URL = ".*?"/, () => `$SERVER_URL = "${serverUrl}"`)
+        .replace(/\$SERVER_URLS = @\(.*?\)/, () => psUrlList(urls))
         .replace(/\$SERVER_KEY = ".*?"/, () => `$SERVER_KEY = "${getScannerKey()}"`);
+      const key = getScannerKey();
+      const linuxDir = path.join(__dirname, 'client-scripts');
+      const linuxWrapper = fs.readFileSync(path.join(linuxDir, 'usb-linux', 'Scan-Asset-Linux.sh'), 'utf8').replace(/\r\n/g, '\n')
+        .replace(/^SERVER_URLS=\(.*\)$/m, () => `SERVER_URLS=(${urls.map(u => `"${u}"`).join(' ')})`)
+        .replace(/^SERVER_KEY=".*"$/m, () => `SERVER_KEY="${key}"`);
+      const linuxScanner = fs.readFileSync(path.join(linuxDir, 'asset-scanner.sh'), 'utf8').replace(/\r\n/g, '\n')
+        .replace(/SERVER_URL="\$\{IAM_SERVER:-.*?\}"/, () => `SERVER_URL="\${IAM_SERVER:-${urls[0]}}"`)
+        .replace(/SERVER_KEY="\$\{IAM_KEY:-.*?\}"/, () => `SERVER_KEY="\${IAM_KEY:-${key}}"`);
+      const desktop = fs.readFileSync(path.join(linuxDir, 'usb-linux', 'Scan-Asset-Linux.desktop'), 'utf8').replace(/\r\n/g, '\n');
       const zip = makeZip([
         { name: 'Scan-Asset.bat', data: bat },
+        { name: 'Scan-Asset-Linux.desktop', data: desktop, mode: 0o755 },
+        { name: 'Scan-Asset-Linux.sh', data: linuxWrapper, mode: 0o755 },
+        { name: 'linux/', data: Buffer.alloc(0) },
+        { name: 'linux/asset-scanner.sh', data: linuxScanner, mode: 0o755 },
         { name: 'راهنما.txt', data: USB_KIT_README.replace('{{SERVER_URL}}', serverUrl) },
         { name: 'scans/', data: Buffer.alloc(0) },
         { name: 'scans/sent/', data: Buffer.alloc(0) }
@@ -1514,7 +1592,8 @@ const server = http.createServer(async (req, res) => {
         c_space: data.c_space || data.cSpace,
         network_devices: data.network_devices || data.networkDevices,
         gpu: data.gpu,
-        monitors: data.monitors,
+        // Offline (bench) scans only have a test monitor attached: never record it
+        monitors: data.offline === true ? '' : data.monitors,
         disk_health: data.disk_health || data.diskHealth || null
       });
 
@@ -1986,7 +2065,7 @@ Respond ONLY in JSON format:
     // POST /api/settings
     if (method === 'POST' && pathname === '/api/settings') {
       const raw = await parseRequestBody(req);
-      const ALLOWED_SETTINGS = ['company_name', 'asset_tag_prefix', 'bale_token', 'bale_chat_id', 'gemini_api_key', 'gemini_model', 'photo_priority', 'nine_router_url', 'nine_router_key', 'nine_router_model'];
+      const ALLOWED_SETTINGS = ['company_name', 'asset_tag_prefix', 'bale_token', 'bale_chat_id', 'gemini_api_key', 'gemini_model', 'photo_priority', 'nine_router_url', 'nine_router_key', 'nine_router_model', 'public_server_url'];
       const data = {};
       for (const k of ALLOWED_SETTINGS) if (raw[k] !== undefined && raw[k] !== null) data[k] = String(raw[k]).slice(0, 500);
       if (data.photo_priority && !['camera', 'newest', 'stock'].includes(data.photo_priority)) delete data.photo_priority;

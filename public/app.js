@@ -705,6 +705,7 @@ async function openSettingsModal() {
       }
       document.getElementById('setting-bale-token').value = s.bale_token || '';
       document.getElementById('setting-bale-chat-id').value = s.bale_chat_id || '';
+      setInputValue('setting-public-url', s.public_server_url || '');
       setInputValue('setting-9router-url', s.nine_router_url || '');
       setInputValue('setting-9router-key', s.nine_router_key || '');
       setInputValue('setting-9router-model', s.nine_router_model || '');
@@ -745,6 +746,7 @@ async function saveSettings(event) {
         bale_token: baleToken,
         bale_chat_id: baleChatId,
         photo_priority: document.getElementById('setting-photo-priority') ? document.getElementById('setting-photo-priority').value : 'camera',
+        public_server_url: getInputValue('setting-public-url'),
         nine_router_url: getInputValue('setting-9router-url'),
         nine_router_key: getInputValue('setting-9router-key'),
         nine_router_model: getInputValue('setting-9router-model')

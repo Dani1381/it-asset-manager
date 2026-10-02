@@ -794,9 +794,10 @@
 
         const src = f => {
           const s = data.sources && data.sources[f];
+          if (s === 'internet') return '<span class="scan-src">(از مشخصات اینترنتی مدل)</span>';
           return Array.isArray(s) && s.length ? `<span class="scan-src">(عکس ${s.join('، ')})</span>` : '';
         };
-        const low = f => data.confidence && data.confidence[f] === 'low' ? '<span class="scan-conf-low">⚠️ مطمئن نیست</span>' : '';
+        const low = f => data.confidence && data.confidence[f] === 'low' && data.sources?.[f] !== 'internet' ? '<span class="scan-conf-low">⚠️ مطمئن نیست</span>' : '';
         const valueText = (f, v) => f === 'category' ? categoryLabel(v) : v;
 
         let html = `<div class="scan-report">`;
