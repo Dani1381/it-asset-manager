@@ -22,6 +22,10 @@
         <div style="font-size: 0.75rem; color: var(--text-dim); font-weight: normal;" data-i18n="app_subtitle">سامانه هوشمند ثبت و پایش تجهیزات IT و دارایی‌ها</div>
       </div>
     </a>
+    <a id="nav-add-btn" href="/add.html" class="btn btn-add-hero" title="ثبت دستگاه جدید با دوربین گوشی یا فرم">
+      <span class="btn-add-plus" aria-hidden="true">＋</span>
+      <span data-i18n="nav_add">افزودن دستگاه</span>
+    </a>
     <div class="nav-links">
       <button onclick="toggleTheme()" class="btn btn-secondary btn-sm" id="theme-toggle-btn" title="تغییر تم بین تاریک و روشن">
         <span id="theme-btn-icon">☀️</span>
@@ -59,9 +63,6 @@
       </a>
       <a href="/api/backup/db" id="nav-backup-btn" class="btn btn-secondary btn-sm" download title="دانلود نسخه پشتیبان کامل از دیتابیس">
         💾 <span data-i18n="nav_backup_db">پشتیبان دیتابیس</span>
-      </a>
-      <a id="nav-add-btn" href="/add.html" class="btn btn-primary btn-sm">
-        ➕ <span data-i18n="nav_add">افزودن دستگاه</span>
       </a>
 
       <!-- Current User Chip & Logout -->
@@ -156,6 +157,12 @@
     </div>
 
   </main>
+
+  <!-- Floating "add device" button (phones) -->
+  <a id="fab-add-btn" href="/add.html" class="fab-add" aria-label="افزودن دستگاه">
+    <span class="btn-add-plus" aria-hidden="true">＋</span>
+    <span data-i18n="nav_add">افزودن دستگاه</span>
+  </a>
 
   <!-- Hidden Camera Input for Fast Photo Upload -->
   <input type="file" id="global-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleGlobalCameraSelect(event)">

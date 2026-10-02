@@ -1626,3 +1626,88 @@ body.light-mode .disk-level.level-critical { color: #b91c1c; }
   text-align: center;
 }
 .security-banner .btn { background: #fff; color: #b91c1c; border-color: #fff; }
+
+/* ==========================================================================
+   "Add device" call to action — always visible, clearly the main action
+   ========================================================================== */
+.btn-add-hero {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #3b82f6 100%);
+  box-shadow: 0 6px 22px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  white-space: nowrap;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  animation: add-glow 2.8s ease-in-out infinite;
+}
+.btn-add-hero:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.btn-add-hero:active { transform: scale(0.97); }
+.btn-add-hero:focus-visible, .fab-add:focus-visible { outline: 3px solid #fde68a; outline-offset: 3px; }
+
+.btn-add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  font-weight: 900;
+  font-size: 1em;
+  line-height: 1;
+}
+
+@keyframes add-glow {
+  0%, 100% { box-shadow: 0 6px 22px rgba(16, 185, 129, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+  50%      { box-shadow: 0 6px 30px rgba(6, 182, 212, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+}
+
+/* Floating button: only on phones */
+.fab-add { display: none; }
+
+@media (max-width: 768px) {
+  /* in the navbar the floating button takes over */
+  .navbar .btn-add-hero { display: none; }
+
+  .fab-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: fixed;
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    padding: 0.85rem 1.6rem;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #3b82f6 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(16, 185, 129, 0.25);
+    white-space: nowrap;
+    animation: add-glow 2.8s ease-in-out infinite;
+  }
+  .fab-add:active { transform: translateX(-50%) scale(0.96); }
+  /* keep the last card clear of the floating button */
+  .container { padding-bottom: 6rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-add-hero, .fab-add { animation: none; }
+}
