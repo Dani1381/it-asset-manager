@@ -563,12 +563,17 @@ function getModelSpecTemplate(model, category = null, excludeId = null) {
 }
 
 // Fill only the empty spec fields of `data` from the template (fixed-spec categories)
+// Computers of the same model share at least the CPU; RAM / disks differ per unit
+const SAME_MODEL_COMPUTER_FIELDS = ['cpu'];
+
 function fillFromModelTemplate(data) {
-  if (!data || !isFixedSpecCategory(data.category) || !data.manufacturer_model) return null;
-  const tpl = getModelSpecTemplate(data.manufacturer_model, data.category);
+  if (!data || !data.manufacturer_model) return null;
+  const fixed = isFixedSpecCategory(data.category);
+  const tpl = getModelSpecTemplate(data.manufacturer_model, fixed ? data.category : null);
   if (!tpl) return null;
   const copied = [];
   for (const [f, v] of Object.entries(tpl.fields)) {
+    if (!fixed && !SAME_MODEL_COMPUTER_FIELDS.includes(f)) continue;
     if (!hasSpecValue(data, f)) {
       data[f] = v;
       copied.push(f);

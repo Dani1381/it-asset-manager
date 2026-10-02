@@ -228,15 +228,17 @@ async function nineRouterChat(messages, cfg, { timeoutMs = 120000, maxTokens } =
 }
 
 // Helper: Call 9Router AI Gateway and parse a JSON answer
-async function call9Router(promptText, base64Image = null) {
+// base64Image may be one image or an array of images (sent in order)
+async function call9Router(promptText, base64Image = null, chatOptions = {}) {
   const content = [{ type: 'text', text: promptText }];
 
-  if (base64Image) {
-    const fullDataUrl = base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
+  for (const img of (Array.isArray(base64Image) ? base64Image : [base64Image]).filter(Boolean)) {
+    const fullDataUrl = img.startsWith('data:') ? img : `data:image/jpeg;base64,${img}`;
     content.push({ type: 'image_url', image_url: { url: fullDataUrl } });
   }
 
-  const fullText = await nineRouterChat([{ role: 'user', content }], getNineRouterConfig());
+  const fullText = await nineRouterChat([{ role: 'user', content }], getNineRouterConfig(), chatOptions);
+  if (!String(fullText || '').trim()) throw new Error('9Router returned an empty answer');
 
   const cleanJson = fullText.replace(/```json/gi, '').replace(/```/g, '').trim();
   const firstBrace = cleanJson.indexOf('{');
@@ -510,22 +512,117 @@ Return STRICT JSON only:
   return parsed;
 }
 
-async function smartScanPhotos(images) {
-  // Stage 1 — read each photo on its own
+// Fast path: every photo in ONE request that reads and reconciles at the same time
+async function readAllPhotosAtOnce(images) {
+  const settings = queries.getSettings();
+  const prompt = `
+You are an IT asset intake assistant. The ${images.length} attached photos (photo 1 = first image, in order) all show the SAME device:
+its body, labels, stickers, screen... Read every photo, then fill the intake form with the single best value per field,
+putting each value in the RIGHT field. Use null for anything not visible. Never guess or invent.
+
+How to tell the numbers apart:
+- property_id = the ORGANISATION's tag: a sticker / plate usually saying "اموال", "شماره اموال", "کد اموال", "Asset Tag", "Asset No",
+  "Property of ..." or a company logo with a number / barcode. Copy the number exactly.
+- serial_number is from the MANUFACTURER (S/N, Serial, SN, Service Tag) — never the same number as property_id.
+- Do NOT use P/N, Product No, Model No, Regulatory model, MAC, IMEI, EAN/UPC barcodes as serial or property numbers.
+- Property ids already in this database look like: ${JSON.stringify(queries.recentPropertyIds(8))}
+
+When photos disagree, prefer close-up labels and values seen in more photos.
+Normalise: Latin digits; serial without spaces; ram like "8 GB"; purchase_date as YYYY-MM-DD (convert a Jalali date like 1402/05/10 to Gregorian).
+
+Return STRICT JSON only (no markdown):
+{
+  "photos": [ { "photo": 1, "photo_kind": "property_tag" | "spec_label" | "device_front" | "device_back" | "screen" | "other",
+                "full_view": true if the WHOLE device is visible from a distance, "damage": "visible physical damage or null" } ],
+  "fields": { ${SCAN_FIELDS.map(f => `"${f}": "value or null"`).join(', ')} },
+  "sources": { "<field>": [photo numbers the value came from] },
+  "confidence": { "<field>": "high" | "medium" | "low" },
+  "notes": "short PERSIAN summary of other useful facts (MAC, warranty, damage...) or empty string",
+  "warnings": ["PERSIAN strings for doubts the operator should check (conflicting or unreadable numbers...)"]
+}
+category must be one of: ${SCAN_CATEGORY_LIST}.
+Asset-tag prefix the app uses for generated ids (not printed on stickers): "${settings.asset_tag_prefix || 'AST-'}".
+`;
+  // The free vision model sometimes answers empty or stalls: cap each try and retry once before the slow path
+  let parsed = null;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2 && !parsed; attempt++) {
+    try {
+      const p = await call9Router(prompt, images, { timeoutMs: 75000 });
+      if (p && typeof p === 'object' && typeof p.fields === 'object') parsed = p;
+      else lastErr = new Error('Combined scan answer has no fields');
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Combined smart scan attempt ${attempt} failed: ${err.message}`);
+      // A stall means the gateway is overloaded; waiting another 75s would only double the delay
+      if (/did not answer within/i.test(err.message)) break;
+    }
+  }
+  if (!parsed) throw lastErr || new Error('Combined scan failed');
+  const perPhoto = Array.isArray(parsed.photos) ? parsed.photos : [];
+  const findings = images.map((_, i) => {
+    const p = perPhoto.find(x => Number(x.photo) === i + 1) || perPhoto[i] || {};
+    return { photo: i + 1, data: { photo_kind: p.photo_kind || null, full_view: p.full_view === true, damage: p.damage || null } };
+  });
+  return { merged: parsed, findings };
+}
+
+// A key number (property tag / serial) is missing or uncertain: re-read only the label photos at full quality
+async function refineKeyNumbers(merged, findings, fullImages) {
+  const doubtful = ['property_id', 'serial_number'].filter(f => !cleanScanValue(merged.fields[f]) || (merged.confidence || {})[f] === 'low');
+  const labelPhotos = findings.filter(p => ['property_tag', 'spec_label'].includes(p.data.photo_kind) && fullImages[p.photo - 1]);
+  if (!doubtful.length || !labelPhotos.length) return [];
+
+  const reads = await mapWithConcurrency(labelPhotos, 3, p => readOnePhoto(fullImages[p.photo - 1]));
+  const refined = [];
+  for (const f of doubtful) {
+    // property tags come from the tag sticker first, serials from the spec label first
+    const prefer = f === 'property_id' ? 'property_tag' : 'spec_label';
+    const hits = reads.map((r, i) => (r.ok && cleanScanValue(r.value[f]) ? { photo: labelPhotos[i].photo, kind: r.value.photo_kind, value: cleanScanValue(r.value[f]) } : null)).filter(Boolean)
+      .sort((a, b) => (b.kind === prefer) - (a.kind === prefer));
+    if (!hits.length) continue;
+    merged.fields[f] = hits[0].value;
+    merged.sources = merged.sources || {};
+    merged.confidence = merged.confidence || {};
+    merged.sources[f] = [hits[0].photo];
+    merged.confidence[f] = hits.every(h => h.value === hits[0].value) ? 'high' : 'medium';
+    refined.push(f);
+  }
+  return refined;
+}
+
+// Slow path (fallback): read each photo on its own, then reconcile the findings
+async function readPhotosSeparately(images) {
   const reads = await mapWithConcurrency(images, 3, img => readOnePhoto(img));
-  const photos = reads.map((r, i) => ({ index: i + 1, ok: r.ok, kind: r.ok ? (r.value.photo_kind || null) : null, error: r.ok ? null : r.error }));
   const findings = reads.map((r, i) => (r.ok ? { photo: i + 1, data: r.value } : null)).filter(Boolean);
   if (!findings.length) throw new Error(`هیچ عکسی خوانده نشد: ${reads[0] && reads[0].error ? reads[0].error : 'خطای نامشخص'}`);
-
-  // Stage 2 — reconcile everything (falls back to a local vote if the AI call fails)
   let merged;
-  let stage2 = 'ai';
+  let mode = 'two_step';
   try {
     merged = await reconcileFindings(findings);
   } catch (err) {
-    stage2 = 'local';
+    mode = 'local';
     merged = mergeFindingsLocally(findings);
     merged.warnings.push('جمع‌بندی هوشمند انجام نشد؛ مقادیر بر اساس رأی اکثریت عکس‌ها انتخاب شدند.');
+  }
+  return { merged, findings, reads, mode };
+}
+
+async function smartScanPhotos(images, fullImages = []) {
+  const started = Date.now();
+  let merged, findings, photos, stage2;
+  let refined = [];
+  try {
+    ({ merged, findings } = await readAllPhotosAtOnce(images));
+    stage2 = 'single';
+    photos = findings.map(p => ({ index: p.photo, ok: true, kind: p.data.photo_kind, error: null }));
+    refined = await refineKeyNumbers(merged, findings, fullImages.length === images.length ? fullImages : images);
+  } catch (err) {
+    console.warn('Combined smart scan failed, falling back to per-photo reading:', err.message);
+    const r = await readPhotosSeparately(fullImages.length === images.length ? fullImages : images);
+    ({ merged, findings } = r);
+    stage2 = r.mode;
+    photos = r.reads.map((x, i) => ({ index: i + 1, ok: x.ok, kind: x.ok ? (x.value.photo_kind || null) : null, error: x.ok ? null : x.error }));
   }
 
   const fields = {};
@@ -599,6 +696,8 @@ async function smartScanPhotos(images) {
     matched_model: matchedModel,
     photos,
     stage2,
+    refined,
+    elapsed_ms: Date.now() - started,
     model: '9Router'
   };
 }
@@ -980,8 +1079,9 @@ const server = http.createServer(async (req, res) => {
       }
       queries.addLog('INFO', 'SMART_SCAN', `اسکن هوشمند ${images.length} عکس شروع شد`, '', req.socket?.remoteAddress || '');
       try {
-        const result = await smartScanPhotos(images);
-        queries.addLog('SUCCESS', 'SMART_SCAN', `اسکن هوشمند تمام شد: ${Object.keys(result.fields).length} فیلد`,
+        const full = (Array.isArray(data.full_images) ? data.full_images : []).filter(x => typeof x === 'string' && x.length > 100);
+        const result = await smartScanPhotos(images, full.length === images.length ? full : []);
+        queries.addLog('SUCCESS', 'SMART_SCAN', `اسکن هوشمند تمام شد: ${Object.keys(result.fields).length} فیلد در ${Math.round(result.elapsed_ms / 1000)} ثانیه (${result.stage2})`,
           `مدل: ${result.fields.manufacturer_model || '-'} | اموال: ${result.fields.property_id || '-'}`, req.socket?.remoteAddress || '');
         return sendJson(res, 200, { success: true, ...result });
       } catch (err) {
