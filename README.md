@@ -127,6 +127,15 @@ Click the **⚙️ Settings** icon in the dashboard to set:
 
 ---
 
+## 🔐 Security & Access
+
+- **Login is enforced by the server.** Every page, photo and API call needs a signed, HttpOnly session cookie (30 days). Passwords are stored as salted `scrypt` hashes.
+- **Roles:** `viewer` accounts are read-only. Changing data, and reading settings, users, logs, backups and scanner downloads, is admin-only.
+- **Default accounts:** `admin / admin` and `viewer / 123`. A red banner is shown to admins until the admin password is changed — change it before exposing the server to the internet.
+- **Scanners** authenticate with a random scanner key that is embedded automatically when an admin downloads `AssetScanner.bat` / `asset-scanner.sh`. Scanners downloaded before this version must be downloaded again. Setting the `SITE_PASSWORD` environment variable adds a second accepted scanner key.
+- **AI gateway key:** set `DANI_API_KEY` (or `NINE_ROUTER_KEY`) in the environment; no key is stored in the code.
+- Failed logins are rate-limited (10 attempts per 15 minutes per IP).
+
 ## 📁 Project Structure
 
 ```text

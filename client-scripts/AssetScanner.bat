@@ -13,7 +13,7 @@ goto :EOF
 #>
 
 $SERVER_URL = "http://192.168.10.194:3000"
-$SERVER_KEY = "DaniAsset2026!"
+$SERVER_KEY = "SET-AUTOMATICALLY-ON-DOWNLOAD"
 
 $UserName = $env:USERNAME
 try {

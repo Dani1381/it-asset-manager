@@ -14,7 +14,7 @@
 # ============================================================================
 
 SERVER_URL="${IAM_SERVER:-http://192.168.10.194:3000}"
-SERVER_KEY="${IAM_KEY:-DaniAsset2026!}"
+SERVER_KEY="${IAM_KEY:-SET-AUTOMATICALLY-ON-DOWNLOAD}"
 FALLBACK_URL="http://127.0.0.1:3000"
 DRY_RUN=0
 PARAM_NAME=""

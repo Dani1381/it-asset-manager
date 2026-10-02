@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>مشخصات دستگاه - مدیریت دارایی ارکا</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
   <script src="/i18n.js"></script>
   <script src="/categories.js"></script>
   <script src="/qrcode.js"></script>
@@ -550,7 +551,7 @@
       const firstUrl = `/uploads/${encodeURIComponent(first.file_name)}`;
       cover.style.display = 'block';
       cover.innerHTML = `
-        <img src="${firstUrl}" alt="${escapeHtml(first.caption || 'Photo')}" onclick="openLightbox('${firstUrl}')">
+        <img src="${firstUrl}" alt="${escapeHtml(first.caption || 'Photo')}" onclick="openLightbox(this.src)">
         <div class="photo-badges">
           <span class="photo-badge badge-cover">⭐ ${lbl('عکس اصلی', 'Cover')}</span>
           ${isCameraPhoto(first) ? `<span class="photo-badge badge-camera">📱 ${lbl('عکس گوشی', 'Phone photo')}</span>` : `<span class="photo-badge">🌐 ${lbl('عکس کاتالوگ', 'Catalog')}</span>`}
@@ -569,7 +570,7 @@
         const url = `/uploads/${encodeURIComponent(p.file_name)}`;
         return `
         <div class="photo-thumb ${i === 0 ? 'is-cover' : ''}">
-          <img src="${url}" alt="${escapeHtml(p.caption || 'Photo')}" loading="lazy" onclick="openLightbox('${url}')">
+          <img src="${url}" alt="${escapeHtml(p.caption || 'Photo')}" loading="lazy" onclick="openLightbox(this.src)">
           ${admin ? `<button type="button" class="photo-delete-btn" onclick="deletePhoto(${p.id})" title="${lbl('حذف', 'Delete')}">&times;</button>` : ''}
           ${admin && i !== 0 ? `<button type="button" class="photo-cover-btn" onclick="setCoverPhoto(${p.id})" title="${lbl('انتخاب به‌عنوان عکس اصلی', 'Set as cover')}">⭐</button>` : ''}
           <div class="photo-badges">
@@ -901,9 +902,10 @@
         <div class="photo-library-card" style="animation: fadeIn 0.25s ease ${idx * 0.04}s backwards; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; overflow: hidden; cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column;"
              onmouseover="this.style.transform='translateY(-3px)'; this.style.borderColor='rgba(59,130,246,0.5)';"
              onmouseout="this.style.transform=''; this.style.borderColor='rgba(255,255,255,0.08)';"
-             onclick="attachPhotoFromLibrary('${escapeHtml(p.file_name)}', '${escapeHtml(p.caption || 'متصل از آرشیو')}')">
+             data-file="${escapeHtml(p.file_name)}" data-caption="${escapeHtml(p.caption || 'متصل از آرشیو')}"
+             onclick="attachPhotoFromLibrary(this.dataset.file, this.dataset.caption)">
           <div style="height: 140px; overflow: hidden; background: #0b1329; position: relative;">
-            <img src="/uploads/${p.file_name}" alt="${escapeHtml(p.manufacturer_model || p.file_name)}" style="width: 100%; height: 100%; object-fit: cover;">
+            <img src="/uploads/${encodeURIComponent(p.file_name)}" alt="${escapeHtml(p.manufacturer_model || p.file_name)}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;">
             ${p.is_camera_photo ? '<div style="position: absolute; top: 6px; right: 6px; background: rgba(6,182,212,0.85); color: #fff; padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700;">📷 دوربین</div>' : '<div style="position: absolute; top: 6px; right: 6px; background: rgba(59,130,246,0.85); color: #fff; padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem; font-weight: 700;">🌐 استوک</div>'}
           </div>
           <div style="padding: 0.75rem; flex: 1; display: flex; flex-direction: column; gap: 0.35rem;">

@@ -2,6 +2,28 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
+const crypto = require('node:crypto');
+
+// Password hashing (scrypt, no dependencies). Stored as "scrypt$<salt>$<hash>".
+function hashPassword(plain) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(plain), salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+function verifyPassword(plain, stored) {
+  if (!stored) return false;
+  if (!String(stored).startsWith('scrypt$')) {
+    // legacy plain-text password (upgraded to a hash on next successful login)
+    const a = Buffer.from(String(plain));
+    const b = Buffer.from(String(stored));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+  const [, salt, hash] = String(stored).split('$');
+  const test = crypto.scryptSync(String(plain), salt, 64);
+  const known = Buffer.from(hash, 'hex');
+  return known.length === test.length && crypto.timingSafeEqual(known, test);
+}
 
 const DB_PATH = path.join(__dirname, 'inventory.db');
 const BACKUPS_DIR = path.join(__dirname, 'backups');
@@ -230,8 +252,14 @@ function initDb() {
   if (userCount === 0) {
     const now = new Date().toISOString();
     const insertUser = db.prepare('INSERT INTO users (username, password, full_name, role, created_at) VALUES (?, ?, ?, ?, ?)');
-    insertUser.run('admin', 'admin', 'مدیر سیستم ارکا', 'admin', now);
-    insertUser.run('viewer', '123', 'کاربر بیننده (میهمان)', 'viewer', now);
+    insertUser.run('admin', hashPassword('admin'), 'مدیر سیستم ارکا', 'admin', now);
+    insertUser.run('viewer', hashPassword('123'), 'کاربر بیننده (میهمان)', 'viewer', now);
+  }
+
+  // Migration: hash any passwords still stored as plain text
+  const plainUsers = db.prepare("SELECT id, password FROM users WHERE password NOT LIKE 'scrypt$%'").all();
+  for (const u of plainUsers) {
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(u.password), u.id);
   }
 }
 
@@ -1231,8 +1259,14 @@ const queries = {
   // User Authentication & Roles (Admin / Viewer)
   authenticateUser(username, password) {
     const user = db.prepare('SELECT id, username, password, full_name, role FROM users WHERE LOWER(username) = LOWER(?)').get(username);
-    if (!user) return null;
-    if (user.password !== password) return null;
+    if (!user) {
+      verifyPassword(password, hashPassword('timing-equaliser')); // keep timing similar for unknown users
+      return null;
+    }
+    if (!verifyPassword(password, user.password)) return null;
+    if (!String(user.password).startsWith('scrypt$')) {
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(password), user.id);
+    }
     return {
       id: user.id,
       username: user.username,
@@ -1240,6 +1274,18 @@ const queries = {
       role: user.role,
       is_admin: user.role === 'admin'
     };
+  },
+
+  getUserById(id) {
+    const user = db.prepare('SELECT id, username, full_name, role FROM users WHERE id = ?').get(Number(id));
+    if (!user) return null;
+    return { ...user, is_admin: user.role === 'admin' };
+  },
+
+  // True while the built-in admin account still uses the factory password
+  isUsingDefaultPassword() {
+    const admin = db.prepare("SELECT password FROM users WHERE LOWER(username) = 'admin'").get();
+    return !!(admin && verifyPassword('admin', admin.password));
   },
 
   getAllUsers() {
@@ -1251,7 +1297,7 @@ const queries = {
     const res = db.prepare(`
       INSERT INTO users (username, password, full_name, role, created_at)
       VALUES (?, ?, ?, ?, ?)
-    `).run(username.trim(), password.trim(), fullName.trim(), role, now);
+    `).run(String(username).trim(), hashPassword(String(password).trim()), String(fullName).trim(), role, now);
     scheduleBackup();
     return Number(res.lastInsertRowid);
   },
@@ -1259,9 +1305,9 @@ const queries = {
   updateUser(id, fullName, role, password = null) {
     let changed = false;
     if (password && password.trim()) {
-      changed = db.prepare('UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?').run(fullName.trim(), role, password.trim(), id).changes > 0;
+      changed = db.prepare('UPDATE users SET full_name = ?, role = ?, password = ? WHERE id = ?').run(String(fullName).trim(), role, hashPassword(String(password).trim()), id).changes > 0;
     } else {
-      changed = db.prepare('UPDATE users SET full_name = ?, role = ? WHERE id = ?').run(fullName.trim(), role, id).changes > 0;
+      changed = db.prepare('UPDATE users SET full_name = ?, role = ? WHERE id = ?').run(String(fullName).trim(), role, id).changes > 0;
     }
     if (changed) scheduleBackup();
     return changed;

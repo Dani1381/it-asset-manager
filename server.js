@@ -20,35 +20,42 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 
-// Optional password protection (set SITE_PASSWORD env var to enable)
+// ---------------------------------------------------------------------------
+// AUTHENTICATION (server-side sessions + role checks)
+// ---------------------------------------------------------------------------
+// Every page and API call needs a logged-in session. Viewers may only read;
+// anything that changes data, and sensitive reads (settings, users, backups,
+// logs, scanner downloads), is admin-only. Network scanners authenticate with
+// the scanner key (embedded automatically in the downloaded scanner) or with
+// the optional SITE_PASSWORD environment variable.
 const SITE_PASSWORD = process.env.SITE_PASSWORD || '';
-const AUTH_ENABLED = SITE_PASSWORD.length > 0;
+const SESSION_COOKIE = 'iam_sess';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const HMAC_KEY = crypto.createHash('sha256').update('iam:' + SITE_PASSWORD).digest();
 
-function signSession(expiresAt) {
-  return crypto.createHmac('sha256', HMAC_KEY).update(String(expiresAt)).digest('hex');
-}
-
-function buildSessionCookie() {
-  const expiresAt = Date.now() + SESSION_TTL_MS;
-  return `${expiresAt}.${signSession(expiresAt)}`;
-}
-
-function isValidSession(cookieValue) {
-  if (!cookieValue) return false;
-  const dotIdx = cookieValue.indexOf('.');
-  if (dotIdx < 0) return false;
-  const expiresAt = cookieValue.slice(0, dotIdx);
-  const sig = cookieValue.slice(dotIdx + 1);
-  if (!/^\d+$/.test(expiresAt)) return false;
-  if (Date.now() > Number(expiresAt)) return false;
-  const expected = signSession(expiresAt);
-  try {
-    return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
-  } catch {
-    return false;
+function getSecretSetting(key, bytes) {
+  let value = queries.getSettings()[key];
+  if (!value) {
+    value = crypto.randomBytes(bytes).toString(key === 'scanner_key' ? 'base64url' : 'hex');
+    queries.updateSettings({ [key]: value });
   }
+  return value;
+}
+const SESSION_SECRET = getSecretSetting('session_secret', 32);
+const getScannerKey = () => getSecretSetting('scanner_key', 18);
+
+function signValue(value) {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64url');
+}
+
+function buildSessionToken(userId) {
+  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: Date.now() + SESSION_TTL_MS })).toString('base64url');
+  return `${payload}.${signValue(payload)}`;
+}
+
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
 }
 
 function getRequestCookie(req, name) {
@@ -61,15 +68,60 @@ function getRequestCookie(req, name) {
   return null;
 }
 
-// Paths that are always reachable (login page + its assets + API key auth)
-const AUTH_WHITELIST = new Set(['/login.html', '/api/login', '/api/auth-status', '/style.css']);
+// Returns the logged-in user ({id, username, full_name, role, is_admin}) or null
+function getSessionUser(req) {
+  const token = getRequestCookie(req, SESSION_COOKIE);
+  if (!token) return null;
+  const dot = token.lastIndexOf('.');
+  if (dot < 1) return null;
+  const payload = token.slice(0, dot);
+  if (!safeEqual(token.slice(dot + 1), signValue(payload))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data.exp || Date.now() > data.exp) return null;
+    return queries.getUserById(data.uid); // re-read so role changes / deletions apply immediately
+  } catch (e) {
+    return null;
+  }
+}
 
-function isAuthorized(req) {
-  if (!AUTH_ENABLED) return true;
-  // API clients (scanner .bat) may pass the password as a header instead of a cookie
-  const apiKey = req.headers['x-iam-key'];
-  if (apiKey && apiKey === SITE_PASSWORD) return true;
-  return isValidSession(getRequestCookie(req, 'iam_sess'));
+function hasScannerKey(req) {
+  const key = req.headers['x-iam-key'];
+  if (!key) return false;
+  if (SITE_PASSWORD && safeEqual(key, SITE_PASSWORD)) return true;
+  return safeEqual(key, getScannerKey());
+}
+
+function sessionCookieHeader(token, req) {
+  const secure = req.socket?.encrypted || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+  if (!token) return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`;
+}
+
+// Reachable without logging in (login page and what it needs)
+const PUBLIC_PATHS = new Set(['/login.html', '/login', '/style.css', '/i18n.js', '/favicon.ico', '/api/login', '/api/auth-status', '/api/logout']);
+// Scanner ingestion: session OR scanner key
+const SCANNER_PATHS = new Set(['/api/scan', '/api/assets/scan']);
+// Sensitive GET endpoints that only admins may read
+const ADMIN_READ_PREFIXES = ['/api/settings', '/api/users', '/api/backup', '/api/logs', '/api/download/', '/api/pending-scans'];
+
+// Simple in-memory brute-force protection for /api/login
+const loginFailures = new Map(); // ip -> { count, first }
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 10;
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+}
+function isLoginBlocked(ip) {
+  const rec = loginFailures.get(ip);
+  if (!rec) return false;
+  if (Date.now() - rec.first > LOGIN_WINDOW_MS) { loginFailures.delete(ip); return false; }
+  return rec.count >= LOGIN_MAX_FAILURES;
+}
+function noteLoginFailure(ip) {
+  const rec = loginFailures.get(ip);
+  if (!rec || Date.now() - rec.first > LOGIN_WINDOW_MS) loginFailures.set(ip, { count: 1, first: Date.now() });
+  else rec.count++;
 }
 
 // Ensure uploads directory exists
@@ -95,11 +147,15 @@ const MIME_TYPES = {
 
 // 9Router Gateway Configuration
 const NINE_ROUTER_URL = process.env.NINE_ROUTER_URL || 'http://127.0.0.1:20128/v1/chat/completions';
-const NINE_ROUTER_KEY = process.env.DANI_API_KEY || 'sk-5b20d0102616fe63-rd4yvl-c8b097b3';
+// API key comes from the environment only (never commit keys to the repository)
+const NINE_ROUTER_KEY = process.env.DANI_API_KEY || process.env.NINE_ROUTER_KEY || '';
 const NINE_ROUTER_MODEL = process.env.NINE_ROUTER_MODEL || 'opus';
 
 // Helper: Call 9Router AI Gateway (OpenAI Compatible)
 async function call9Router(promptText, base64Image = null) {
+  if (!NINE_ROUTER_KEY) {
+    throw new Error('9Router API key is not configured (set the DANI_API_KEY environment variable)');
+  }
   const content = [];
   content.push({ type: 'text', text: promptText });
 
@@ -289,17 +345,29 @@ async function notifyBale(text) {
 }
 
 // Parse request body (JSON or URL-encoded)
-function parseRequestBody(req) {
+// Collects raw bytes and decodes once, so multi-byte UTF-8 (Persian text)
+// split across network chunks is never corrupted.
+function parseRequestBody(req, maxBytes = 20 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
+    let total = 0;
+    let aborted = false;
     req.on('data', chunk => {
-      body += chunk.toString();
-      // Cap at 20MB for photo uploads
-      if (body.length > 20 * 1024 * 1024) {
-        reject(new Error('Payload Too Large'));
+      if (aborted) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        aborted = true;
+        const err = new Error('Payload Too Large');
+        err.statusCode = 413;
+        reject(err);
+        req.resume();
+        return;
       }
+      chunks.push(chunk);
     });
     req.on('end', () => {
+      if (aborted) return;
+      const body = Buffer.concat(chunks, total).toString('utf8');
       if (!body) return resolve({});
       try {
         resolve(JSON.parse(body));
@@ -380,44 +448,64 @@ const server = http.createServer(async (req, res) => {
 
   try {
     // -------------------------------------------------------------
-    // AUTHENTICATION GATE (when SITE_PASSWORD is set)
+    // AUTHENTICATION GATE
     // -------------------------------------------------------------
+    const sessionUser = getSessionUser(req);
+
     if (pathname === '/api/auth-status') {
       return sendJson(res, 200, {
-        authRequired: AUTH_ENABLED,
-        authenticated: isAuthorized(req)
+        authRequired: true,
+        authenticated: !!sessionUser,
+        user: sessionUser,
+        default_password: sessionUser && sessionUser.is_admin ? queries.isUsingDefaultPassword() : false
       });
     }
 
     if (method === 'POST' && pathname === '/api/logout') {
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Set-Cookie': 'iam_sess=; Path=/; HttpOnly; Max-Age=0'
+        'Set-Cookie': sessionCookieHeader(null, req)
       });
       return res.end(JSON.stringify({ success: true }));
     }
 
-    // Enforce auth if enabled and path isn't whitelisted
-    if (AUTH_ENABLED && !AUTH_WHITELIST.has(pathname) && !isAuthorized(req)) {
-      if (pathname.startsWith('/api/')) {
-        return sendJson(res, 401, { error: 'Authentication required' });
+    if (!PUBLIC_PATHS.has(pathname)) {
+      const scannerAllowed = SCANNER_PATHS.has(pathname) && method === 'POST' && hasScannerKey(req);
+      if (!sessionUser && !scannerAllowed) {
+        if (pathname.startsWith('/api/')) {
+          return sendJson(res, 401, { error: 'برای ادامه وارد حساب کاربری شوید.', code: 'AUTH_REQUIRED' });
+        }
+        const isPage = pathname === '/' || pathname.endsWith('.html') || !path.extname(pathname);
+        if (isPage) {
+          res.writeHead(302, { 'Location': `/login.html?next=${encodeURIComponent(pathname + (parsedUrl.search || ''))}` });
+          return res.end();
+        }
+        res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Authentication required');
       }
-      // Redirect browsers to /login.html
-      res.writeHead(302, { 'Location': `/login.html?next=${encodeURIComponent(pathname)}` });
-      return res.end();
+
+      // Viewers are read-only
+      if (sessionUser && !sessionUser.is_admin && pathname.startsWith('/api/')) {
+        const isRead = method === 'GET' || method === 'HEAD';
+        const adminRead = ADMIN_READ_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/') || (p.endsWith('/') && pathname.startsWith(p)));
+        if (!isRead || adminRead) {
+          return sendJson(res, 403, { error: 'این کار فقط برای مدیر سیستم مجاز است.', code: 'ADMIN_ONLY' });
+        }
+      }
     }
+
     // -------------------------------------------------------------
     // API ROUTES
     // -------------------------------------------------------------
 
     // GET /api/suggestions (Autocomplete memory for models, CPUs, RAMs, storage, etc.)
-    if (method === 'GET' && (pathname === '/api/suggestions' || pathname === 'api/suggestions')) {
+    if (method === 'GET' && pathname === '/api/suggestions') {
       const suggestions = queries.getSuggestions();
       return sendJson(res, 200, suggestions);
     }
 
     // GET /api/stats
-    if (method === 'GET' && pathname === 'api/stats' || pathname === '/api/stats') {
+    if (method === 'GET' && pathname === '/api/stats') {
       const stats = queries.getStats();
       return sendJson(res, 200, stats);
     }
@@ -612,7 +700,8 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(scannerTemplatePath)) {
         batContent = fs.readFileSync(scannerTemplatePath, 'utf8');
         // Replace server URL dynamically
-        batContent = batContent.replace(/\$SERVER_URL = ".*?"/, `$SERVER_URL = "${serverUrl}"`);
+        batContent = batContent.replace(/\$SERVER_URL = ".*?"/, () => `$SERVER_URL = "${serverUrl}"`);
+        batContent = batContent.replace(/\$SERVER_KEY = ".*?"/, () => `$SERVER_KEY = "${getScannerKey()}"`);
       }
 
       res.writeHead(200, {
@@ -634,7 +723,8 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(scannerTemplatePath)) {
         shContent = fs.readFileSync(scannerTemplatePath, 'utf8');
         // Replace server URL dynamically
-        shContent = shContent.replace(/SERVER_URL="\$\{IAM_SERVER:-.*?\}"/, `SERVER_URL="\${IAM_SERVER:-${serverUrl}}"`);
+        shContent = shContent.replace(/SERVER_URL="\$\{IAM_SERVER:-.*?\}"/, () => `SERVER_URL="\${IAM_SERVER:-${serverUrl}}"`);
+        shContent = shContent.replace(/SERVER_KEY="\$\{IAM_KEY:-.*?\}"/, () => `SERVER_KEY="\${IAM_KEY:-${getScannerKey()}}"`);
       }
 
       res.writeHead(200, {
@@ -698,7 +788,7 @@ const server = http.createServer(async (req, res) => {
           `*Status:* ${created.status}\n` +
           `*Assigned User:* ${created.user_name || 'Unassigned'}\n` +
           `*Location:* ${created.location || 'N/A'}`;
-        notifyBale(text + diskLine).catch(() => {});
+        notifyBale(text).catch(() => {});
       }
 
       return sendJson(res, 201, created);
@@ -708,6 +798,15 @@ const server = http.createServer(async (req, res) => {
     if (method === 'PUT' && assetIdMatch) {
       const id = parseInt(assetIdMatch[1], 10);
       const data = await parseRequestBody(req);
+
+      if (data.property_id !== undefined) {
+        data.property_id = String(data.property_id || '').trim();
+        if (!data.property_id) return sendJson(res, 400, { error: 'شناسه اموال نمی‌تواند خالی باشد.' });
+        const dup = queries.getAssetByPropertyId(data.property_id);
+        if (dup && dup.id !== id) {
+          return sendJson(res, 400, { error: `شماره اموال «${data.property_id}» برای دستگاه دیگری ثبت شده است.` });
+        }
+      }
 
       const success = queries.updateAsset(id, data);
       if (!success) return sendJson(res, 404, { error: 'Asset not found' });
@@ -835,7 +934,7 @@ const server = http.createServer(async (req, res) => {
             `🔔 *توجه:* برای تخصیص شماره اموال فیزیکی و تایید نهایی، وارد پنل شوید:\n` +
             `🔗 [ورود به پنل و تایید اموال](${queueLink})`;
         }
-        notifyBale(text).catch(() => {});
+        notifyBale(text + diskLine).catch(() => {});
       }
 
       return sendJson(res, 200, {
@@ -1241,8 +1340,10 @@ Respond ONLY in JSON format:
     // GET /api/settings
     if (method === 'GET' && pathname === '/api/settings') {
       const settings = queries.getSettings();
-      // Mask token slightly for security
+      // Never expose internal secrets
       const masked = { ...settings };
+      delete masked.session_secret;
+      delete masked.scanner_key;
       if (masked.bale_token && masked.bale_token.length > 8) {
         masked.bale_token_preview = masked.bale_token.slice(0, 4) + '...' + masked.bale_token.slice(-4);
       }
@@ -1251,18 +1352,29 @@ Respond ONLY in JSON format:
 
     // POST /api/settings
     if (method === 'POST' && pathname === '/api/settings') {
-      const data = await parseRequestBody(req);
+      const raw = await parseRequestBody(req);
+      const ALLOWED_SETTINGS = ['company_name', 'asset_tag_prefix', 'bale_token', 'bale_chat_id', 'gemini_api_key', 'gemini_model', 'photo_priority'];
+      const data = {};
+      for (const k of ALLOWED_SETTINGS) if (raw[k] !== undefined && raw[k] !== null) data[k] = String(raw[k]).slice(0, 500);
+      if (data.photo_priority && !['camera', 'newest', 'stock'].includes(data.photo_priority)) delete data.photo_priority;
       queries.updateSettings(data);
       const changedKeys = Object.keys(data).join(', ');
       queries.addLog('INFO', 'SETTINGS', 'تنظیمات سیستم بروزرسانی شد', `فیلدها: ${changedKeys}`, req.socket?.remoteAddress || '');
-      return sendJson(res, 200, { success: true, settings: queries.getSettings() });
+      const safe = { ...queries.getSettings() };
+      delete safe.session_secret;
+      delete safe.scanner_key;
+      return sendJson(res, 200, { success: true, settings: safe });
     }
 
     // POST /api/login (User Authentication with Roles: admin / viewer)
     if (method === 'POST' && pathname === '/api/login') {
+      const ip = clientIp(req);
+      if (isLoginBlocked(ip)) {
+        return sendJson(res, 429, { error: 'تعداد تلاش‌های ناموفق زیاد است. ۱۵ دقیقه دیگر دوباره امتحان کنید.' });
+      }
       const data = await parseRequestBody(req);
-      const username = (data.username || '').trim();
-      const password = (data.password || '').trim();
+      const username = String(data.username || '').trim();
+      const password = String(data.password || '').trim();
 
       if (!username || !password) {
         return sendJson(res, 400, { error: 'نام کاربری و کلمه عبور الزامی است.' });
@@ -1270,12 +1382,18 @@ Respond ONLY in JSON format:
 
       const user = queries.authenticateUser(username, password);
       if (!user) {
-        queries.addLog('WARN', 'AUTH', `ورود ناموفق با نام کاربری: ${username}`, '', req.socket?.remoteAddress || '');
+        noteLoginFailure(ip);
+        queries.addLog('WARN', 'AUTH', `ورود ناموفق با نام کاربری: ${username}`, '', ip);
         return sendJson(res, 401, { error: 'نام کاربری یا کلمه عبور اشتباه است.' });
       }
 
-      queries.addLog('SUCCESS', 'AUTH', `ورود موفق کاربر: ${user.full_name} (${user.role})`, '', req.socket?.remoteAddress || '');
-      return sendJson(res, 200, {
+      loginFailures.delete(ip);
+      queries.addLog('SUCCESS', 'AUTH', `ورود موفق کاربر: ${user.full_name} (${user.role})`, '', ip);
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Set-Cookie': sessionCookieHeader(buildSessionToken(user.id), req)
+      });
+      return res.end(JSON.stringify({
         success: true,
         user: {
           id: user.id,
@@ -1284,7 +1402,7 @@ Respond ONLY in JSON format:
           role: user.role,
           is_admin: user.is_admin
         }
-      });
+      }));
     }
 
     // GET /api/users (List all system users)
@@ -1299,8 +1417,11 @@ Respond ONLY in JSON format:
       if (!data.username || !data.password || !data.full_name) {
         return sendJson(res, 400, { error: 'نام کاربری، رمز عبور و نام کامل الزامی است.' });
       }
+      if (String(data.password).length < 4) {
+        return sendJson(res, 400, { error: 'رمز عبور باید حداقل ۴ کاراکتر باشد.' });
+      }
       try {
-        const id = queries.createUser(data.username, data.password, data.full_name, data.role || 'viewer');
+        const id = queries.createUser(data.username, data.password, data.full_name, data.role === 'admin' ? 'admin' : 'viewer');
         queries.addLog('INFO', 'USERS', `کاربر جدید ایجاد شد: ${data.username} (${data.role || 'viewer'})`);
         return sendJson(res, 201, { success: true, id, message: 'کاربر با موفقیت ایجاد شد.' });
       } catch (err) {
@@ -1313,7 +1434,16 @@ Respond ONLY in JSON format:
     if (method === 'PUT' && userUpdateMatch) {
       const userId = parseInt(userUpdateMatch[1], 10);
       const data = await parseRequestBody(req);
-      const ok = queries.updateUser(userId, data.full_name, data.role || 'viewer', data.password);
+      const role = data.role === 'admin' ? 'admin' : 'viewer';
+      if (sessionUser && userId === sessionUser.id && role !== 'admin') {
+        return sendJson(res, 400, { error: 'نمی‌توانید نقش مدیر را از حساب خودتان بردارید.' });
+      }
+      if (data.password && String(data.password).length < 4) {
+        return sendJson(res, 400, { error: 'رمز عبور باید حداقل ۴ کاراکتر باشد.' });
+      }
+      const existingUser = queries.getUserById(userId);
+      if (!existingUser) return sendJson(res, 404, { error: 'کاربر پیدا نشد.' });
+      const ok = queries.updateUser(userId, data.full_name || existingUser.full_name, role, data.password);
       return sendJson(res, 200, { success: ok, message: 'اطلاعات کاربر به‌روزرسانی شد.' });
     }
 
@@ -1323,6 +1453,9 @@ Respond ONLY in JSON format:
       const userId = parseInt(userDeleteMatch[1], 10);
       if (userId === 1) {
         return sendJson(res, 400, { error: 'کاربر مدیر اصلی سیستم قابل حذف نیست.' });
+      }
+      if (sessionUser && userId === sessionUser.id) {
+        return sendJson(res, 400, { error: 'نمی‌توانید حساب کاربری خودتان را حذف کنید.' });
       }
       const ok = queries.deleteUser(userId);
       return sendJson(res, 200, { success: ok, message: 'کاربر حذف شد.' });
@@ -1340,7 +1473,12 @@ Respond ONLY in JSON format:
 
     // Serve /uploads/*
     if (pathname.startsWith('/uploads/')) {
-      const fileName = path.basename(pathname);
+      let fileName;
+      try { fileName = path.basename(decodeURIComponent(pathname)); } catch (e) { fileName = ''; }
+      if (!fileName || fileName.startsWith('.')) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Photo not found');
+      }
       const filePath = path.join(UPLOADS_DIR, fileName);
 
       if (!fs.existsSync(filePath)) {
@@ -1366,7 +1504,8 @@ Respond ONLY in JSON format:
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath).toLowerCase();
       const mime = MIME_TYPES[ext] || 'text/plain';
-      res.writeHead(200, { 'Content-Type': mime });
+      // Always revalidate app files so updates show up immediately on phones
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
       return fs.createReadStream(filePath).pipe(res);
     }
 
@@ -1382,6 +1521,8 @@ Respond ONLY in JSON format:
 
   } catch (err) {
     console.error('Server error:', err);
+    if (res.headersSent) return res.end();
+    if (err && err.statusCode === 413) return sendJson(res, 413, { error: 'حجم فایل یا داده ارسالی بیش از حد مجاز است.' });
     sendJson(res, 500, { error: 'Internal Server Error', message: err.message });
   }
 });

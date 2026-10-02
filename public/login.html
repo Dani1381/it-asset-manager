@@ -203,19 +203,6 @@
 
         <button type="submit" class="login-btn" id="login-submit-btn">ورود به سامانه</button>
       </form>
-
-      <div class="role-preview">
-        <div class="role-chip" onclick="quickFill('admin', 'admin')" title="ورود سریع با نقش ادمین">
-          <span class="role-chip-icon">🛡️</span>
-          <span class="role-chip-name">ورود ادمین</span>
-          <span class="role-chip-hint">دسترسی کامل و تایید اموال</span>
-        </div>
-        <div class="role-chip" onclick="quickFill('viewer', '123')" title="ورود سریع با نقش بیننده">
-          <span class="role-chip-icon">👁️</span>
-          <span class="role-chip-name">ورود بیننده</span>
-          <span class="role-chip-hint">مشاهده و جستجو</span>
-        </div>
-      </div>
     </div>
   </main>
 
@@ -237,6 +224,20 @@
       localStorage.setItem('theme', isLight ? 'light' : 'dark');
       document.getElementById('theme-icon').textContent = isLight ? '🌙' : '☀️';
     }
+
+    // Only allow redirects back to pages of this site
+    function safeNext() {
+      const next = new URLSearchParams(location.search).get('next') || '/';
+      return (next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')) ? next : '/';
+    }
+
+    // Already logged in (cookie still valid)? Skip the form.
+    fetch('/api/auth-status', { cache: 'no-store' }).then(r => r.json()).then(d => {
+      if (d && d.authenticated && d.user) {
+        localStorage.setItem('arka_user', JSON.stringify(d.user));
+        location.replace(safeNext());
+      }
+    }).catch(() => {});
 
     function quickFill(user, pass) {
       document.getElementById('login-username').value = user;
@@ -263,7 +264,7 @@
 
         if (res.ok && data.success) {
           localStorage.setItem('arka_user', JSON.stringify(data.user));
-          window.location.href = '/';
+          window.location.href = safeNext();
         } else {
           errorBox.textContent = data.error || 'نام کاربری یا کلمه عبور نادرست است.';
           errorBox.style.display = 'block';

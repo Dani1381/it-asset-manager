@@ -22,6 +22,7 @@ function isAdmin() {
 
 function logoutUser() {
   if (!confirm('آیا از خروج از حساب مطمئن هستید؟')) return;
+  if (typeof window.serverLogout === 'function') return window.serverLogout();
   localStorage.removeItem('arka_user');
   window.location.href = '/login.html';
 }
@@ -722,7 +723,7 @@ async function loadUsersList() {
               <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>👁️ بیننده</option>
               <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>🛡️ ادمین</option>
             </select>
-            ${u.id !== 1 ? `<button onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')" class="btn btn-danger btn-sm" style="padding: 0.35rem 0.65rem;">🗑️</button>` : ''}
+            ${u.id !== 1 ? `<button data-username="${escapeHtml(u.username)}" onclick="deleteUser(${u.id}, this.dataset.username)" class="btn btn-danger btn-sm" style="padding: 0.35rem 0.65rem;">🗑️</button>` : ''}
           </div>
         </div>
       `;
