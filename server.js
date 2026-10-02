@@ -895,6 +895,7 @@ const server = http.createServer(async (req, res) => {
 
       const newId = queries.createAsset(data);
       const created = queries.getAssetById(newId);
+      if (data._specs_copied) created.specs_copied = data._specs_copied;
 
       // Optional Bale notification
       const settings = queries.getSettings();
@@ -911,6 +912,17 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 201, created);
+    }
+
+    // GET /api/models/spec-template?model=...&category=...
+    // Most complete existing record of the same model. `fixed` = same model always has the same specs.
+    if (method === 'GET' && pathname === '/api/models/spec-template') {
+      const model = parsedUrl.searchParams.get('model') || '';
+      const category = parsedUrl.searchParams.get('category') || '';
+      const fixed = queries.isFixedSpecCategory(category);
+      const tpl = queries.getModelSpecTemplate(model, fixed ? category : null);
+      if (!tpl) return sendJson(res, 200, { found: false, fixed });
+      return sendJson(res, 200, { found: true, fixed, ...tpl });
     }
 
     // PUT /api/assets/:id (Update Asset)

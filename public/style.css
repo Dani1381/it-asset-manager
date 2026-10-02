@@ -1848,3 +1848,19 @@ body.light-mode .ai-test-result.is-error { color: #b91c1c; }
 }
 body.light-mode .asset-tag-badge.is-no-tag { color: #b45309; }
 input.form-control:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Same-model spec reuse (add form) */
+.model-spec-card {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--text-muted);
+}
+.model-spec-card .btn { margin-inline-start: 0.4rem; margin-top: 0.3rem; }
+.model-spec-card.is-fixed { background: var(--success-bg); border-color: var(--success-border); }
+.model-spec-card[hidden] { display: none; }
+.form-control.spec-autofilled { border-color: #10b981 !important; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25); transition: box-shadow 0.3s ease; }

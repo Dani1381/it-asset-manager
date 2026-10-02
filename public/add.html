@@ -194,6 +194,8 @@
               <div id="model-lookup-status" style="font-size: 0.82rem; margin-top: 0.3rem; display: none;"></div>
 
               <!-- Suggested Existing Photo Card -->
+              <div id="model-spec-card" class="model-spec-card" hidden></div>
+
               <div id="model-photo-suggest-card" style="display: none; margin-top: 0.75rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 0.65rem 0.85rem; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 0.65rem;">
                   <img id="suggested-photo-img" src="" alt="Device photo" style="width: 52px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">
@@ -416,11 +418,73 @@
         let debounceTimer = null;
         modelInput.addEventListener('input', () => {
           clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(checkModelPhotoSuggestion, 600);
+          debounceTimer = setTimeout(() => { checkModelPhotoSuggestion(); checkModelSpecTemplate(); }, 600);
         });
-        modelInput.addEventListener('blur', checkModelPhotoSuggestion);
+        modelInput.addEventListener('blur', () => { checkModelPhotoSuggestion(); checkModelSpecTemplate(); });
       }
+      const catSelect = document.getElementById('category');
+      if (catSelect) catSelect.addEventListener('change', checkModelSpecTemplate);
     });
+
+    // ---- Same-model specs ----
+    const SPEC_FIELD_LABELS = { cpu: 'پردازنده', ram: 'رم', storage_drives: 'حافظه', gpu: 'گرافیک', monitors: 'نمایشگر / مشخصات صفحه' };
+    let currentSpecTemplate = null;
+    let lastAutoFilledKey = '';
+
+    function fillSpecsFromTemplate(tpl) {
+      const filled = [];
+      for (const [field, value] of Object.entries(tpl.fields || {})) {
+        const el = document.getElementById(field);
+        if (el && !el.value.trim()) {
+          el.value = value;
+          el.classList.add('spec-autofilled');
+          setTimeout(() => el.classList.remove('spec-autofilled'), 1800);
+          filled.push(SPEC_FIELD_LABELS[field] || field);
+        }
+      }
+      return filled;
+    }
+
+    async function checkModelSpecTemplate() {
+      const model = document.getElementById('manufacturer_model').value.trim();
+      const category = document.getElementById('category').value;
+      const card = document.getElementById('model-spec-card');
+      if (model.length < 3) { card.hidden = true; return; }
+
+      let data = null;
+      try {
+        const res = await fetch(`/api/models/spec-template?model=${encodeURIComponent(model)}&category=${encodeURIComponent(category)}`);
+        if (res.ok) data = await res.json();
+      } catch (e) {}
+      if (!data || !data.found) { card.hidden = true; currentSpecTemplate = null; return; }
+      currentSpecTemplate = data;
+
+      const key = `${model.toLowerCase()}|${category}`;
+      if (data.fixed) {
+        // Same model = same specs (monitors, drives, network gear...): fill right away
+        const filled = lastAutoFilledKey === key ? [] : fillSpecsFromTemplate(data);
+        lastAutoFilledKey = key;
+        card.className = 'model-spec-card is-fixed';
+        card.innerHTML = `✅ مشخصات کامل این مدل از قبل با شماره <strong>${escapeHtml(data.property_id)}</strong> ثبت شده` +
+          (filled.length ? ` و این فیلدها خودکار پر شد: <strong>${filled.map(escapeHtml).join('، ')}</strong>` : ' و فیلدهای مشخصات از روی آن پر شده‌اند.');
+      } else {
+        // Computers differ per unit: only offer it
+        card.className = 'model-spec-card';
+        card.innerHTML = `💡 این مدل قبلاً با شماره <strong>${escapeHtml(data.property_id)}</strong> ثبت شده. سیستم‌ها ممکن است سخت‌افزار متفاوتی داشته باشند.
+          <button type="button" class="btn btn-secondary btn-sm" onclick="applySpecTemplateManually()">📋 کپی مشخصات آن</button>`;
+      }
+      card.hidden = false;
+    }
+
+    function applySpecTemplateManually() {
+      if (!currentSpecTemplate) return;
+      const filled = fillSpecsFromTemplate(currentSpecTemplate);
+      const card = document.getElementById('model-spec-card');
+      card.className = 'model-spec-card is-fixed';
+      card.innerHTML = filled.length
+        ? `✅ مشخصات ${escapeHtml(currentSpecTemplate.property_id)} کپی شد: <strong>${filled.map(escapeHtml).join('، ')}</strong> — اگر این دستگاه فرق دارد، ویرایش کنید.`
+        : 'فیلدهای مشخصات از قبل پر بودند و چیزی تغییر نکرد.';
+    }
 
     let currentSuggestedPhoto = null;
 
@@ -572,6 +636,7 @@
           document.getElementById('manufacturer_model').value = s.manufacturer_model;
           filledCount++;
           checkModelPhotoSuggestion();
+          checkModelSpecTemplate(); // runs after the AI values, only fills what is still empty
         }
         if (s.serial_number) {
           document.getElementById('serial_number').value = s.serial_number;

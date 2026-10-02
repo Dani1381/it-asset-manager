@@ -281,6 +281,87 @@ function isTruthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
 }
 
+// ---------------------------------------------------------------------------
+// Same-model spec reuse
+// Monitors, drives, printers, network gear ... are identical for the same model,
+// so a new item of an already-known model inherits the most complete spec set.
+// Computers (PC / Laptop / Server) differ per unit, so they are only suggested.
+// ---------------------------------------------------------------------------
+const FIXED_SPEC_CATEGORIES = new Set(['Monitor', 'Storage', 'Printer', 'Modem', 'Router', 'Access Point', 'Network',
+  'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral']);
+const MODEL_SPEC_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
+
+function isFixedSpecCategory(category) {
+  return FIXED_SPEC_CATEGORIES.has(String(category || '').trim());
+}
+
+function normModelKey(model) {
+  return String(model || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isMeaningful(v) {
+  if (v === null || v === undefined) return false;
+  const t = String(v).trim().toLowerCase();
+  return t !== '' && !['-', '.', 'unknown', 'n/a', 'na', 'null', 'default display', 'standard graphics', 'internal storage'].includes(t);
+}
+
+// A spec value that only repeats the model name (e.g. monitors = "Samsung S24R350") carries no information
+function hasSpecValue(record, field) {
+  const v = record[field];
+  if (!isMeaningful(v)) return false;
+  return normModelKey(v) !== normModelKey(record.manufacturer_model);
+}
+
+// The most complete record of this exact model (optionally excluding one asset)
+function getModelSpecTemplate(model, category = null, excludeId = null) {
+  const key = normModelKey(model);
+  if (key.length < 3) return null;
+  const rows = db.prepare(`
+    SELECT * FROM assets
+    WHERE manufacturer_model IS NOT NULL AND LOWER(TRIM(manufacturer_model)) LIKE ?
+  `).all(`%${key.split(' ')[0]}%`);
+
+  let best = null;
+  let bestScore = 0;
+  for (const r of rows) {
+    if (excludeId && r.id === excludeId) continue;
+    if (normModelKey(r.manufacturer_model) !== key) continue;
+    if (category && r.category && r.category !== category) continue;
+    const score = MODEL_SPEC_FIELDS.filter(f => hasSpecValue(r, f)).length;
+    if (score > bestScore || (score === bestScore && best && score > 0 && String(r.updated_at) > String(best.updated_at))) {
+      best = r;
+      bestScore = score;
+    }
+  }
+  if (!best || bestScore === 0) return null;
+
+  const fields = {};
+  for (const f of MODEL_SPEC_FIELDS) if (hasSpecValue(best, f)) fields[f] = best[f];
+  return {
+    source_id: best.id,
+    property_id: best.property_id,
+    model: best.manufacturer_model,
+    category: best.category,
+    fields,
+    filled_count: bestScore
+  };
+}
+
+// Fill only the empty spec fields of `data` from the template (fixed-spec categories)
+function fillFromModelTemplate(data) {
+  if (!data || !isFixedSpecCategory(data.category) || !data.manufacturer_model) return null;
+  const tpl = getModelSpecTemplate(data.manufacturer_model, data.category);
+  if (!tpl) return null;
+  const copied = [];
+  for (const [f, v] of Object.entries(tpl.fields)) {
+    if (!hasSpecValue(data, f)) {
+      data[f] = v;
+      copied.push(f);
+    }
+  }
+  return copied.length ? { property_id: tpl.property_id, fields: copied } : null;
+}
+
 // Generate the next property ID (e.g. AST-0001, AST-0002)
 function getNextPropertyId() {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('asset_tag_prefix');
@@ -448,6 +529,14 @@ function normalizeDiskHealth(raw) {
 // Asset queries
 const queries = {
   // Get all assets with optional search & filter
+  getModelSpecTemplate(model, category = null, excludeId = null) {
+    return getModelSpecTemplate(model, category, excludeId);
+  },
+
+  isFixedSpecCategory(category) {
+    return isFixedSpecCategory(category);
+  },
+
   getAllAssets({ search, category, status, limit = 200, offset = 0 } = {}) {
     let sql = `
       SELECT a.*, 
@@ -518,6 +607,8 @@ const queries = {
   // Create new asset
   createAsset(data) {
     const now = new Date().toISOString();
+    // Same model already registered? Reuse its specs (monitors, drives, network gear...)
+    data._specs_copied = fillFromModelTemplate(data);
     const noTag = isTruthyFlag(data.no_tag);
     const propertyId = noTag ? getNextNoTagId() : (data.property_id || getNextPropertyId());
 
