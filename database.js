@@ -238,6 +238,8 @@ function initDb() {
   const assetCols = db.prepare('PRAGMA table_info(assets)').all().map(c => c.name);
   if (!assetCols.includes('disk_health')) db.exec('ALTER TABLE assets ADD COLUMN disk_health TEXT');
   if (!assetCols.includes('disk_health_status')) db.exec('ALTER TABLE assets ADD COLUMN disk_health_status TEXT');
+  // Items that have no physical property tag get an internal code (NT-0001...) and no_tag = 1
+  if (!assetCols.includes('no_tag')) db.exec('ALTER TABLE assets ADD COLUMN no_tag INTEGER NOT NULL DEFAULT 0');
   const pendingCols = db.prepare('PRAGMA table_info(pending_scans)').all().map(c => c.name);
   if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
 
@@ -261,6 +263,22 @@ function initDb() {
   for (const u of plainUsers) {
     db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashPassword(u.password), u.id);
   }
+}
+
+// Internal code for items without a physical property tag: NT-0001, NT-0002 ...
+const NO_TAG_PREFIX = 'NT-';
+function getNextNoTagId() {
+  const rows = db.prepare('SELECT property_id FROM assets WHERE property_id LIKE ?').all(`${NO_TAG_PREFIX}%`);
+  let max = 0;
+  for (const r of rows) {
+    const n = parseInt(String(r.property_id).slice(NO_TAG_PREFIX.length), 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return `${NO_TAG_PREFIX}${String(max + 1).padStart(4, '0')}`;
+}
+
+function isTruthyFlag(v) {
+  return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
 }
 
 // Generate the next property ID (e.g. AST-0001, AST-0002)
@@ -500,7 +518,8 @@ const queries = {
   // Create new asset
   createAsset(data) {
     const now = new Date().toISOString();
-    const propertyId = data.property_id || getNextPropertyId();
+    const noTag = isTruthyFlag(data.no_tag);
+    const propertyId = noTag ? getNextNoTagId() : (data.property_id || getNextPropertyId());
 
     const stmt = db.prepare(`
       INSERT INTO assets (
@@ -508,13 +527,13 @@ const queries = {
         manufacturer_model, serial_number, os_version, ip_address,
         cpu, ram, storage_drives, c_space, network_devices,
         gpu, monitors, location, department, purchase_date, notes,
-        is_automated, last_scanned_at, created_at, updated_at
+        is_automated, last_scanned_at, created_at, updated_at, no_tag
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?
+        ?, ?, ?, ?, ?
       )
     `);
 
@@ -544,7 +563,8 @@ const queries = {
         data.is_automated ? 1 : 0,
         data.last_scanned_at || null,
         now,
-        now
+        now,
+        noTag ? 1 : 0
       );
 
       const newId = Number(result.lastInsertRowid);
@@ -568,6 +588,18 @@ const queries = {
     const now = new Date().toISOString();
     const current = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!current) return false;
+
+    // "No property tag" switch: tagging an untagged item or removing its tag
+    let noTag = current.no_tag ? 1 : 0;
+    if (data.no_tag !== undefined) {
+      const wantNoTag = isTruthyFlag(data.no_tag);
+      if (wantNoTag && !current.no_tag) {
+        data.property_id = getNextNoTagId();
+      } else if (wantNoTag && current.no_tag) {
+        data.property_id = current.property_id; // keep its internal code
+      }
+      noTag = wantNoTag ? 1 : 0;
+    }
 
     const stmt = db.prepare(`
       UPDATE assets SET
@@ -593,7 +625,8 @@ const queries = {
         notes = ?,
         is_automated = ?,
         last_scanned_at = COALESCE(?, last_scanned_at),
-        updated_at = ?
+        updated_at = ?,
+        no_tag = ?
       WHERE id = ?
     `);
 
@@ -621,6 +654,7 @@ const queries = {
       data.is_automated !== undefined ? (data.is_automated ? 1 : 0) : current.is_automated,
       data.last_scanned_at || null,
       now,
+      noTag,
       id
     );
 
@@ -852,11 +886,12 @@ const queries = {
   },
 
   // Approve a pending scan item and assign its official physical Property ID
-  approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = 'active') {
+  approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = 'active', noTag = false) {
     const item = db.prepare('SELECT * FROM pending_scans WHERE id = ?').get(pendingId);
     if (!item) return null;
 
-    const propertyId = (customPropertyId && customPropertyId.trim()) ? customPropertyId.trim() : getNextPropertyId();
+    const propertyId = noTag ? getNextNoTagId()
+      : (customPropertyId && customPropertyId.trim()) ? customPropertyId.trim() : getNextPropertyId();
     const category = customCategory || item.category || 'PC';
     const now = new Date().toISOString();
 
@@ -884,7 +919,8 @@ const queries = {
       monitors: item.category === 'Monitor' ? item.manufacturer_model : null,
       notes: item.notes,
       is_automated: 1,
-      last_scanned_at: item.created_at
+      last_scanned_at: item.created_at,
+      no_tag: noTag ? 1 : 0
     });
 
     // Carry the scanner's disk health over to the new asset
@@ -1193,6 +1229,7 @@ const queries = {
 
     const pcs = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category IN ('PC', 'Single PC', 'Laptop')").get().count;
     const diskAlerts = db.prepare("SELECT COUNT(*) as count FROM assets WHERE disk_health_status IN ('warning', 'critical')").get().count;
+    const noTag = db.prepare('SELECT COUNT(*) as count FROM assets WHERE no_tag = 1').get().count;
     const monitors = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category = 'Monitor'").get().count;
     const others = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category NOT IN ('PC', 'Single PC', 'Laptop', 'Monitor')").get().count;
 
@@ -1202,6 +1239,7 @@ const queries = {
     return {
       total,
       diskAlerts,
+      noTag,
       active,
       inStorage,
       repair,

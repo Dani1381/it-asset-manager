@@ -272,8 +272,10 @@ function filterAssets() {
       if (cat === 'PC' && item.category !== 'PC' && item.category !== 'Laptop' && item.category !== 'Single PC') return false;
       if (cat !== 'PC' && item.category !== cat) return false;
     }
-    // Status match
-    if (status !== 'all' && item.status !== status) return false;
+    // Status match ("no_tag" is a special option: items without a property tag)
+    if (status === 'no_tag') {
+      if (!item.no_tag) return false;
+    } else if (status !== 'all' && item.status !== status) return false;
 
     // Search query match
     if (search) {
@@ -339,7 +341,7 @@ function renderAssets(assets) {
               <span data-i18n="stat_pending_photos">${getTranslation('stat_pending_photos')}</span>
             </div>
           `}
-          <div class="asset-tag-badge">${escapeHtml(asset.property_id)}</div>
+          <div class="asset-tag-badge ${asset.no_tag ? 'is-no-tag' : ''}" title="${asset.no_tag ? 'بدون شماره اموال — کد داخلی ' + escapeHtml(asset.property_id) : ''}">${asset.no_tag ? '🚫 بدون شماره' : escapeHtml(asset.property_id)}</div>
           <div class="asset-status-badge ${statusBadgeClass}">
             <span class="status-dot"></span>
             <span>${statusText}</span>
@@ -994,6 +996,10 @@ async function loadPendingScansList() {
             <div style="display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 260px;">
               <label style="font-size: 0.82rem; color: #94a3b8; white-space: nowrap;">شماره اموال فیزیکی:</label>
               <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${nextId}" placeholder="مثال: AST-0010">
+              <label class="no-tag-toggle" style="margin: 0;">
+                <input type="checkbox" id="pending-no-tag-${it.id}" onchange="document.getElementById('pending-prop-id-${it.id}').disabled = this.checked">
+                <span>ندارد</span>
+              </label>
             </div>
 
             <div style="display: flex; gap: 0.4rem;">
@@ -1015,9 +1021,11 @@ async function loadPendingScansList() {
 
 async function approvePendingItem(id, defaultCategory) {
   const propInput = document.getElementById(`pending-prop-id-${id}`);
+  const noTagBox = document.getElementById(`pending-no-tag-${id}`);
+  const noTag = !!(noTagBox && noTagBox.checked);
   const propId = propInput ? propInput.value.trim() : '';
 
-  if (!propId) {
+  if (!propId && !noTag) {
     alert('لطفاً شماره اموال این دستگاه را وارد کنید.');
     return;
   }
@@ -1027,8 +1035,9 @@ async function approvePendingItem(id, defaultCategory) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        property_id: propId,
-        category: defaultCategory
+        property_id: noTag ? undefined : propId,
+        category: defaultCategory,
+        no_tag: noTag
       })
     });
 

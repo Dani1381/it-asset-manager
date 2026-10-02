@@ -171,6 +171,11 @@
             <div class="form-group">
               <label class="form-label" data-i18n="field_property_id">🏷️ شناسه / کد اموال *</label>
               <input type="text" id="property_id" class="form-control" placeholder="AST-0001">
+              <label class="no-tag-toggle">
+                <input type="checkbox" id="no_tag" onchange="toggleNoTag(this.checked)">
+                <span>🚫 این کالا شماره اموال ندارد</span>
+              </label>
+              <div class="no-tag-hint" id="no-tag-hint" hidden>یک کد داخلی (مثل NT-0001) خودکار داده می‌شود. هر وقت برچسب اموال زدید، از صفحه ویرایش شماره واقعی را وارد کنید.</div>
             </div>
 
             <div class="form-group">
@@ -328,6 +333,16 @@
   </main>
 
   <script>
+    // Items without a physical property tag
+    function toggleNoTag(on) {
+      const input = document.getElementById('property_id');
+      input.disabled = on;
+      if (on) input.value = '';
+      input.placeholder = on ? 'بدون شماره اموال (کد داخلی خودکار)' : (window.__nextPropId || 'AST-0001');
+      document.getElementById('no-tag-hint').hidden = !on;
+    }
+  </script>
+  <script>
     // Session Auth Guard
     try {
       const rawUser = localStorage.getItem('arka_user');
@@ -382,7 +397,8 @@
         if (res.ok) {
           const data = await res.json();
           nextPropId = data.nextPropertyId;
-          document.getElementById('property_id').placeholder = nextPropId;
+          window.__nextPropId = nextPropId;
+          if (!document.getElementById('no_tag').checked) document.getElementById('property_id').placeholder = nextPropId;
         }
       } catch (e) {
         console.warn('Could not fetch next property id');
@@ -605,7 +621,8 @@
       btn.disabled = true;
 
       const payload = {
-        property_id: document.getElementById('property_id').value.trim() || undefined,
+        property_id: document.getElementById('no_tag').checked ? undefined : (document.getElementById('property_id').value.trim() || undefined),
+        no_tag: document.getElementById('no_tag').checked,
         category: document.getElementById('category').value,
         status: document.getElementById('status').value,
         user_name: document.getElementById('user_name').value.trim(),
@@ -664,7 +681,9 @@
           }
         }
 
-        alert(`دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`);
+        alert(created.no_tag
+          ? `دستگاه بدون شماره اموال ثبت شد. کد داخلی: ${created.property_id}`
+          : `دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`);
         window.location.href = `/asset.html?id=${created.id}`;
       } catch (e) {
         alert('خطا: ' + e.message);

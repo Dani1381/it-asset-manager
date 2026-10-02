@@ -186,6 +186,10 @@
               <div class="form-group">
                 <label class="form-label" data-i18n="field_property_id">شناسه اموال</label>
                 <input type="text" id="edit-property-id" class="form-control" required>
+                <label class="no-tag-toggle">
+                  <input type="checkbox" id="edit-no-tag" onchange="toggleEditNoTag(this.checked)">
+                  <span>🚫 این کالا شماره اموال ندارد</span>
+                </label>
               </div>
 
               <div class="form-group">
@@ -382,7 +386,9 @@
 
       document.title = `${a.property_id} - ${a.manufacturer_model || a.computer_name || 'Device'}`;
 
-      document.getElementById('asset-prop-badge').textContent = a.property_id;
+      const propBadge = document.getElementById('asset-prop-badge');
+      propBadge.textContent = a.no_tag ? `🚫 بدون شماره اموال · ${a.property_id}` : a.property_id;
+      propBadge.classList.toggle('is-no-tag', !!a.no_tag);
       document.getElementById('asset-heading').textContent = a.manufacturer_model || a.computer_name || `${a.category} Asset`;
       
       const statusBadge = document.getElementById('asset-status-badge');
@@ -394,7 +400,9 @@
       }
 
       // Specs
-      document.getElementById('spec-prop-id').textContent = a.property_id || '-';
+      document.getElementById('spec-prop-id').textContent = a.no_tag
+        ? `ندارد (کد داخلی: ${a.property_id})`
+        : (a.property_id || '-');
       document.getElementById('spec-category').textContent = `${categoryIcon(a.category)} ${categoryLabel(a.category)}`;
       document.getElementById('spec-model').textContent = a.manufacturer_model || '-';
       document.getElementById('spec-serial').textContent = a.serial_number || '-';
@@ -742,7 +750,9 @@
 
     function openEditModal() {
       if (!currentAsset) return;
-      document.getElementById('edit-property-id').value = currentAsset.property_id || '';
+      document.getElementById('edit-property-id').value = currentAsset.no_tag ? '' : (currentAsset.property_id || '');
+      document.getElementById('edit-no-tag').checked = !!currentAsset.no_tag;
+      toggleEditNoTag(!!currentAsset.no_tag);
       document.getElementById('edit-category').value = currentAsset.category || 'PC';
       if (window.refreshSmartChips) window.refreshSmartChips();
       document.getElementById('edit-status').value = currentAsset.status || 'active';
@@ -765,10 +775,20 @@
       document.getElementById('edit-modal').classList.remove('active');
     }
 
+    // Disable the tag input while "no property tag" is ticked
+    function toggleEditNoTag(on) {
+      const input = document.getElementById('edit-property-id');
+      input.disabled = on;
+      input.required = !on;
+      input.placeholder = on ? 'بدون شماره اموال' : 'شماره اموال را وارد کنید';
+    }
+
     async function saveAssetEdit(event) {
       event.preventDefault();
+      const noTag = document.getElementById('edit-no-tag').checked;
       const payload = {
-        property_id: document.getElementById('edit-property-id').value.trim(),
+        no_tag: noTag,
+        property_id: noTag ? undefined : document.getElementById('edit-property-id').value.trim(),
         category: document.getElementById('edit-category').value,
         status: document.getElementById('edit-status').value,
         user_name: document.getElementById('edit-user').value.trim(),
@@ -791,7 +811,11 @@
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error('خطا در ذخیره‌سازی اطلاعات');
+        if (!res.ok) {
+          let msg = 'خطا در ذخیره‌سازی اطلاعات';
+          try { msg = (await res.json()).error || msg; } catch (e) {}
+          throw new Error(msg);
+        }
         closeEditModal();
         await loadAssetDetails();
       } catch (e) {

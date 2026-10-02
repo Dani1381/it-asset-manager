@@ -286,6 +286,40 @@ async function testGeminiKey(key) {
   return { ok: true, provider: 'gemini', latency_ms: Date.now() - started };
 }
 
+// Map whatever category text the AI returns ("modem", "Wi-Fi router", "مودم", ...)
+// onto one of the app's category values. Falls back to the model name.
+const CATEGORY_VALUES = ['PC', 'Single PC', 'Laptop', 'Server', 'Monitor', 'Storage', 'Printer', 'Modem', 'Router',
+  'Access Point', 'Network', 'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral', 'Other'];
+const CATEGORY_KEYWORDS = [
+  ['Modem', /modem|adsl|vdsl|dsl-|\blte\b|\b4g\b|\b5g\b|gpon|ont\b|archer\s*vr|\bvr\d{3}|\btl-mr\d|\bmr\d{4}|\bb3\d{2}\b|\be5\d{3}|مودم/i],
+  ['Access Point', /access\s*point|\bap\b|unifi|\beap\d|cap\s*ac|mesh|اکسس/i],
+  ['Router', /router|routerboard|mikrotik|\brb\d|\bccr\d|\bhap\b|\bisr\s*\d|روتر/i],
+  ['Network', /switch|firewall|fortigate|patch\s*panel|catalyst|سوییچ|سوئیچ|فایروال/i],
+  ['Storage', /\bssd\b|\bhdd\b|nvme|hard\s*(disk|drive)|\bnas\b|external\s*drive|barracuda|wd\s*(blue|black|red|purple)|هارد|حافظه/i],
+  ['Server', /server|proliant|poweredge|thinksystem|سرور/i],
+  ['UPS', /\bups\b|back-ups|smart-ups|یو\s*پی\s*اس/i],
+  ['VoIP Phone', /voip|ip\s*phone|sip-|grandstream|yealink|\bphone\b|تلفن/i],
+  ['Camera', /cctv|\bdvr\b|\bnvr\b|ip\s*camera|hikvision|dahua|دوربین/i],
+  ['Projector', /projector|پروژکتور/i],
+  ['Tablet', /tablet|ipad|galaxy\s*tab|تبلت/i],
+  ['Peripheral', /keyboard|mouse|headset|webcam|speaker|کیبورد|ماوس|هدست/i],
+  ['Printer', /printer|scanner|laserjet|copier|mfp|پرینتر|اسکنر/i],
+  ['Monitor', /monitor|display|screen|مانیتور|نمایشگر/i],
+  ['Laptop', /laptop|notebook|latitude|thinkpad|elitebook|probook|macbook|لپ\s*تاپ|لپ‌تاپ/i],
+  ['PC', /desktop|\bpc\b|tower|optiplex|elitedesk|prodesk|thinkcentre|کیس|کامپیوتر/i]
+];
+
+function normalizeCategory(rawCategory, modelName = '') {
+  const raw = String(rawCategory || '').trim();
+  const exact = CATEGORY_VALUES.find(c => c.toLowerCase() === raw.toLowerCase());
+  if (exact && exact !== 'Other') return exact;
+  for (const text of [raw, String(modelName || '')]) {
+    if (!text) continue;
+    for (const [cat, re] of CATEGORY_KEYWORDS) if (re.test(text)) return cat;
+  }
+  return exact || (raw ? 'Other' : null);
+}
+
 // Call 9Router AI to extract specs from photo
 async function extractSpecsWithGemini(base64Image, requestedModel) {
   const prompt = `
@@ -293,6 +327,17 @@ You are an expert IT Asset & Hardware Inventory Analyst.
 Examine this image of an IT hardware device or its specification label/sticker very carefully.
 
 EXTRACT the following information as strictly structured JSON:
+CATEGORY GUIDE (pick the single best match, using the exact English value):
+- Modem: ADSL/VDSL/fiber/4G/LTE/5G modems and modem-routers from an ISP (e.g. TP-Link VR300, D-Link DSL-2750U, Huawei B311)
+- Router: routers without a DSL/LTE modem (e.g. MikroTik hAP / RB / CCR, Cisco ISR, TP-Link Archer router)
+- Access Point: Wi-Fi access points and mesh units (e.g. UniFi, EAP225, cAP)
+- Network: network switches, patch panels, firewalls
+- Storage: a loose hard drive, SSD, NVMe, external disk or NAS
+- Server: rack/tower servers (ProLiant, PowerEdge)
+- UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
+- Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
+- PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+
 {
   "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other",
   "manufacturer_model": "Full brand and model name, e.g. HP EliteDesk 800 G3 SFF or Samsung S27C31x",
@@ -313,6 +358,7 @@ Rules:
 
   try {
     const parsed = await call9Router(prompt, base64Image);
+    if (parsed && typeof parsed === 'object') parsed.category = normalizeCategory(parsed.category, parsed.manufacturer_model);
     parsed._used_model = '9Router (opus)';
     queries.addLog('SUCCESS', '9ROUTER_VISION', 'عکس با موفقیت توسط گیت‌وی 9Router تحلیل شد', `مدل شناسایی شده: ${parsed.manufacturer_model || 'نامشخص'}`);
     return parsed;
@@ -331,6 +377,17 @@ The user entered this device model: "${modelName}".
 Identify this computer, laptop, monitor, or hardware device and return its official standard technical specifications and common factory CPU/RAM/GPU configurations.
 
 Return STRICT JSON ONLY:
+CATEGORY GUIDE (pick the single best match, using the exact English value):
+- Modem: ADSL/VDSL/fiber/4G/LTE/5G modems and modem-routers from an ISP (e.g. TP-Link VR300, D-Link DSL-2750U, Huawei B311)
+- Router: routers without a DSL/LTE modem (e.g. MikroTik hAP / RB / CCR, Cisco ISR, TP-Link Archer router)
+- Access Point: Wi-Fi access points and mesh units (e.g. UniFi, EAP225, cAP)
+- Network: network switches, patch panels, firewalls
+- Storage: a loose hard drive, SSD, NVMe, external disk or NAS
+- Server: rack/tower servers (ProLiant, PowerEdge)
+- UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
+- Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
+- PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+
 {
   "recognized": true,
   "canonical_name": "Full clean model name (e.g. HP EliteDesk 800 G3 Small Form Factor)",
@@ -351,6 +408,7 @@ Return STRICT JSON ONLY with NO markdown code fences.
 
   try {
     const parsed = await call9Router(prompt);
+    if (parsed && typeof parsed === 'object') parsed.category = normalizeCategory(parsed.category, parsed.manufacturer_model);
     parsed._used_model = '9Router (opus)';
     queries.addLog('SUCCESS', '9ROUTER_LOOKUP', `استعلام مدل «${modelName}» با 9Router با موفقیت انجام شد`);
     return parsed;
@@ -823,14 +881,16 @@ const server = http.createServer(async (req, res) => {
     // POST /api/assets (Manual Asset Creation)
     if (method === 'POST' && pathname === '/api/assets') {
       const data = await parseRequestBody(req);
-      if (!data.property_id) {
-        data.property_id = getNextPropertyId();
-      }
+      const noTag = data.no_tag === true || data.no_tag === 1 || data.no_tag === '1';
+      if (!noTag) {
+        data.property_id = String(data.property_id || '').trim();
+        if (!data.property_id) data.property_id = getNextPropertyId();
 
-      // Check if property_id already exists
-      const existing = queries.getAssetByPropertyId(data.property_id);
-      if (existing) {
-        return sendJson(res, 400, { error: `Property ID "${data.property_id}" already exists!` });
+        // Check if property_id already exists
+        const existing = queries.getAssetByPropertyId(data.property_id);
+        if (existing) {
+          return sendJson(res, 400, { error: `شماره اموال «${data.property_id}» از قبل ثبت شده است.` });
+        }
       }
 
       const newId = queries.createAsset(data);
@@ -858,6 +918,15 @@ const server = http.createServer(async (req, res) => {
       const id = parseInt(assetIdMatch[1], 10);
       const data = await parseRequestBody(req);
 
+      const wantNoTag = data.no_tag === true || data.no_tag === 1 || data.no_tag === '1';
+      if (wantNoTag) delete data.property_id; // an internal NT- code is assigned
+      if (data.no_tag !== undefined && !wantNoTag) {
+        const cur = queries.getAssetById(id);
+        const pid = String(data.property_id || '').trim();
+        if (cur && cur.no_tag && (!pid || pid.toUpperCase().startsWith('NT-'))) {
+          return sendJson(res, 400, { error: 'برای این دستگاه شماره اموال واقعی وارد کنید.' });
+        }
+      }
       if (data.property_id !== undefined) {
         data.property_id = String(data.property_id || '').trim();
         if (!data.property_id) return sendJson(res, 400, { error: 'شناسه اموال نمی‌تواند خالی باشد.' });
@@ -899,7 +968,8 @@ const server = http.createServer(async (req, res) => {
           pendingId,
           data.property_id,
           data.category,
-          data.status || 'active'
+          data.status || 'active',
+          data.no_tag === true || data.no_tag === 1 || data.no_tag === '1'
         );
 
         if (!approved) return sendJson(res, 404, { error: 'Pending item not found' });
@@ -1341,7 +1411,7 @@ Respond ONLY in JSON format:
         'Manufacturer/Model', 'Serial Number', 'OS Version', 'IP Address',
         'CPU', 'RAM', 'Storage Drives', 'C: Drive Space', 'Network Devices',
         'GPU', 'Monitors', 'Location', 'Department', 'Notes', 'Created At', 'Last Scanned At',
-        'Disk Health', 'Disk Details'
+        'Disk Health', 'Disk Details', 'Has Property Tag'
       ];
 
       // Short human-readable disk summary for the CSV
@@ -1385,7 +1455,8 @@ Respond ONLY in JSON format:
           csvEscape(a.created_at),
           csvEscape(a.last_scanned_at),
           csvEscape(a.disk_health_status || ''),
-          csvEscape(diskSummary(a.disk_health))
+          csvEscape(diskSummary(a.disk_health)),
+          csvEscape(a.no_tag ? 'No' : 'Yes')
         ].join(','))
       ].join('\r\n');
 

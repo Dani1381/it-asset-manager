@@ -1826,3 +1826,25 @@ body.light-mode .btn-settings { color: #3730a3; background: #eef2ff; border-colo
 .ai-test-result.is-error { color: #f87171; }
 body.light-mode .ai-test-result.is-ok { color: #047857; }
 body.light-mode .ai-test-result.is-error { color: #b91c1c; }
+
+/* Items without a physical property tag */
+.no-tag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.no-tag-toggle input { width: 1.05rem; height: 1.05rem; accent-color: #f59e0b; cursor: pointer; }
+.no-tag-hint { font-size: 0.78rem; color: #fbbf24; margin-top: 0.35rem; }
+.asset-tag-badge.is-no-tag {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.55);
+  font-family: 'Vazirmatn', sans-serif;
+}
+body.light-mode .asset-tag-badge.is-no-tag { color: #b45309; }
+input.form-control:disabled { opacity: 0.55; cursor: not-allowed; }
