@@ -212,6 +212,13 @@ function initDb() {
   // camera = phone photos first, newest = most recent upload first, stock = catalog images first
   insertSetting.run('photo_priority', 'camera');
 
+  // Migration: disk health reported by the network scanners
+  const assetCols = db.prepare('PRAGMA table_info(assets)').all().map(c => c.name);
+  if (!assetCols.includes('disk_health')) db.exec('ALTER TABLE assets ADD COLUMN disk_health TEXT');
+  if (!assetCols.includes('disk_health_status')) db.exec('ALTER TABLE assets ADD COLUMN disk_health_status TEXT');
+  const pendingCols = db.prepare('PRAGMA table_info(pending_scans)').all().map(c => c.name);
+  if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
+
   // Migration: manual "cover photo" flag per asset
   const photoCols = db.prepare('PRAGMA table_info(asset_photos)').all().map(c => c.name);
   if (!photoCols.includes('is_primary')) {
@@ -281,6 +288,115 @@ function photoOrderSql(alias = '') {
       // phone photos first; among them the most recent shot is shown
       return `${base}, CASE WHEN ${isCamera} THEN 0 ELSE 1 END, ${a}id DESC`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Disk health (SMART) normalisation
+// Scanners send an array of drives; we clean every field, rate each drive
+// (ok / warning / critical / unknown) and keep the worst as the asset status.
+// ---------------------------------------------------------------------------
+const HEALTH_RANK = { unknown: 0, ok: 1, warning: 2, critical: 3 };
+
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function toBool(v) {
+  if (v === true || v === false) return v;
+  if (v === null || v === undefined || v === '') return null;
+  const t = String(v).trim().toLowerCase();
+  if (['true', '1', 'yes', 'passed', 'pass', 'ok'].includes(t)) return true;
+  if (['false', '0', 'no', 'failed', 'fail'].includes(t)) return false;
+  return null;
+}
+
+function cleanText(v, max = 80) {
+  if (v === null || v === undefined) return null;
+  const t = String(v).replace(/[\u0000-\u001f]/g, ' ').trim();
+  return t ? t.slice(0, max) : null;
+}
+
+function rateDisk(d) {
+  const reasons = [];
+  const status = (d.health_status || '').toLowerCase();
+  let level = 'unknown';
+  const hasData = d.health_percent !== null || d.smart_passed !== null || d.predict_failure !== null ||
+    (status && status !== 'unknown') || d.reallocated_sectors !== null || d.temperature_c !== null;
+  if (hasData) level = 'ok';
+
+  const bump = (lvl, why) => {
+    if (HEALTH_RANK[lvl] > HEALTH_RANK[level]) level = lvl;
+    reasons.push(why);
+  };
+
+  if (d.predict_failure === true) bump('critical', 'SMART predicts imminent failure');
+  if (d.smart_passed === false) bump('critical', 'SMART self-assessment failed');
+  if (['unhealthy', 'failed', 'pred fail', 'bad'].includes(status)) bump('critical', `Health status: ${d.health_status}`);
+  else if (['warning', 'degraded', 'caution'].includes(status)) bump('warning', `Health status: ${d.health_status}`);
+
+  if (d.health_percent !== null) {
+    if (d.health_percent <= 30) bump('critical', `Remaining life ${d.health_percent}%`);
+    else if (d.health_percent <= 70) bump('warning', `Remaining life ${d.health_percent}%`);
+  }
+  if (d.pending_sectors > 0) bump('warning', `${d.pending_sectors} pending sectors`);
+  if (d.reallocated_sectors > 0) bump(d.reallocated_sectors > 100 ? 'critical' : 'warning', `${d.reallocated_sectors} reallocated sectors`);
+  if (d.uncorrectable_errors > 0) bump('warning', `${d.uncorrectable_errors} uncorrectable errors`);
+  if (d.media_errors > 0) bump('warning', `${d.media_errors} media errors`);
+  if (d.temperature_c !== null && d.temperature_c >= 60) bump('warning', `High temperature ${d.temperature_c}°C`);
+
+  return { level, reasons };
+}
+
+function normalizeDiskHealth(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  let list = raw;
+  if (typeof list === 'string') {
+    try { list = JSON.parse(list); } catch (e) { return null; }
+  }
+  if (list && !Array.isArray(list) && Array.isArray(list.disks)) list = list.disks; // already normalised
+  if (list && !Array.isArray(list)) list = [list];
+  if (!Array.isArray(list) || list.length === 0) return null;
+
+  const disks = list.slice(0, 16).filter(d => d && typeof d === 'object').map(d => {
+    let pct = toNum(d.health_percent ?? d.healthPercent);
+    if (pct === null) {
+      const wear = toNum(d.wear_percent ?? d.wear ?? d.percentage_used);
+      if (wear !== null) pct = 100 - wear;
+    }
+    if (pct !== null) pct = Math.max(0, Math.min(100, Math.round(pct)));
+    const disk = {
+      model: cleanText(d.model || d.name, 80) || 'Disk',
+      serial: cleanText(d.serial, 40),
+      type: cleanText(d.type || d.media_type || d.mediaType, 12),
+      bus: cleanText(d.bus || d.bus_type || d.busType, 12),
+      size_gb: toNum(d.size_gb ?? d.sizeGB),
+      health_status: cleanText(d.health_status ?? d.healthStatus ?? d.status, 20),
+      health_percent: pct,
+      smart_passed: toBool(d.smart_passed ?? d.smartPassed),
+      predict_failure: toBool(d.predict_failure ?? d.predictFailure),
+      temperature_c: toNum(d.temperature_c ?? d.temperature),
+      power_on_hours: toNum(d.power_on_hours ?? d.powerOnHours),
+      reallocated_sectors: toNum(d.reallocated_sectors ?? d.reallocated),
+      pending_sectors: toNum(d.pending_sectors ?? d.pending),
+      uncorrectable_errors: toNum(d.uncorrectable_errors ?? d.readErrors ?? d.uncorrectable),
+      media_errors: toNum(d.media_errors ?? d.mediaErrors),
+      note: cleanText(d.note, 120)
+    };
+    const r = rateDisk(disk);
+    disk.level = r.level;
+    disk.reasons = r.reasons;
+    return disk;
+  });
+  if (disks.length === 0) return null;
+
+  let overall = 'unknown';
+  for (const d of disks) if (HEALTH_RANK[d.level] > HEALTH_RANK[overall]) overall = d.level;
+  return {
+    json: JSON.stringify({ checked_at: new Date().toISOString(), disks }),
+    status: overall
+  };
 }
 
 // Asset queries
@@ -489,6 +605,7 @@ const queries = {
     const now = new Date().toISOString();
     const compName = (scanData.computer_name || '').trim();
     const serialNum = (scanData.serial_number || '').trim();
+    const diskHealth = normalizeDiskHealth(scanData.disk_health);
     const isSerialValid = serialNum && serialNum.toLowerCase() !== 'unknown' && serialNum.toLowerCase() !== 'to be filled by o.e.m.' && serialNum.length > 3;
 
     // 1. Check if this machine is ALREADY registered as an approved asset in `assets` table!
@@ -513,6 +630,8 @@ const queries = {
           c_space = COALESCE(?, c_space),
           gpu = COALESCE(?, gpu),
           monitors = COALESCE(?, monitors),
+          disk_health = COALESCE(?, disk_health),
+          disk_health_status = COALESCE(?, disk_health_status),
           last_scanned_at = ?,
           updated_at = ?
         WHERE id = ?
@@ -526,6 +645,8 @@ const queries = {
         scanData.c_space || null,
         scanData.gpu || null,
         scanData.monitors || null,
+        diskHealth ? diskHealth.json : null,
+        diskHealth ? diskHealth.status : null,
         now,
         now,
         existingAsset.id
@@ -540,6 +661,7 @@ const queries = {
 
       return {
         is_update: true,
+        disk_health_status: diskHealth ? diskHealth.status : null,
         asset_id: existingAsset.id,
         property_id: existingAsset.property_id,
         items_count: 1,
@@ -570,6 +692,7 @@ const queries = {
           storage_drives = COALESCE(?, storage_drives),
           c_space = COALESCE(?, c_space),
           gpu = COALESCE(?, gpu),
+          disk_health = COALESCE(?, disk_health),
           created_at = ?
         WHERE id = ?
       `).run(
@@ -582,12 +705,14 @@ const queries = {
         scanData.storage_drives || null,
         scanData.c_space || null,
         scanData.gpu || null,
+        diskHealth ? diskHealth.json : null,
         now,
         existingPending.id
       );
 
       return {
         is_pending_update: true,
+        disk_health_status: diskHealth ? diskHealth.status : null,
         batch_id: existingPending.batch_id,
         items_count: 1,
         items: [{ id: existingPending.id, category: existingPending.category, name: existingPending.manufacturer_model || existingPending.computer_name }],
@@ -634,6 +759,9 @@ const queries = {
       now
     );
 
+    if (diskHealth) {
+      db.prepare('UPDATE pending_scans SET disk_health = ? WHERE id = ?').run(diskHealth.json, Number(pcRes.lastInsertRowid));
+    }
     createdItems.push({ id: Number(pcRes.lastInsertRowid), category: mainCategory, name: scanData.manufacturer_model || scanData.computer_name });
 
     // Auto-Split Connected Monitors as separate individual assets
@@ -677,6 +805,7 @@ const queries = {
       items_count: createdItems.length,
       items: createdItems,
       is_new: true,
+      disk_health_status: diskHealth ? diskHealth.status : null,
       message: `اسکن دریافت شد؛ ${createdItems.length} قلم دارایی تفکیک و در صف تایید اموال قرار گرفت.`
     };
   } catch (err) {
@@ -729,6 +858,17 @@ const queries = {
       is_automated: 1,
       last_scanned_at: item.created_at
     });
+
+    // Carry the scanner's disk health over to the new asset
+    if (item.disk_health) {
+      const dh = normalizeDiskHealth(item.disk_health);
+      if (dh) {
+        // keep the original check time from the scan
+        let json = dh.json;
+        try { const orig = JSON.parse(item.disk_health); const fresh = JSON.parse(dh.json); fresh.checked_at = orig.checked_at || fresh.checked_at; json = JSON.stringify(fresh); } catch (e) {}
+        db.prepare('UPDATE assets SET disk_health = ?, disk_health_status = ? WHERE id = ?').run(json, dh.status, newId);
+      }
+    }
 
     // Mark as approved in pending table
     db.prepare("UPDATE pending_scans SET status = 'approved' WHERE id = ?").run(pendingId);
@@ -1023,15 +1163,17 @@ const queries = {
     const repair = db.prepare("SELECT COUNT(*) as count FROM assets WHERE status = 'repair'").get().count;
     const retired = db.prepare("SELECT COUNT(*) as count FROM assets WHERE status = 'retired'").get().count;
 
-    const pcs = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category IN ('PC', 'Laptop')").get().count;
+    const pcs = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category IN ('PC', 'Single PC', 'Laptop')").get().count;
+    const diskAlerts = db.prepare("SELECT COUNT(*) as count FROM assets WHERE disk_health_status IN ('warning', 'critical')").get().count;
     const monitors = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category = 'Monitor'").get().count;
-    const others = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category NOT IN ('PC', 'Laptop', 'Monitor')").get().count;
+    const others = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category NOT IN ('PC', 'Single PC', 'Laptop', 'Monitor')").get().count;
 
     const withPhotos = db.prepare('SELECT COUNT(DISTINCT asset_id) as count FROM asset_photos').get().count;
     const pendingPhotos = total - withPhotos;
 
     return {
       total,
+      diskAlerts,
       active,
       inStorage,
       repair,
@@ -1137,6 +1279,7 @@ const queries = {
 initDb();
 
 module.exports = {
+  normalizeDiskHealth,
   db,
   DB_PATH,
   BACKUPS_DIR,

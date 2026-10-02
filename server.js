@@ -179,7 +179,7 @@ Examine this image of an IT hardware device or its specification label/sticker v
 
 EXTRACT the following information as strictly structured JSON:
 {
-  "category": "PC" | "Single PC" | "Laptop" | "Monitor" | "Printer" | "Network" | "Other",
+  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other",
   "manufacturer_model": "Full brand and model name, e.g. HP EliteDesk 800 G3 SFF or Samsung S27C31x",
   "serial_number": "Serial number (S/N, Serial No, Service Tag) if visible, else null",
   "cpu": "CPU / Processor details if mentioned, else null",
@@ -219,7 +219,7 @@ Return STRICT JSON ONLY:
 {
   "recognized": true,
   "canonical_name": "Full clean model name (e.g. HP EliteDesk 800 G3 Small Form Factor)",
-  "category": "PC" | "Single PC" | "Laptop" | "Monitor" | "Printer" | "Network" | "Other",
+  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other",
   "default_cpu": "Most common standard CPU for this model (e.g. Intel Core i5-6500 CPU @ 3.20GHz)",
   "cpu_options": ["Intel Core i5-6500 @ 3.20GHz", "Intel Core i7-6700 @ 3.40GHz", "Intel Core i3-6100 @ 3.70GHz"],
   "default_ram": "Standard factory RAM (e.g. 8 GB DDR4 or 16 GB)",
@@ -698,7 +698,7 @@ const server = http.createServer(async (req, res) => {
           `*Status:* ${created.status}\n` +
           `*Assigned User:* ${created.user_name || 'Unassigned'}\n` +
           `*Location:* ${created.location || 'N/A'}`;
-        notifyBale(text).catch(() => {});
+        notifyBale(text + diskLine).catch(() => {});
       }
 
       return sendJson(res, 201, created);
@@ -784,7 +784,8 @@ const server = http.createServer(async (req, res) => {
         c_space: data.c_space || data.cSpace,
         network_devices: data.network_devices || data.networkDevices,
         gpu: data.gpu,
-        monitors: data.monitors
+        monitors: data.monitors,
+        disk_health: data.disk_health || data.diskHealth || null
       });
 
       queries.addLog('SUCCESS', 'SCANNER', 
@@ -792,6 +793,17 @@ const server = http.createServer(async (req, res) => {
         `کاربر: ${data.user_name || data.userName || 'ناشناخته'}, اقلام: ${result.items.map(i => i.category + ': ' + i.name).join(' | ')}`,
         req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
       );
+
+      // Disk health line for logs / notifications
+      const diskStatus = result.disk_health_status;
+      const diskLine = diskStatus === 'critical' ? '\n\n🔴 *هشدار جدی سلامت هارد:* یکی از درایوها در آستانه خرابی است! فوراً از اطلاعات بک‌آپ بگیرید.'
+        : diskStatus === 'warning' ? '\n\n🟠 *هشدار سلامت هارد:* وضعیت یکی از درایوها نیاز به بررسی دارد.'
+        : '';
+      if (diskStatus === 'critical' || diskStatus === 'warning') {
+        queries.addLog(diskStatus === 'critical' ? 'ERROR' : 'WARN', 'DISK_HEALTH',
+          `وضعیت سلامت هارد «${compName || serialNum}»: ${diskStatus === 'critical' ? 'بحرانی' : 'نیاز به بررسی'}`, '',
+          req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '');
+      }
 
       // Bale notification
       const settings = queries.getSettings();
@@ -1170,8 +1182,20 @@ Respond ONLY in JSON format:
         'Property ID', 'Category', 'Status', 'User Name', 'Computer Name',
         'Manufacturer/Model', 'Serial Number', 'OS Version', 'IP Address',
         'CPU', 'RAM', 'Storage Drives', 'C: Drive Space', 'Network Devices',
-        'GPU', 'Monitors', 'Location', 'Department', 'Notes', 'Created At', 'Last Scanned At'
+        'GPU', 'Monitors', 'Location', 'Department', 'Notes', 'Created At', 'Last Scanned At',
+        'Disk Health', 'Disk Details'
       ];
+
+      // Short human-readable disk summary for the CSV
+      const diskSummary = (raw) => {
+        try {
+          const d = JSON.parse(raw || 'null');
+          if (!d || !Array.isArray(d.disks)) return '';
+          return d.disks.map(x => `${x.model}${x.type ? ' [' + x.type + ']' : ''}: ${x.level}` +
+            (x.health_percent !== null && x.health_percent !== undefined ? ` ${x.health_percent}%` : '') +
+            (x.temperature_c ? ` ${x.temperature_c}C` : '')).join(' | ');
+        } catch (e) { return ''; }
+      };
 
       const csvEscape = (val) => {
         if (val === null || val === undefined) return '""';
@@ -1201,7 +1225,9 @@ Respond ONLY in JSON format:
           csvEscape(a.department),
           csvEscape(a.notes),
           csvEscape(a.created_at),
-          csvEscape(a.last_scanned_at)
+          csvEscape(a.last_scanned_at),
+          csvEscape(a.disk_health_status || ''),
+          csvEscape(diskSummary(a.disk_health))
         ].join(','))
       ].join('\r\n');
 

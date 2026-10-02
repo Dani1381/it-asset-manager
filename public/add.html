@@ -6,6 +6,7 @@
   <title>ثبت دستگاه جدید - IT Asset Master</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
   <style>
@@ -173,15 +174,7 @@
 
             <div class="form-group">
               <label class="form-label" data-i18n="field_category">📁 دسته‌بندی *</label>
-              <select id="category" class="form-control" required>
-                <option value="PC">🖥️ کامپیوتر / کیس</option>
-                <option value="Single PC">💻 تک کیس / سیستم کاربر</option>
-                <option value="Laptop">💻 لپ‌تاپ</option>
-                <option value="Monitor">📺 مانیتور</option>
-                <option value="Printer">🖨️ پرینتر</option>
-                <option value="Network">🌐 سوییچ و شبکه</option>
-                <option value="Other">🔌 سایر قطعات</option>
-              </select>
+              <select id="category" class="form-control" required data-category-select></select>
             </div>
 
             <div class="form-group full-width">

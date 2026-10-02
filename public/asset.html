@@ -6,6 +6,7 @@
   <title>مشخصات دستگاه - مدیریت دارایی ارکا</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
 </head>
@@ -96,6 +97,16 @@
               <tr><td class="label-col" data-i18n="last_scanned">آخرین اسکن:</td><td class="val-col" id="spec-scanned" style="font-size: 0.85rem; color: var(--text-dim);"></td></tr>
             </tbody>
           </table>
+
+          <!-- Drive health reported by the scanner -->
+          <div id="disk-health-section" class="disk-health-section" style="display: none;">
+            <h3 class="disk-health-title">
+              <span>💽</span> <span data-i18n="disk_health_title">سلامت درایوها (SMART)</span>
+              <span id="disk-health-overall" class="disk-level"></span>
+            </h3>
+            <div id="disk-health-list" class="disk-health-list"></div>
+            <div id="disk-health-meta" class="disk-health-meta"></div>
+          </div>
         </div>
 
         <!-- Right: Photo Gallery & Sticker Preview -->
@@ -178,15 +189,7 @@
 
               <div class="form-group">
                 <label class="form-label" data-i18n="field_category">دسته‌بندی</label>
-                <select id="edit-category" class="form-control">
-                  <option value="PC">🖥️ کامپیوتر / کیس</option>
-                  <option value="Single PC">💻 تک کیس / سیستم اختصاصی</option>
-                  <option value="Laptop">💻 لپ‌تاپ</option>
-                  <option value="Monitor">📺 مانیتور</option>
-                  <option value="Printer">🖨️ پرینتر</option>
-                  <option value="Network">🌐 شبکه</option>
-                  <option value="Other">🔌 سایر</option>
-                </select>
+                <select id="edit-category" class="form-control" data-category-select></select>
               </div>
 
               <div class="form-group">
@@ -391,7 +394,7 @@
 
       // Specs
       document.getElementById('spec-prop-id').textContent = a.property_id || '-';
-      document.getElementById('spec-category').textContent = getTranslation(`filter_${(a.category || 'pc').toLowerCase().replace(' ', '_')}`) || a.category || '-';
+      document.getElementById('spec-category').textContent = `${categoryIcon(a.category)} ${categoryLabel(a.category)}`;
       document.getElementById('spec-model').textContent = a.manufacturer_model || '-';
       document.getElementById('spec-serial').textContent = a.serial_number || '-';
       document.getElementById('spec-user').textContent = a.user_name || getTranslation('unassigned');
@@ -432,8 +435,90 @@
         tr.classList.toggle('row-empty', !txt || txt === '-');
       });
 
+      // Drive health (only for devices that run the scanner / have disks)
+      renderDiskHealth(a);
+
       // Photos
       renderPhotos(a.photos || []);
+    }
+
+    // Server reasons are English; show them in Persian when the UI is Persian
+    function translateDiskReason(r) {
+      if (CURRENT_LANG === 'en') return r;
+      const rules = [
+        [/^SMART predicts imminent failure$/, 'SMART خرابی قریب‌الوقوع درایو را پیش‌بینی می‌کند'],
+        [/^SMART self-assessment failed$/, 'خودآزمایی SMART رد شد'],
+        [/^Health status: (.+)$/, 'وضعیت سلامت: $1'],
+        [/^Remaining life (\d+)%$/, 'عمر باقی‌مانده $1٪'],
+        [/^(\d+) pending sectors$/, '$1 سکتور معلق (Pending)'],
+        [/^(\d+) reallocated sectors$/, '$1 سکتور بد جایگزین‌شده'],
+        [/^(\d+) uncorrectable errors$/, '$1 خطای غیرقابل‌اصلاح'],
+        [/^(\d+) media errors$/, '$1 خطای رسانه'],
+        [/^High temperature (\d+)°C$/, 'دمای بالا: $1°C']
+      ];
+      for (const [re, fa] of rules) if (re.test(r)) return r.replace(re, fa);
+      return r;
+    }
+
+    // ---- Drive health card ----
+    function renderDiskHealth(a) {
+      const section = document.getElementById('disk-health-section');
+      const list = document.getElementById('disk-health-list');
+      const meta = document.getElementById('disk-health-meta');
+      const overall = document.getElementById('disk-health-overall');
+      const fam = (typeof findCategory === 'function' && findCategory(a.category)) ? findCategory(a.category).family : '';
+      const hasDiskDevice = ['pc', 'laptop', 'server', 'storage'].includes(fam);
+
+      let data = null;
+      try { data = a.disk_health ? JSON.parse(a.disk_health) : null; } catch (e) { data = null; }
+
+      if (!data || !Array.isArray(data.disks) || data.disks.length === 0) {
+        if (!hasDiskDevice || !a.is_automated) { section.style.display = 'none'; return; }
+        section.style.display = 'block';
+        overall.textContent = '';
+        overall.className = 'disk-level';
+        list.innerHTML = `<div class="disk-empty">${getTranslation('disk_no_data')}</div>`;
+        meta.textContent = '';
+        return;
+      }
+
+      section.style.display = 'block';
+      const lvl = a.disk_health_status || 'unknown';
+      overall.className = `disk-level level-${lvl}`;
+      overall.textContent = getTranslation(`disk_level_${lvl}`);
+
+      const fmt = (n) => Number(n).toLocaleString(CURRENT_LANG === 'en' ? 'en-US' : 'fa-IR');
+      let anyMissingPct = false;
+      list.innerHTML = data.disks.map(d => {
+        const level = d.level || 'unknown';
+        const pct = (d.health_percent === null || d.health_percent === undefined) ? null : d.health_percent;
+        if (pct === null && (d.type === 'SSD' || d.type === 'NVMe')) anyMissingPct = true;
+        const facts = [];
+        if (d.type) facts.push(escapeHtml(d.type));
+        if (d.size_gb) facts.push(`${fmt(d.size_gb)} GB`);
+        if (d.temperature_c) facts.push(`🌡️ ${getTranslation('disk_temp')}: ${fmt(d.temperature_c)}°C`);
+        if (d.power_on_hours) facts.push(`⏱️ ${getTranslation('disk_hours')}: ${fmt(d.power_on_hours)}`);
+        const reasons = (d.reasons || []).filter(Boolean);
+        return `
+          <div class="disk-row level-${level}">
+            <div class="disk-row-head">
+              <strong class="disk-model">${escapeHtml(d.model || 'Disk')}</strong>
+              <span class="disk-level level-${level}">${getTranslation(`disk_level_${level}`)}</span>
+            </div>
+            ${pct !== null ? `
+              <div class="disk-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+                <div class="disk-bar-fill" style="width: ${pct}%"></div>
+              </div>
+              <div class="disk-pct">${getTranslation('disk_life_left')}: <strong>${fmt(pct)}%</strong></div>` : ''}
+            ${facts.length ? `<div class="disk-facts">${facts.join(' · ')}</div>` : ''}
+            ${reasons.length && level !== 'ok' ? `<div class="disk-reasons">⚠️ ${reasons.map(r => escapeHtml(translateDiskReason(r))).join(' — ')}</div>` : ''}
+            ${d.note ? `<div class="disk-facts">ℹ️ ${escapeHtml(d.note)}</div>` : ''}
+          </div>`;
+      }).join('');
+
+      const when = data.checked_at ? new Date(data.checked_at).toLocaleString(CURRENT_LANG === 'en' ? 'en-US' : 'fa-IR') : '';
+      meta.innerHTML = (when ? `${getTranslation('disk_checked_at')}: ${when}` : '') +
+        (anyMissingPct ? `<div style="margin-top: 0.3rem;">💡 ${getTranslation('disk_admin_tip')}</div>` : '');
     }
 
     // A photo taken with the phone camera / uploaded by a user (vs. stock / catalog image)

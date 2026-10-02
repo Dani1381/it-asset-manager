@@ -151,6 +151,10 @@ function quickFilterStat(target) {
     if (catFilter) catFilter.value = 'all';
     if (statusFilter) statusFilter.value = 'all';
     activeSpecialFilter = 'no_photo';
+  } else if (target === 'disk_alert') {
+    if (catFilter) catFilter.value = 'all';
+    if (statusFilter) statusFilter.value = 'all';
+    activeSpecialFilter = 'disk_alert';
   }
 
   filterAssets();
@@ -184,6 +188,9 @@ async function loadStats() {
     setElementText('stat-monitors', stats.monitors || 0);
     setElementText('stat-storage', stats.inStorage || 0);
     setElementText('stat-pending-photos', stats.pendingPhotos || 0);
+    setElementText('stat-disk-alerts', stats.diskAlerts || 0);
+    const diskCard = document.getElementById('stat-disk-card');
+    if (diskCard) diskCard.classList.toggle('has-alerts', (stats.diskAlerts || 0) > 0);
   } catch (err) {
     console.error('Failed to load stats:', err);
   }
@@ -241,6 +248,13 @@ async function loadAssets() {
   }
 }
 
+// Small badge on dashboard cards when a scanned drive is unhealthy
+function diskBadgeHtml(status) {
+  if (status === 'critical') return `<div class="disk-alert-badge is-critical" title="${getTranslation('disk_critical_hint')}">🔴 ${getTranslation('disk_badge_critical')}</div>`;
+  if (status === 'warning') return `<div class="disk-alert-badge is-warning" title="${getTranslation('disk_warning_hint')}">🟠 ${getTranslation('disk_badge_warning')}</div>`;
+  return '';
+}
+
 // Filter and re-render assets
 function filterAssets() {
   const search = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
@@ -250,6 +264,7 @@ function filterAssets() {
   const filtered = allAssets.filter(item => {
     // Special filter check (e.g. no photo)
     if (activeSpecialFilter === 'no_photo' && item.primary_photo) return false;
+    if (activeSpecialFilter === 'disk_alert' && !['warning', 'critical'].includes(item.disk_health_status)) return false;
 
     // Category match
     if (cat !== 'all') {
@@ -305,17 +320,11 @@ function renderAssets(assets) {
     const isCameraPhoto = hasPhoto && /^(asset_|photo_)/.test(asset.primary_photo);
     
     // Category Icon
-    let catIcon = '🖥️';
-    if (asset.category === 'Single PC') catIcon = '💻';
-    else if (asset.category === 'Laptop') catIcon = '💻';
-    else if (asset.category === 'Monitor') catIcon = '📺';
-    else if (asset.category === 'Printer') catIcon = '🖨️';
-    else if (asset.category === 'Network') catIcon = '🌐';
-    else if (asset.category === 'Other') catIcon = '🔌';
+    const catIcon = categoryIcon(asset.category);
 
     const statusBadgeClass = `badge-${asset.status || 'active'}`;
     const statusText = getTranslation(`status_${asset.status || 'active'}`) || (asset.status || 'active').replace('_', ' ');
-    const categoryName = getTranslation(`filter_${(asset.category || 'pc').toLowerCase().replace(' ', '_')}`) || asset.category || 'PC';
+    const categoryName = categoryLabel(asset.category || 'PC');
 
     return `
       <div class="asset-card" data-id="${asset.id}">
@@ -334,6 +343,7 @@ function renderAssets(assets) {
             <span class="status-dot"></span>
             <span>${statusText}</span>
           </div>
+          ${diskBadgeHtml(asset.disk_health_status)}
         </div>
 
         <div class="asset-body">
@@ -346,7 +356,7 @@ function renderAssets(assets) {
 
           <div class="asset-user-chip ${asset.user_name ? '' : 'unassigned'}" title="${getTranslation('user_label')} ${escapeHtml(asset.user_name || getTranslation('unassigned'))}">
             <span class="user-avatar-icon">👤</span>
-            <span class="user-label-prefix">${getTranslation('user_label')}:</span>
+            <span class="user-label-prefix">${getTranslation('user_label')}</span>
             <span class="user-name-text">${escapeHtml(asset.user_name || getTranslation('unassigned'))}</span>
           </div>
 
@@ -938,22 +948,14 @@ async function loadPendingScansList() {
     }
 
     container.innerHTML = items.map((it, idx) => {
-      let icon = '🖥️';
-      let catBadge = 'کیس / PC';
-      let catBg = 'rgba(59, 130, 246, 0.15)';
-      let catColor = '#60a5fa';
-
-      if (it.category === 'Monitor') {
-        icon = '📺';
-        catBadge = 'مانیتور / نمایشگر';
-        catBg = 'rgba(168, 85, 247, 0.15)';
-        catColor = '#c084fc';
-      } else if (it.category === 'Laptop') {
-        icon = '💻';
-        catBadge = 'لپ‌تاپ';
-        catBg = 'rgba(234, 179, 8, 0.15)';
-        catColor = '#fde047';
-      }
+      const icon = categoryIcon(it.category);
+      const catBadge = categoryLabel(it.category);
+      const catColors = {
+        Monitor: ['rgba(168, 85, 247, 0.15)', '#c084fc'],
+        Laptop: ['rgba(234, 179, 8, 0.15)', '#fde047'],
+        Storage: ['rgba(16, 185, 129, 0.15)', '#6ee7b7']
+      };
+      const [catBg, catColor] = catColors[it.category] || ['rgba(59, 130, 246, 0.15)', '#60a5fa'];
 
       const timeStr = new Date(it.created_at).toLocaleTimeString('fa-IR');
 

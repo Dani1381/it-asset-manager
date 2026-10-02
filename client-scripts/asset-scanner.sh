@@ -151,7 +151,7 @@ fi
 # [1/4] System & Motherboard
 # ----------------------------------------------------------------------------
 COMP=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "linux-host")
-step "[1/4] Scanning System & Motherboard for $COMP ($USER_NAME)..."
+step "[1/5] Scanning System & Motherboard for $COMP ($USER_NAME)..."
 
 # Model (DMI: vendor + product, without repeating brand like "HP HP ...")
 DMI_VENDOR=$(read_file /sys/class/dmi/id/sys_vendor)
@@ -182,7 +182,11 @@ done
 
 # OS version
 OS=$(grep -m1 '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//')
-[ -z "$OS" ] && OS=$(trim_str "$(grep -m1 '^NAME=' /etc/os-release 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//')")" "$(grep -m1 '^VERSION_ID=' /etc/os-release 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//')"
+if [ -z "$OS" ]; then
+  _os_name=$(grep -m1 '^NAME=' /etc/os-release 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//')
+  _os_ver=$(grep -m1 '^VERSION_ID=' /etc/os-release 2>/dev/null | cut -d= -f2- | sed 's/^"//;s/"$//')
+  OS=$(trim_str "$_os_name $_os_ver")
+fi
 [ -z "$OS" ] && OS=$(uname -sr)
 
 # IP address (IPv4, excluding loopback & link-local)
@@ -195,7 +199,7 @@ fi
 # ----------------------------------------------------------------------------
 # [2/4] CPU, RAM & Disks
 # ----------------------------------------------------------------------------
-step "[2/4] Scanning CPU, RAM & Disks..."
+step "[2/5] Scanning CPU, RAM & Disks..."
 
 # CPU
 CPU=""
@@ -265,7 +269,7 @@ fi
 # ----------------------------------------------------------------------------
 # [3/4] Connected Monitors (EDID based -> auto-split into assets by server)
 # ----------------------------------------------------------------------------
-step "[3/4] Scanning Connected Monitors..."
+step "[3/5] Scanning Connected Monitors..."
 
 MONITORS=""
 # Tier 1: DRM sysfs EDID (works on X11, Wayland and headless sessions)
@@ -323,7 +327,98 @@ json_escape() {
   printf '%s' "$s"
 }
 
-PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumber":"%s","os":"%s","ip":"%s","cpu":"%s","ram":"%s","storage":"%s","cSpace":"%s","gpu":"%s","monitors":"%s"}' \
+# ----------------------------------------------------------------------------
+# [4/5] Drive health (SMART) - uses smartctl (smartmontools) when available
+# ----------------------------------------------------------------------------
+step "[4/5] Checking drive health (SMART)..."
+
+json_num() { # prints a JSON number or null
+  case "${1-}" in ''|*[!0-9-]*) printf 'null' ;; *) printf '%s' "$1" ;; esac
+}
+json_bool() {
+  case "${1-}" in true) printf 'true' ;; false) printf 'false' ;; *) printf 'null' ;; esac
+}
+
+SMARTCTL=""
+if command -v smartctl >/dev/null 2>&1; then
+  if [ "$(id -u)" = "0" ]; then
+    SMARTCTL="smartctl"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    SMARTCTL="sudo -n smartctl"
+  fi
+fi
+
+DISK_HEALTH_JSON=""
+for dev in /sys/block/*; do
+  [ -e "$dev" ] || continue
+  name=$(basename "$dev")
+  case "$name" in
+    sd*|hd*|vd*|xvd*|nvme*n*) ;;
+    *) continue ;;
+  esac
+  case "$name" in nvme*p*) continue ;; esac
+
+  model=$(read_file "$dev/device/model"); [ -z "$model" ] && model="$name"
+  serial=$(read_file "$dev/device/serial")
+  sectors=$(cat "$dev/size" 2>/dev/null || echo 0)
+  gb=$(( sectors / 2 / 1024 / 1024 ))
+  rot=$(cat "$dev/queue/rotational" 2>/dev/null || echo "")
+  case "$name" in
+    nvme*) dtype="NVMe" ;;
+    *) if [ "$rot" = "1" ]; then dtype="HDD"; elif [ "$rot" = "0" ]; then dtype="SSD"; else dtype=""; fi ;;
+  esac
+
+  smodel=""; passed=""; life=""; temp=""; hours=""; realloc=""; pending=""; uncorr=""; media=""; predict=""; status="Unknown"; note=""
+  if [ -n "$SMARTCTL" ]; then
+    out=$(LC_ALL=C $SMARTCTL -H -A -i "/dev/$name" 2>/dev/null)
+    if [ -n "$out" ]; then
+      eval "$(printf '%s\n' "$out" | awk '
+        function first_num(s) { if (match(s, /[0-9]+/)) return substr(s, RSTART, RLENGTH); return "" }
+        /^(Device Model|Model Number):/ { sub(/^[^:]*:[ \t]*/, ""); gsub(/'\''/, ""); print "smodel='\''" $0 "'\''" }
+        /overall-health self-assessment test result:/ { print "passed=" ($NF == "PASSED" ? "true" : "false") }
+        /SMART Health Status:/ { print "passed=" ($NF == "OK" ? "true" : "false") }
+        /^Percentage Used:/ { gsub(/[^0-9]/, "", $3); if ($3 != "") print "life=" (100 - $3) }
+        /^Temperature:/ { print "temp=" first_num($2) }
+        /^Power On Hours:/ { v=$4; gsub(/[^0-9]/, "", v); print "hours=" v }
+        /^Media and Data Integrity Errors:/ { v=$NF; gsub(/[^0-9]/, "", v); print "media=" v }
+        $1 ~ /^[0-9]+$/ && NF >= 10 {
+          id=$1; val=$4+0; raw=first_num($10)
+          if ($9 != "-") print "predict=true"
+          if (id == 5)   print "realloc=" raw
+          if (id == 197) print "pending=" raw
+          if (id == 198) print "uncorr=" raw
+          if (id == 9)   print "hours=" raw
+          if ((id == 194 || id == 190) && !t) { print "temp=" raw; t=1 }
+          if (id == 231 || id == 169) { print "life=" val; l=1 }
+          if ((id == 233 || id == 177) && !l) print "life=" val
+        }
+      ')"
+      if [ "$passed" = "true" ]; then status="Healthy"; elif [ "$passed" = "false" ]; then status="Unhealthy"; fi
+    else
+      note="smartctl returned no data"
+    fi
+  else
+    note="install smartmontools and run as root for SMART data"
+  fi
+
+  [ "$model" = "$name" ] && [ -n "$smodel" ] && model="$smodel"
+  [ "$dtype" = "HDD" ] && life=""   # wear/life counters only apply to SSDs
+  case "$life" in ''|*[!0-9]*) life="" ;; esac
+  [ -n "$life" ] && [ "$life" -gt 100 ] && life=100
+
+  echo "      - $model [$dtype]: $status${life:+ | life left: ${life}%}${temp:+ | ${temp} C}"
+  [ "$predict" = "true" ] && warn "        SMART reports a failing attribute on $model!"
+
+  obj=$(printf '{"model":"%s","serial":"%s","type":"%s","size_gb":%s,"health_status":"%s","smart_passed":%s,"health_percent":%s,"temperature_c":%s,"power_on_hours":%s,"reallocated_sectors":%s,"pending_sectors":%s,"uncorrectable_errors":%s,"media_errors":%s,"predict_failure":%s,"note":"%s"}' \
+    "$(json_escape "$model")" "$(json_escape "$serial")" "$dtype" "$(json_num "$gb")" "$status" \
+    "$(json_bool "$passed")" "$(json_num "$life")" "$(json_num "$temp")" "$(json_num "$hours")" \
+    "$(json_num "$realloc")" "$(json_num "$pending")" "$(json_num "$uncorr")" "$(json_num "$media")" \
+    "$(json_bool "$predict")" "$(json_escape "$note")")
+  if [ -z "$DISK_HEALTH_JSON" ]; then DISK_HEALTH_JSON="$obj"; else DISK_HEALTH_JSON="$DISK_HEALTH_JSON,$obj"; fi
+done
+[ -z "$SMARTCTL" ] && warn "      Tip: install smartmontools and run as root (sudo) for full drive health data."
+
+PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumber":"%s","os":"%s","ip":"%s","cpu":"%s","ram":"%s","storage":"%s","cSpace":"%s","gpu":"%s","monitors":"%s","diskHealth":[%s]}' \
   "$(json_escape "$USER_NAME")" \
   "$(json_escape "$COMP")" \
   "$(json_escape "$MODEL")" \
@@ -335,7 +430,8 @@ PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumbe
   "$(json_escape "$STORAGE")" \
   "$(json_escape "$CSpace")" \
   "$(json_escape "$GPU")" \
-  "$(json_escape "$MONITORS")")
+  "$(json_escape "$MONITORS")" \
+  "$DISK_HEALTH_JSON")
 
 if [ "$DRY_RUN" = "1" ]; then
   echo
@@ -347,7 +443,7 @@ fi
 # ----------------------------------------------------------------------------
 # [4/4] Send to IT Asset Server
 # ----------------------------------------------------------------------------
-step "[4/4] Sending specifications to IT Asset Server ($SERVER_URL)..."
+step "[5/5] Sending specifications to IT Asset Server ($SERVER_URL)..."
 
 post_payload() { # $1 = base url
   local url="$1/api/assets/scan"

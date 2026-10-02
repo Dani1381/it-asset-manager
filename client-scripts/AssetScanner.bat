@@ -25,7 +25,7 @@ try {
 } catch {}
 
 $Comp = $env:COMPUTERNAME
-Write-Host "[1/4] Scanning System & Motherboard for $Comp ($UserName)..." -ForegroundColor Cyan
+Write-Host "[1/5] Scanning System & Motherboard for $Comp ($UserName)..." -ForegroundColor Cyan
 
 # Model
 $Model = ""
@@ -70,7 +70,7 @@ try {
 }
 if (-not $IP) { $IP = "127.0.0.1" }
 
-Write-Host "[2/4] Scanning CPU, RAM & Disks..." -ForegroundColor Cyan
+Write-Host "[2/5] Scanning CPU, RAM & Disks..." -ForegroundColor Cyan
 
 # CPU
 $CPU = $env:PROCESSOR_IDENTIFIER
@@ -141,7 +141,7 @@ try { $GPU = (((Get-CimInstance Win32_VideoController -ErrorAction Stop).Name -j
     }
 }
 
-Write-Host "[3/4] Scanning Connected Monitors..." -ForegroundColor Cyan
+Write-Host "[3/5] Scanning Connected Monitors..." -ForegroundColor Cyan
 $Monitors = "Default Display"
 try {
     $MonList = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue) | ForEach-Object {
@@ -150,7 +150,95 @@ try {
     if ($MonList) { $Monitors = ($MonList -join ' / ') }
 } catch {}
 
-Write-Host "[4/4] Sending specifications to IT Asset Server ($SERVER_URL)..." -ForegroundColor Yellow
+Write-Host "[4/5] Checking drive health (SMART)..." -ForegroundColor Cyan
+$IsAdmin = $false
+try {
+    $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} catch {}
+
+# SMART failure prediction per device (needs administrator; ATA/SATA drives)
+$Predict = @{}
+try {
+    Get-CimInstance -Namespace root\wmi -ClassName MSStorageDriver_FailurePredictStatus -ErrorAction Stop | ForEach-Object {
+        $Predict[[string]$_.InstanceName] = [bool]$_.PredictFailure
+    }
+} catch {}
+
+$DiskHealth = @()
+try {
+    $PhysDisks = Get-PhysicalDisk -ErrorAction Stop
+    foreach ($pd in $PhysDisks) {
+        $rel = $null
+        try { $rel = $pd | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+
+        $pf = $null
+        try {
+            $wdd = Get-CimInstance Win32_DiskDrive -Filter "Index=$($pd.DeviceId)" -ErrorAction Stop
+            if ($wdd -and $wdd.PNPDeviceID) {
+                foreach ($k in $Predict.Keys) { if ($k -like "$($wdd.PNPDeviceID)*") { $pf = $Predict[$k] } }
+            }
+        } catch {}
+
+        $bus = [string]$pd.BusType
+        $type = [string]$pd.MediaType
+        if ($type -eq 'Unspecified' -or $type -eq '0') { $type = '' }
+        if ($bus -eq 'NVMe') { $type = 'NVMe' }
+        $isSolid = ($type -eq 'SSD' -or $type -eq 'NVMe')
+
+        $wear = $null; $temp = $null; $hours = $null; $uncorr = $null
+        if ($rel) {
+            if ($isSolid -and $null -ne $rel.Wear) { $wear = [int]$rel.Wear }
+            if ($rel.Temperature) { $temp = [int]$rel.Temperature }
+            if ($rel.PowerOnHours) { $hours = [int]$rel.PowerOnHours }
+            if ($null -ne $rel.ReadErrorsUncorrected) { $uncorr = [int]$rel.ReadErrorsUncorrected }
+        }
+
+        $DiskHealth += [ordered]@{
+            model = ([string]$pd.FriendlyName).Trim()
+            serial = ([string]$pd.SerialNumber).Trim()
+            type = $type
+            bus = $bus
+            size_gb = [math]::Round($pd.Size / 1GB)
+            health_status = [string]$pd.HealthStatus
+            wear_percent = $wear
+            temperature_c = $temp
+            power_on_hours = $hours
+            uncorrectable_errors = $uncorr
+            predict_failure = $pf
+        }
+    }
+} catch {
+    # Older Windows without the Storage module: fall back to Win32_DiskDrive status (OK / Pred Fail)
+    try {
+        foreach ($d in (Get-CimInstance Win32_DiskDrive -ErrorAction Stop)) {
+            $st = [string]$d.Status
+            $hs = if ($st -eq 'OK') { 'Healthy' } elseif ($st -eq 'Pred Fail') { 'Pred Fail' } else { $st }
+            $DiskHealth += [ordered]@{
+                model = ([string]$d.Model).Trim()
+                serial = ([string]$d.SerialNumber).Trim()
+                type = ''
+                bus = [string]$d.InterfaceType
+                size_gb = [math]::Round($d.Size / 1GB)
+                health_status = $hs
+                predict_failure = ($st -eq 'Pred Fail')
+            }
+        }
+    } catch {}
+}
+
+foreach ($dh in $DiskHealth) {
+    $line = "      - $($dh.model): $($dh.health_status)"
+    if ($null -ne $dh.wear_percent) { $line += " | life left: $(100 - $dh.wear_percent)%" }
+    if ($dh.temperature_c) { $line += " | $($dh.temperature_c) C" }
+    if ($dh.predict_failure -eq $true) { $line += " | SMART: FAILURE PREDICTED!" }
+    $color = if ($dh.predict_failure -eq $true -or $dh.health_status -eq 'Unhealthy') { 'Red' } elseif ($dh.health_status -eq 'Warning') { 'Yellow' } else { 'Gray' }
+    Write-Host $line -ForegroundColor $color
+}
+if (-not $IsAdmin) {
+    Write-Host "      Tip: run this scanner as Administrator for full SMART data (wear %, temperature, errors)." -ForegroundColor DarkYellow
+}
+
+Write-Host "[5/5] Sending specifications to IT Asset Server ($SERVER_URL)..." -ForegroundColor Yellow
 
 $Payload = @{
     userName = $UserName
@@ -165,7 +253,8 @@ $Payload = @{
     cSpace = $CSpace
     gpu = $GPU
     monitors = $Monitors
-} | ConvertTo-Json
+    diskHealth = @($DiskHealth)
+} | ConvertTo-Json -Depth 6
 
 try {
     $Headers = @{

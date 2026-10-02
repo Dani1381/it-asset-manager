@@ -6,6 +6,7 @@
   <title>مدیریت دارایی ارکا | سیستم جامع اموال و سخت‌افزار</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
   <script src="/qrcode.js"></script>
   <script src="/smart-fill.js"></script>
 </head>
@@ -116,6 +117,14 @@
         </div>
         <div class="stat-icon icon-red">📷</div>
       </div>
+
+      <div class="stat-card" id="stat-disk-card" style="cursor: pointer;" onclick="quickFilterStat('disk_alert')" title="کلیک برای فیلتر دستگاه‌هایی که هاردشان مشکل دارد">
+        <div class="stat-card-info">
+          <h4 data-i18n="stat_disk_alerts">هشدار سلامت هارد</h4>
+          <div class="stat-number" id="stat-disk-alerts">0</div>
+        </div>
+        <div class="stat-icon icon-yellow">💽</div>
+      </div>
     </div>
 
     <!-- Controls (Search & Filters) -->
@@ -126,15 +135,8 @@
       </div>
 
       <div class="filters-row">
-        <select id="category-filter" class="filter-select">
+        <select id="category-filter" class="filter-select" data-category-select>
           <option value="all" data-i18n="filter_all_cats">📁 همه دسته‌ها</option>
-          <option value="PC" data-i18n="filter_pc">🖥️ کامپیوتر / کیس</option>
-          <option value="Single PC" data-i18n="filter_single_pc">💻 تک کیس / سیستم کاربر</option>
-          <option value="Laptop" data-i18n="filter_laptop">💻 لپ‌تاپ</option>
-          <option value="Monitor" data-i18n="filter_monitor">📺 مانیتور</option>
-          <option value="Printer" data-i18n="filter_printer">🖨️ پرینتر</option>
-          <option value="Network" data-i18n="filter_network">🌐 سوییچ و شبکه</option>
-          <option value="Other" data-i18n="filter_other">🔌 سایر قطعات</option>
         </select>
 
         <select id="status-filter" class="filter-select">

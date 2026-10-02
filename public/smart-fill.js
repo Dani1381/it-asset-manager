@@ -46,7 +46,42 @@ const CHIP_PRESETS = {
     { label: '🖨️ HP LaserJet M130', value: 'HP LaserJet Pro MFP M130', cat: 'Printer' },
     { label: '🌐 Cisco 2960', value: 'Cisco Catalyst 2960', cat: 'Network' },
     { label: '🌐 MikroTik hEX', value: 'MikroTik hEX RB750Gr3', cat: 'Network' },
-    { label: '🌐 TP-Link 24-Port', value: 'TP-Link TL-SG1024D', cat: 'Network' }
+    { label: '🌐 TP-Link 24-Port', value: 'TP-Link TL-SG1024D', cat: 'Network' },
+    { label: '🌐 Cisco CBS350-24', value: 'Cisco CBS350-24T-4G', cat: 'Network' },
+    { label: '🗄️ HP DL380 Gen10', value: 'HPE ProLiant DL380 Gen10', cat: 'Server' },
+    { label: '🗄️ Dell R740', value: 'Dell PowerEdge R740', cat: 'Server' },
+    { label: '🗄️ HP ML350 Gen10', value: 'HPE ProLiant ML350 Gen10', cat: 'Server' },
+    { label: '💽 Samsung 870 EVO', value: 'Samsung 870 EVO 500GB SATA SSD', cat: 'Storage' },
+    { label: '💽 Samsung 980 NVMe', value: 'Samsung 980 1TB NVMe SSD', cat: 'Storage' },
+    { label: '💽 Kingston A400', value: 'Kingston A400 480GB SATA SSD', cat: 'Storage' },
+    { label: '💽 WD Blue 1TB', value: 'WD Blue 1TB HDD (WD10EZEX)', cat: 'Storage' },
+    { label: '💽 Seagate 2TB', value: 'Seagate BarraCuda 2TB HDD', cat: 'Storage' },
+    { label: '💽 WD Purple 4TB', value: 'WD Purple 4TB Surveillance HDD', cat: 'Storage' },
+    { label: '📡 TP-Link VR300', value: 'TP-Link Archer VR300', cat: 'Modem' },
+    { label: '📡 D-Link 2750U', value: 'D-Link DSL-2750U', cat: 'Modem' },
+    { label: '📡 Huawei B311 LTE', value: 'Huawei B311 4G LTE', cat: 'Modem' },
+    { label: '📡 TP-Link MR6400', value: 'TP-Link TL-MR6400 4G', cat: 'Modem' },
+    { label: '🛜 MikroTik hAP ac2', value: 'MikroTik hAP ac2', cat: 'Router' },
+    { label: '🛜 MikroTik RB4011', value: 'MikroTik RB4011iGS+', cat: 'Router' },
+    { label: '🛜 TP-Link Archer C6', value: 'TP-Link Archer C6', cat: 'Router' },
+    { label: '🛜 Cisco ISR 4321', value: 'Cisco ISR 4321', cat: 'Router' },
+    { label: '📶 UniFi U6 Lite', value: 'Ubiquiti UniFi U6 Lite', cat: 'Access Point' },
+    { label: '📶 TP-Link EAP225', value: 'TP-Link EAP225', cat: 'Access Point' },
+    { label: '📶 MikroTik cAP ac', value: 'MikroTik cAP ac', cat: 'Access Point' },
+    { label: '🔋 APC Back-UPS 650', value: 'APC Back-UPS 650VA', cat: 'UPS' },
+    { label: '🔋 APC Smart-UPS 1500', value: 'APC Smart-UPS 1500VA', cat: 'UPS' },
+    { label: '☎️ Grandstream GXP1610', value: 'Grandstream GXP1610', cat: 'VoIP Phone' },
+    { label: '☎️ Yealink T31P', value: 'Yealink SIP-T31P', cat: 'VoIP Phone' },
+    { label: '☎️ Panasonic KX-TS500', value: 'Panasonic KX-TS500', cat: 'VoIP Phone' },
+    { label: '📹 Hikvision DVR', value: 'Hikvision DS-7208HGHI DVR', cat: 'Camera' },
+    { label: '📹 Dahua IPC', value: 'Dahua IPC-HFW1230S', cat: 'Camera' },
+    { label: '📽️ Epson EB-X51', value: 'Epson EB-X51', cat: 'Projector' },
+    { label: '📽️ BenQ MX560', value: 'BenQ MX560', cat: 'Projector' },
+    { label: '📱 Samsung Tab A8', value: 'Samsung Galaxy Tab A8', cat: 'Tablet' },
+    { label: '📱 iPad 10th Gen', value: 'Apple iPad (10th gen)', cat: 'Tablet' },
+    { label: '⌨️ Logitech MK270', value: 'Logitech MK270 Keyboard & Mouse', cat: 'Peripheral' },
+    { label: '🎧 Logitech H390', value: 'Logitech H390 Headset', cat: 'Peripheral' },
+    { label: '📷 Logitech C270', value: 'Logitech C270 Webcam', cat: 'Peripheral' }
   ],
 
   monitors: [
@@ -198,16 +233,16 @@ let SMART_DB = {};
 
 // Map a category value to the family used for filtering suggestions
 function categoryFamily(cat) {
-  const c = String(cat || '').trim().toLowerCase();
-  if (c === 'pc' || c === 'single pc' || c === 'case' || c === 'all-in-one') return 'pc';
-  if (c === 'laptop') return 'laptop';
-  if (c === 'monitor') return 'monitor';
-  if (c === 'printer') return 'printer';
-  if (c === 'network') return 'network';
-  return 'other';
+  if (typeof findCategory === 'function') {
+    const c = findCategory(cat);
+    if (c) return c.family;
+  }
+  const v = String(cat || '').trim().toLowerCase();
+  if (v === 'pc' || v === 'single pc') return 'pc';
+  return v || 'other';
 }
 
-const COMPUTER_FAMILIES = new Set(['pc', 'laptop']);
+const COMPUTER_FAMILIES = new Set(['pc', 'laptop', 'server']);
 
 // Recent DB models for one category family (falls back to [] if server is old)
 function dbModelsForFamily(family) {
@@ -252,10 +287,11 @@ function renderCategoryChips(form) {
     form.modelCallback ? applyModelPreset : undefined
   );
 
-  // Hardware chips only make sense for computers
+  // Hardware chips only make sense for computers (storage also for standalone drives)
+  const showStorage = isComputer || family === 'storage';
   setupFieldChips(form.hw.cpu, isComputer ? CHIP_PRESETS.cpu : [], isComputer ? SMART_DB.cpus : []);
   setupFieldChips(form.hw.ram, isComputer ? CHIP_PRESETS.ram : [], isComputer ? SMART_DB.rams : []);
-  setupFieldChips(form.hw.storage, isComputer ? CHIP_PRESETS.storage_drives : [], isComputer ? SMART_DB.storages : []);
+  setupFieldChips(form.hw.storage, showStorage ? CHIP_PRESETS.storage_drives : [], showStorage ? SMART_DB.storages : []);
   setupFieldChips(form.hw.gpu, isComputer ? CHIP_PRESETS.gpu : [], isComputer ? SMART_DB.gpus : []);
 
   // Monitor field: relevant for computers (attached screens) and monitors themselves
