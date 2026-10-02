@@ -269,6 +269,81 @@ function diskBadgeHtml(status) {
   return '';
 }
 
+// ---- Card key specs: show what matters for each device type ----
+function deviceFamily(asset) {
+  const c = typeof findCategory === 'function' ? findCategory(asset.category) : null;
+  return c ? c.family : 'other';
+}
+
+// Placeholders ("N/A (monitor, no CPU)", "-") or a value that only repeats the model carry no information
+function hasRealSpec(v, asset) {
+  const t = String(v || '').trim();
+  if (!t || /^(n\/?a|none|null|unknown|-|\.|default display|نامشخص|ندارد)\b/i.test(t)) return false;
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return !asset || norm(t) !== norm(asset.manufacturer_model);
+}
+
+// "21.5\" IPS Full HD (1920x1080) 60Hz" -> ['21.5"', 'IPS', 'Full HD', '60Hz']
+function monitorHighlights(text) {
+  const t = String(text || '');
+  const out = [];
+  const size = t.match(/(\d{2}(?:\.\d)?)\s*(?:"|''|”|inch|in\b|اینچ)/i);
+  if (size) out.push({ icon: '📐', value: `${size[1]}"` });
+  const panel = t.match(/\b(IPS|VA|TN|OLED|PLS)\b/i);
+  if (panel) out.push({ icon: '🎨', value: panel[1].toUpperCase() });
+  const res = t.match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/);
+  const resNames = { '1920x1080': 'Full HD', '2560x1440': 'QHD 2K', '3840x2160': '4K UHD', '1366x768': 'HD', '1600x900': 'HD+', '1680x1050': 'WSXGA+', '1920x1200': 'WUXGA', '1280x1024': 'SXGA' };
+  if (res) {
+    const key = `${res[1]}x${res[2]}`;
+    out.push({ icon: '🖼️', value: resNames[key] ? `${resNames[key]} ${key}` : key });
+  } else if (/full\s*hd|fhd|1080p/i.test(t)) out.push({ icon: '🖼️', value: 'Full HD' });
+  else if (/\b4k\b|uhd/i.test(t)) out.push({ icon: '🖼️', value: '4K UHD' });
+  const hz = t.match(/(\d{2,3})\s*hz/i);
+  if (hz) out.push({ icon: '⚡', value: `${hz[1]}Hz` });
+  if (/curved|خمیده/i.test(t)) out.push({ icon: '◜', value: 'Curved' });
+  return out;
+}
+
+function storageHighlights(text) {
+  const t = String(text || '');
+  const out = [];
+  const cap = t.match(/(\d+(?:\.\d+)?)\s*(TB|GB)/i);
+  if (cap) out.push({ icon: '💾', value: `${cap[1]} ${cap[2].toUpperCase()}` });
+  const type = t.match(/\b(NVMe|SSD|HDD)\b/i);
+  if (type) out.push({ icon: '⚙️', value: type[1].toUpperCase() === 'NVME' ? 'NVMe' : type[1].toUpperCase() });
+  if (/external|portable|اکسترنال/i.test(t)) out.push({ icon: '🔌', value: 'External' });
+  return out;
+}
+
+function keySpecsHtml(asset) {
+  const fam = deviceFamily(asset);
+  let specs = [];
+  if (['pc', 'laptop', 'server'].includes(fam)) {
+    if (hasRealSpec(asset.cpu)) specs.push({ icon: '🖥️', value: asset.cpu, label: 'CPU' });
+    if (hasRealSpec(asset.ram)) specs.push({ icon: '🧠', value: asset.ram, label: 'RAM' });
+    if (hasRealSpec(asset.storage_drives)) specs.push({ icon: '💾', value: asset.storage_drives, label: 'Storage' });
+  } else if (fam === 'monitor') {
+    specs = monitorHighlights(`${asset.monitors || ''} ${asset.manufacturer_model || ''}`);
+    // Monitor model codes carry the diagonal: S27C31x, C24F390, LA2206, P232, S231d
+    const code = String(asset.manufacturer_model || '').match(/(?:^|\s)[A-Za-z]{1,3}(\d{2})[A-Za-z0-9]*\s*$/);
+    if (!specs.some(s => s.icon === '📐') && code && +code[1] >= 15 && +code[1] <= 49) {
+      specs.unshift({ icon: '📐', value: `${code[1]}"`, label: 'Size (from model)' });
+    }
+    if (!specs.length && hasRealSpec(asset.monitors, asset)) specs.push({ icon: '📺', value: asset.monitors });
+  } else if (fam === 'storage') {
+    specs = storageHighlights(`${asset.storage_drives || ''} ${asset.manufacturer_model || ''}`);
+  } else {
+    if (hasRealSpec(asset.ip_address)) specs.push({ icon: '🌐', value: asset.ip_address, label: 'IP' });
+    if (hasRealSpec(asset.network_devices, asset)) specs.push({ icon: '🔗', value: asset.network_devices });
+  }
+  if (!specs.length) return '';
+  return `<div class="asset-key-specs">${specs.slice(0, 4).map(s => `
+    <div class="key-spec" title="${escapeHtml((s.label ? s.label + ': ' : '') + s.value)}">
+      <span class="key-spec-icon">${s.icon}</span>
+      <span class="key-spec-value">${escapeHtml(s.value)}</span>
+    </div>`).join('')}</div>`;
+}
+
 // Filter and re-render assets
 function filterAssets() {
   const search = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
@@ -382,35 +457,14 @@ function renderAssets(assets) {
             <span class="user-name-text">${escapeHtml(asset.user_name || getTranslation('unassigned'))}</span>
           </div>
 
-          ${asset.cpu || asset.ram || asset.storage_drives ? `
-            <div class="asset-key-specs">
-              ${asset.cpu ? `
-                <div class="key-spec">
-                  <span class="key-spec-icon">🖥️</span>
-                  <span class="key-spec-value" title="${escapeHtml(asset.cpu)}">${escapeHtml(asset.cpu)}</span>
-                </div>
-              ` : ''}
-              ${asset.ram ? `
-                <div class="key-spec">
-                  <span class="key-spec-icon">🧠</span>
-                  <span class="key-spec-value">${escapeHtml(asset.ram)}</span>
-                </div>
-              ` : ''}
-              ${asset.storage_drives ? `
-                <div class="key-spec">
-                  <span class="key-spec-icon">💾</span>
-                  <span class="key-spec-value" title="${escapeHtml(asset.storage_drives)}">${escapeHtml(asset.storage_drives)}</span>
-                </div>
-              ` : ''}
-            </div>
-          ` : ''}
+          ${keySpecsHtml(asset)}
 
           <div class="asset-specs-list">
             <div class="spec-item">
               <span class="spec-label">${getTranslation('serial_label')}</span>
               <span class="spec-value" style="font-family: monospace;">${escapeHtml(asset.serial_number || '-')}</span>
             </div>
-            ${asset.monitors ? `
+            ${hasRealSpec(asset.monitors, asset) && ['pc', 'laptop', 'server'].includes(deviceFamily(asset)) ? `
               <div class="spec-item">
                 <span class="spec-label">${getTranslation('monitors_label')}</span>
                 <span class="spec-value" title="${escapeHtml(asset.monitors)}">📺 ${escapeHtml(asset.monitors)}</span>

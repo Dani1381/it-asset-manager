@@ -228,7 +228,7 @@
 
             <div class="form-group full-width">
               <label class="form-label">🩺 وضعیت سلامت دستگاه</label>
-              <input type="hidden" id="health" value="healthy">
+              <input type="hidden" id="health" value="initial_ok">
               <div id="health-picker"></div>
               <div class="health-hint" id="health-hint"></div>
             </div>
@@ -437,7 +437,7 @@
       const setHealth = buildHealthPicker(document.getElementById('health-picker'), healthInput);
       const showHint = () => { healthHint.textContent = findHealth(healthInput.value).hint; };
       document.getElementById('health-picker').addEventListener('click', showHint);
-      setHealth('healthy');
+      setHealth('initial_ok');
       showHint();
     });
 
@@ -640,11 +640,20 @@
       }
 
       container.innerHTML = pendingPhotos.map((p, idx) => `
-        <div class="photo-thumb">
+        <div class="photo-thumb${p.isCover ? ' is-cover' : ''}">
           <img src="${p.isExisting ? p.previewUrl : p.base64}" alt="${escapeHtml(p.original_name)}">
           <button type="button" class="photo-delete-btn" onclick="removePendingPhoto(${idx})">&times;</button>
+          <button type="button" class="photo-cover-btn" onclick="setCoverPhoto(${idx}, true)" title="عکس اصلی (کاور) دستگاه">${p.isCover ? '⭐ کاور' : '☆'}</button>
         </div>
       `).join('');
+    }
+
+    // Cover = the photo shown on the dashboard card. Chosen by hand, or by the smart scan (full-device shot).
+    let coverChosenByHand = false;
+    function setCoverPhoto(index, byHand) {
+      pendingPhotos.forEach((p, i) => { p.isCover = i === index; });
+      if (byHand) coverChosenByHand = true;
+      renderPendingPhotos();
     }
 
     function removePendingPhoto(index) {
@@ -698,7 +707,8 @@
     }
 
     async function aiScanPhotos() {
-      const images = pendingPhotos.filter(p => !p.isExisting && p.base64).map(p => p.base64).slice(0, 6);
+      const scanned = pendingPhotos.filter(p => !p.isExisting && p.base64).slice(0, 6);
+      const images = scanned.map(p => p.base64);
       const btn = document.getElementById('ai-scan-btn');
       const status = document.getElementById('ai-status');
       status.style.display = 'block';
@@ -723,6 +733,13 @@
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.error || 'تحلیل عکس‌ها با خطا مواجه شد');
+
+        let coverNote = '';
+        const coverItem = data.cover_photo ? scanned[data.cover_photo - 1] : null;
+        if (coverItem && !coverChosenByHand && pendingPhotos.length > 1) {
+          setCoverPhoto(pendingPhotos.indexOf(coverItem), false);
+          coverNote = `عکس ${data.cover_photo} (نمای کامل دستگاه) به‌عنوان کاور انتخاب شد`;
+        }
 
         const filled = [], conflicts = [];
         scanConflicts = {};
@@ -769,6 +786,7 @@
         const photos = data.photos || [];
         const failed = photos.filter(p => !p.ok);
         const meta = [`${photos.length - failed.length} از ${photos.length} عکس خوانده شد`];
+        if (coverNote) meta.push(coverNote);
         if (data.matched_model) meta.push(`مدل با «${data.matched_model.model}» در انبار تطبیق داده شد`);
         if (data.damage_seen) meta.push('آسیب ظاهری دیده شد (در توضیحات آمده؛ وضعیت سلامت را خودتان تعیین کنید)');
         if (data.stage2 === 'local') meta.push('جمع‌بندی با رأی اکثریت انجام شد');
@@ -797,7 +815,7 @@
         no_tag: document.getElementById('no_tag').checked,
         category: document.getElementById('category').value,
         status: document.getElementById('status').value,
-        health: document.getElementById('health').value || 'healthy',
+        health: document.getElementById('health').value || 'initial_ok',
         user_name: document.getElementById('user_name').value.trim(),
         computer_name: document.getElementById('computer_name').value.trim(),
         manufacturer_model: document.getElementById('manufacturer_model').value.trim(),
@@ -831,9 +849,10 @@
 
         // Upload pending photos (new base64 photos AND cloned existing photos)
         for (const p of pendingPhotos) {
+          let upRes;
           if (p.isExisting) {
             // Clone existing photo of the same model (no upload needed, server copies it)
-            await fetch(`/api/assets/${created.id}/photos`, {
+            upRes = await fetch(`/api/assets/${created.id}/photos`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -842,7 +861,7 @@
               })
             });
           } else {
-            await fetch(`/api/assets/${created.id}/photos`, {
+            upRes = await fetch(`/api/assets/${created.id}/photos`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -851,6 +870,12 @@
                 caption: 'Device Photo'
               })
             });
+          }
+          if (p.isCover && upRes && upRes.ok) {
+            try {
+              const up = await upRes.json();
+              if (up.photo && up.photo.id) await fetch(`/api/photos/${up.photo.id}/primary`, { method: 'POST' });
+            } catch (e) {}
           }
         }
 

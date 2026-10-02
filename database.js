@@ -242,6 +242,10 @@ function initDb() {
   if (!assetCols.includes('no_tag')) db.exec('ALTER TABLE assets ADD COLUMN no_tag INTEGER NOT NULL DEFAULT 0');
   // Physical condition set by the operator (default healthy) — values in HEALTH_VALUES
   if (!assetCols.includes('health')) db.exec("ALTER TABLE assets ADD COLUMN health TEXT NOT NULL DEFAULT 'healthy'");
+  // Placeholder specs like "N/A (monitor, no CPU)" were saved by older AI lookups; they are not data
+  for (const col of SPEC_PLACEHOLDER_FIELDS) {
+    db.exec(`UPDATE assets SET ${col} = NULL WHERE UPPER(TRIM(${col})) IN ('N/A', 'NA') OR UPPER(TRIM(${col})) LIKE 'N/A (%'`);
+  }
   const pendingCols = db.prepare('PRAGMA table_info(pending_scans)').all().map(c => c.name);
   if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
 
@@ -281,6 +285,13 @@ function getNextNoTagId() {
 
 function isTruthyFlag(v) {
   return v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+}
+
+const SPEC_PLACEHOLDER_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
+function stripSpecPlaceholders(data) {
+  for (const f of SPEC_PLACEHOLDER_FIELDS) {
+    if (typeof data[f] === 'string' && /^\s*n\/?a\b/i.test(data[f])) data[f] = '';
+  }
 }
 
 const HEALTH_VALUES = ['healthy', 'initial_ok', 'minor_issue', 'needs_check', 'untested', 'broken'];
@@ -723,6 +734,7 @@ const queries = {
   // Create new asset
   createAsset(data) {
     const now = new Date().toISOString();
+    stripSpecPlaceholders(data);
     // Same model already registered? Reuse its specs (monitors, drives, network gear...)
     data._specs_copied = fillFromModelTemplate(data);
     const noTag = isTruthyFlag(data.no_tag);
@@ -772,7 +784,7 @@ const queries = {
         now,
         now,
         noTag ? 1 : 0,
-        normalizeHealth(data.health)
+        normalizeHealth(data.health, 'initial_ok')
       );
 
       const newId = Number(result.lastInsertRowid);
@@ -796,6 +808,7 @@ const queries = {
     const now = new Date().toISOString();
     const current = db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
     if (!current) return false;
+    stripSpecPlaceholders(data);
 
     // "No property tag" switch: tagging an untagged item or removing its tag
     let noTag = current.no_tag ? 1 : 0;
@@ -1446,7 +1459,7 @@ const queries = {
     const withPhotos = db.prepare('SELECT COUNT(DISTINCT asset_id) as count FROM asset_photos').get().count;
     const pendingPhotos = total - withPhotos;
     const broken = db.prepare("SELECT COUNT(*) as count FROM assets WHERE health = 'broken'").get().count;
-    const needsCheck = db.prepare("SELECT COUNT(*) as count FROM assets WHERE health IN ('needs_check', 'initial_ok', 'minor_issue', 'untested')").get().count;
+    const needsCheck = db.prepare("SELECT COUNT(*) as count FROM assets WHERE health IN ('needs_check', 'minor_issue', 'untested')").get().count;
 
     return {
       total,

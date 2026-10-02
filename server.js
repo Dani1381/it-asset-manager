@@ -395,6 +395,7 @@ Read everything you can see in THIS photo and return STRICT JSON only (no markdo
 
 {
   "photo_kind": "property_tag" | "spec_label" | "device_front" | "device_back" | "screen" | "other",
+  "full_view": true if the WHOLE device is visible from a distance (good as the device's cover photo), false for close-ups of labels / parts,
   "category": ${SCAN_CATEGORY_LIST},
   "manufacturer_model": "brand + model as printed (e.g. HP EliteDesk 800 G3 SFF, Samsung S24R350)",
   "serial_number": "S/N, Serial No, Service Tag",
@@ -577,8 +578,17 @@ async function smartScanPhotos(images) {
   let notes = cleanScanValue(merged.notes) || '';
   if (damage.length && !notes.includes(damage[0])) notes = [notes, `آسیب دیده‌شده: ${damage.join('؛ ')}`].filter(Boolean).join('\n');
 
+  // Cover photo: the whole device seen from a distance beats label / sticker close-ups
+  const kindRank = { device_front: 4, device_back: 2, other: 1, screen: 0, spec_label: -2, property_tag: -3 };
+  let coverPhoto = null, coverScore = -Infinity;
+  for (const p of findings) {
+    const score = (p.data.full_view === true ? 10 : 0) + (kindRank[p.data.photo_kind] ?? 0);
+    if (score > coverScore) { coverScore = score; coverPhoto = p.photo; }
+  }
+
   return {
     fields,
+    cover_photo: coverPhoto,
     sources: merged.sources && typeof merged.sources === 'object' ? merged.sources : {},
     confidence: merged.confidence && typeof merged.confidence === 'object' ? merged.confidence : {},
     notes,

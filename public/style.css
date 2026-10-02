@@ -1970,3 +1970,22 @@ input.form-control:disabled { opacity: 0.55; cursor: not-allowed; }
 .scan-report .scan-warn { color: #fbbf24; }
 .scan-report .scan-section + .scan-section { margin-top: 0.55rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color); }
 .scan-report .btn { padding: 0.1rem 0.5rem; font-size: 0.75rem; }
+
+/* Cover-photo picker on the add form */
+.photo-thumb { position: relative; }
+.photo-cover-btn {
+  position: absolute;
+  bottom: 0.3rem;
+  inset-inline-start: 0.3rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.8);
+  color: #fde68a;
+}
+.photo-thumb.is-cover { outline: 2px solid #facc15; outline-offset: 1px; border-radius: 8px; }
+.photo-thumb.is-cover .photo-cover-btn { background: #ca8a04; color: #fff; }
