@@ -110,7 +110,7 @@ if (-not $RAM) { $RAM = "8 GB (Standard)" }
 # Disks
 $Storage = ""
 try {
-    $Disks = Get-CimInstance Win32_DiskDrive -ErrorAction Stop
+    $Disks = Get-CimInstance Win32_DiskDrive -ErrorAction Stop | Where-Object { $_.InterfaceType -ne 'USB' -and $_.MediaType -notmatch 'Removable' }
     $StorageList = foreach ($d in $Disks) {
         $SizeGB = [math]::Round($d.Size / 1GB)
         "$($d.Model) (${SizeGB}GB)"
@@ -118,7 +118,7 @@ try {
     $Storage = ($StorageList -join ' / ')
 } catch {
     try {
-        $Disks = Get-WmiObject Win32_DiskDrive -ErrorAction Stop
+        $Disks = Get-WmiObject Win32_DiskDrive -ErrorAction Stop | Where-Object { $_.InterfaceType -ne 'USB' -and $_.MediaType -notmatch 'Removable' }
         $StorageList = foreach ($d in $Disks) {
             $SizeGB = [math]::Round($d.Size / 1GB)
             "$($d.Model) (${SizeGB}GB)"
@@ -173,7 +173,7 @@ try {
 
 $DiskHealth = @()
 try {
-    $PhysDisks = Get-PhysicalDisk -ErrorAction Stop
+    $PhysDisks = Get-PhysicalDisk -ErrorAction Stop | Where-Object { [string]$_.BusType -ne 'USB' }
     foreach ($pd in $PhysDisks) {
         $rel = $null
         try { $rel = $pd | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
@@ -217,7 +217,7 @@ try {
 } catch {
     # Older Windows without the Storage module: fall back to Win32_DiskDrive status (OK / Pred Fail)
     try {
-        foreach ($d in (Get-CimInstance Win32_DiskDrive -ErrorAction Stop)) {
+        foreach ($d in (Get-CimInstance Win32_DiskDrive -ErrorAction Stop | Where-Object { $_.InterfaceType -ne 'USB' -and $_.MediaType -notmatch 'Removable' })) {
             $st = [string]$d.Status
             $hs = if ($st -eq 'OK') { 'Healthy' } elseif ($st -eq 'Pred Fail') { 'Pred Fail' } else { $st }
             $DiskHealth += [ordered]@{

@@ -225,6 +225,13 @@ fi
 [ -z "$RAM" ] && RAM="8 GB (Standard)"
 
 # Physical disks
+# USB sticks / card readers (e.g. the USB scanner kit itself) are not part of the computer
+is_external_disk() { # /sys/block/<dev>
+  [ "$(cat "$1/removable" 2>/dev/null)" = "1" ] && return 0
+  case "$(readlink -f "$1" 2>/dev/null)" in */usb*) return 0 ;; esac
+  return 1
+}
+
 STORAGE=""
 for dev in /sys/block/*; do
   [ -e "$dev" ] || continue
@@ -234,6 +241,7 @@ for dev in /sys/block/*; do
     sd*|hd*|vd*|xvd*|nvme*|mmcblk*) ;;
     *) continue ;;
   esac
+  is_external_disk "$dev" && continue
   model=$(read_file "$dev/device/model")
   [ -z "$model" ] && model=$(read_file "$dev/device/name")
   [ -z "$model" ] && model="$name"
@@ -244,7 +252,7 @@ for dev in /sys/block/*; do
   if [ -z "$STORAGE" ]; then STORAGE="$item"; else STORAGE="$STORAGE / $item"; fi
 done
 if [ -z "$STORAGE" ] && command -v lsblk >/dev/null 2>&1; then
-  STORAGE=$(LC_ALL=C lsblk -dnb -o SIZE,MODEL 2>/dev/null | awk 'NF>1 { gb=int($1/1073741824); if(gb<1) gb=1; $1=""; sub(/^ /,""); printf "%s (%dGB)\n", $0, gb }' | join_slash)
+  STORAGE=$(LC_ALL=C lsblk -dnb -o SIZE,RM,MODEL 2>/dev/null | awk '$2!="1" { $2=""; $0=$0; print }' | awk 'NF>1 { gb=int($1/1073741824); if(gb<1) gb=1; $1=""; sub(/^ /,""); printf "%s (%dGB)\n", $0, gb }' | join_slash)
 fi
 [ -z "$STORAGE" ] && STORAGE="Internal Storage"
 
@@ -357,6 +365,7 @@ for dev in /sys/block/*; do
     *) continue ;;
   esac
   case "$name" in nvme*p*) continue ;; esac
+  is_external_disk "$dev" && continue
 
   model=$(read_file "$dev/device/model"); [ -z "$model" ] && model="$name"
   serial=$(read_file "$dev/device/serial")
