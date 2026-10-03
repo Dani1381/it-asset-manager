@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>خروجی گیری جمعی - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar no-print">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <button class="btn btn-secondary btn-sm" onclick="downloadCsv()">📥 دانلود اکسل (CSV)</button>
+      <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ چاپ</button>
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container report-page">
+    <div class="report-head">
+      <h2>📊 خروجی گیری جمعی</h2>
+      <div class="report-filters no-print">
+        <select id="f-status" class="filter-select" onchange="load()">
+          <option value="all">⚡ همه وضعیت‌ها</option>
+          <option value="active">🟢 در حال استفاده</option>
+          <option value="in_storage">🟡 در انبار / یدکی</option>
+          <option value="repair">🔴 نیازمند تعمیر</option>
+          <option value="retired">⚪ اسقاط</option>
+        </select>
+        <select id="f-category" class="filter-select" onchange="load()">
+          <option value="all">📁 همه دسته‌ها</option>
+          <option value="computers">🖥️ فقط کامپیوترها (کیس / لپ‌تاپ / سرور)</option>
+        </select>
+      </div>
+      <p id="report-meta" class="report-meta"></p>
+    </div>
+
+    <div class="report-kpis" id="kpis"></div>
+
+    <section class="report-card report-search">
+      <h3>🔎 شمارش سریع</h3>
+      <input type="text" id="count-q" class="form-control" placeholder="مثلاً 8200 یا EliteDesk یا S27C31x یا i5-3470" oninput="runCount()">
+      <div id="count-result" class="count-result"></div>
+    </section>
+
+    <div class="report-grid" id="tables"></div>
+  </main>
+
+  <script>
+    try {
+      const u = JSON.parse(localStorage.getItem('arka_user') || 'null');
+      if (!u) location.href = '/login.html';
+    } catch (e) { location.href = '/login.html'; }
+
+    const STATUS_FA = { active: '🟢 در حال استفاده', in_storage: '🟡 در انبار / یدکی', repair: '🔴 نیازمند تعمیر', retired: '⚪ اسقاط' };
+    let report = null;
+    let allAssets = [];
+
+    // Extra category options
+    for (const c of ASSET_CATEGORIES) {
+      const o = document.createElement('option');
+      o.value = c.value; o.textContent = `${c.icon} ${c.fa}`;
+      document.getElementById('f-category').appendChild(o);
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+    }
+
+    const SECTIONS = [
+      { key: 'by_category', title: '📁 بر اساس نوع دستگاه', label: k => `${categoryIcon(k)} ${categoryLabel(k)}` },
+      { key: 'by_status', title: '⚡ بر اساس وضعیت', label: k => STATUS_FA[k] || k },
+      { key: 'by_health', title: '🩺 بر اساس سلامت', label: k => healthLabel(k) },
+      { key: 'by_brand', title: '🏷️ بر اساس برند' },
+      { key: 'by_model', title: '🖥️ بر اساس مدل', wide: true },
+      { key: 'disk_types', title: '💾 هاردها: نوع (SSD / HDD / NVMe)' },
+      { key: 'disk_sizes', title: '💾 هاردها: ظرفیت' },
+      { key: 'disk_models', title: '💾 هاردها: مدل', wide: true },
+      { key: 'ram', title: '🧠 رم (کامپیوترها)' },
+      { key: 'cpu', title: '⚙️ پردازنده (کامپیوترها)' },
+      { key: 'by_location', title: '📍 بر اساس محل' }
+    ];
+
+    async function load() {
+      const st = document.getElementById('f-status').value;
+      const cat = document.getElementById('f-category').value;
+      const [r, a] = await Promise.all([
+        fetch(`/api/reports/summary?status=${encodeURIComponent(st)}&category=${encodeURIComponent(cat)}`).then(x => x.json()),
+        fetch('/api/assets?limit=100000').then(x => x.json())
+      ]);
+      report = r;
+      const computers = ['PC', 'Single PC', 'Laptop', 'Server'];
+      allAssets = a.filter(x => (st === 'all' || x.status === st) && (cat === 'all' || (cat === 'computers' ? computers.includes(x.category) : x.category === cat)));
+      render();
+      runCount();
+    }
+
+    function render() {
+      const r = report;
+      const dt = Object.fromEntries(r.disk_types.map(x => [x.key, x.count]));
+      document.getElementById('report-meta').textContent =
+        `گزارش ${new Date(r.generated_at).toLocaleString('fa-IR')} — فیلتر: ${document.getElementById('f-status').selectedOptions[0].text} / ${document.getElementById('f-category').selectedOptions[0].text}`;
+      const kpi = (n, label, cls = '') => `<div class="report-kpi ${cls}"><div class="kpi-num">${n}</div><div class="kpi-label">${label}</div></div>`;
+      document.getElementById('kpis').innerHTML =
+        kpi(r.total, 'کل دستگاه‌ها') +
+        kpi(r.disk_count, 'کل هاردها') +
+        kpi(dt.SSD || 0, 'هارد SSD') +
+        kpi(dt.NVMe || 0, 'هارد NVMe') +
+        kpi(dt.HDD || 0, 'هارد HDD (مکانیکی)') +
+        kpi(r.computers_without_disk, 'کامپیوتر بدون هارد', r.computers_without_disk ? 'is-warn' : '') +
+        kpi(r.no_tag, 'بدون شماره اموال', r.no_tag ? 'is-warn' : '');
+
+      document.getElementById('tables').innerHTML = SECTIONS.map(s => {
+        const rows = r[s.key] || [];
+        const max = Math.max(1, ...rows.map(x => x.count));
+        const total = rows.reduce((t, x) => t + x.count, 0);
+        return `<section class="report-card ${s.wide ? 'is-wide' : ''}">
+          <h3>${s.title} <span class="report-total">${total}</span></h3>
+          ${rows.length ? `<table class="report-table"><tbody>${rows.map(x => `
+            <tr>
+              <td class="rt-label" title="${esc(x.key)}">${s.label ? s.label(x.key) : esc(x.key)}</td>
+              <td class="rt-bar"><span style="width:${Math.round(x.count / max * 100)}%"></span></td>
+              <td class="rt-num">${x.count}</td>
+            </tr>`).join('')}</tbody></table>` : '<div class="report-empty">داده‌ای نیست</div>'}
+        </section>`;
+      }).join('');
+    }
+
+    // Free-text counter: matches model, property no., CPU, disks, serial
+    function runCount() {
+      const q = document.getElementById('count-q').value.trim().toLowerCase();
+      const box = document.getElementById('count-result');
+      if (!q) { box.innerHTML = ''; return; }
+      const words = q.split(/\s+/);
+      const hits = allAssets.filter(a => {
+        const text = [a.manufacturer_model, a.property_id, a.cpu, a.storage_drives, a.serial_number, a.gpu, a.monitors, a.computer_name].join(' ').toLowerCase();
+        return words.every(w => text.includes(w));
+      });
+      const byModel = {};
+      for (const a of hits) (byModel[a.manufacturer_model || 'نامشخص'] ||= []).push(a);
+      box.innerHTML = `<div class="count-big"><strong>${hits.length}</strong> دستگاه با «${esc(q)}»</div>` +
+        Object.entries(byModel).sort((x, y) => y[1].length - x[1].length).map(([m, list]) => `
+          <div class="count-row"><span class="count-n">${list.length}</span> ${esc(m)}
+            <div class="count-ids">${list.map(a => `<a href="/asset.html?id=${a.id}">${esc(a.property_id)}</a>`).join(' · ')}</div>
+          </div>`).join('');
+    }
+
+    function downloadCsv() {
+      if (!report) return;
+      const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = [q('خروجی گیری جمعی') + ',' + q(new Date(report.generated_at).toLocaleString('fa-IR')), ''];
+      lines.push(q('کل دستگاه‌ها') + ',' + report.total, q('کل هاردها') + ',' + report.disk_count, '');
+      for (const s of SECTIONS) {
+        lines.push(q(s.title.replace(/^\S+\s/, '')) + ',' + q('تعداد'));
+        for (const x of report[s.key] || []) {
+          const label = s.label ? s.label(x.key).replace(/^[^\p{L}\p{N}]+/u, '') : x.key;
+          lines.push(q(label) + ',' + x.count);
+        }
+        lines.push('');
+      }
+      lines.push(q('مدل') + ',' + q('تعداد') + ',' + q('شماره‌های اموال'));
+      for (const m of report.models) lines.push([q(m.model), m.count, q(m.property_ids.join(' '))].join(','));
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `arka_summary_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    load();
+  </script>
+</body>
+</html>

@@ -965,6 +965,123 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
+// ---------------------------------------------------------------------------
+// Bulk summary report: counts by type / status / brand / model / disks / RAM / CPU
+// ---------------------------------------------------------------------------
+// Disk type from its model name when the scanner did not report it
+function guessDiskType(model) {
+  const m = String(model || '');
+  if (/nvme|\bsn\d{3}\b|mzvl|pm9\d\d|\b9[78]0\b|\bnm\d{3}\b/i.test(m)) return 'NVMe';
+  if (/ssd|\bsu\d{3}\b|a400|c800|evo|mx500|bx500|sandisk|lexar|green 2\.5|\bmz7/i.test(m)) return 'SSD';
+  if (/^st\d|wdc|\bwd\d|\bwd(blue|black|red|purple)|hgst|hitachi|toshiba|seagate|barracuda|hdd|\bdt01|\bhd7\d\d|hard (drive|disk)/i.test(m)) return 'HDD';
+  return 'نامشخص';
+}
+
+function sizeBucket(gb) {
+  if (!gb) return 'نامشخص';
+  if (gb <= 140) return '128 گیگ و کمتر';
+  if (gb <= 280) return '256 گیگ';
+  if (gb <= 560) return '500 گیگ';
+  if (gb <= 1100) return '1 ترابایت';
+  return 'بیشتر از 1 ترابایت';
+}
+
+// Disks of one asset: drive-health data when the scanner sent it, otherwise parsed from the storage text
+function assetDisks(a) {
+  try {
+    const d = a.disk_health ? JSON.parse(a.disk_health) : null;
+    if (d && Array.isArray(d.disks) && d.disks.length) {
+      // skip the USB stick and empty slots / card readers (model "0", size 0)
+      return d.disks.filter(x => !/usb|flash/i.test(`${x.model} ${x.bus || ''}`) && !/^\s*\d?\s*$/.test(String(x.model || '')) && Number(x.size_gb) !== 0).map(x => ({
+        model: String(x.model || '').trim() || 'نامشخص',
+        gb: Number(x.size_gb) || null,
+        type: ['SSD', 'HDD', 'NVMe'].includes(x.type) ? x.type : guessDiskType(x.model)
+      }));
+    }
+  } catch (e) {}
+  return String(a.storage_drives || '').split(' / ').map(s => s.trim()).filter(s => s && !/usb|flash/i.test(s) && !/^\d?$/.test(s)).map(s => {
+    const m = s.match(/^(.*?)\s*\((\d+(?:\.\d+)?)\s*(GB|TB)\)\s*$/i);
+    const model = (m ? m[1] : s).replace(/\s+ATA Device$/i, '').trim();
+    const gb = m ? Math.round(Number(m[2]) * (m[3].toUpperCase() === 'TB' ? 1024 : 1)) : null;
+    return { model: model || 'نامشخص', gb, type: guessDiskType(s) };
+  });
+}
+
+function ramBucket(ram) {
+  const m = String(ram || '').match(/(\d+(?:\.\d+)?)\s*GB/i);
+  return m ? `${Math.round(Number(m[1]))} GB` : 'نامشخص';
+}
+
+function cpuShort(cpu) {
+  const c = String(cpu || '');
+  const m = c.match(/(i[3579]-\s?\d{3,5}[A-Z]{0,2})|(Xeon\S*\s+\S+)|(Pentium\S*\s+\S+)|(Celeron\S*\s+\S+)|(Ryzen \d \d{4}\S*)|(Core\(TM\)2 \S+ \S+)/i);
+  return m ? m[0].replace(/\s+/g, ' ') : (c.trim() ? c.replace(/\(R\)|\(TM\)|CPU|@.*$/gi, '').replace(/\s+/g, ' ').trim() : 'نامشخص');
+}
+
+function buildSummaryReport(assets) {
+  const count = (map, key, n = 1) => { const k = key || 'نامشخص'; map[k] = (map[k] || 0) + n; };
+  const toList = map => Object.entries(map).map(([key, n]) => ({ key, count: n })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  const byCategory = {}, byStatus = {}, byHealth = {}, byBrand = {}, byModel = {}, byRam = {}, byCpu = {}, byLocation = {};
+  const diskType = {}, diskSize = {}, diskModel = {};
+  const models = {};
+  const computerCats = new Set(['PC', 'Single PC', 'Laptop', 'Server']);
+  let diskCount = 0, noDisk = 0, noTag = 0;
+
+  for (const a of assets) {
+    count(byCategory, a.category);
+    count(byStatus, a.status);
+    count(byHealth, a.health || 'healthy');
+    count(byLocation, (a.location || '').trim() || 'ثبت نشده');
+    if (a.no_tag) noTag++;
+    const model = (a.manufacturer_model || '').trim() || 'نامشخص';
+    count(byBrand, model === 'نامشخص' ? 'نامشخص' : model.split(' ')[0]);
+    count(byModel, model);
+    if (!models[model]) models[model] = { model, category: a.category, count: 0, property_ids: [] };
+    models[model].count++;
+    models[model].property_ids.push(a.property_id);
+
+    if (computerCats.has(a.category)) {
+      count(byRam, ramBucket(a.ram));
+      count(byCpu, cpuShort(a.cpu));
+      const disks = assetDisks(a);
+      if (!disks.length) noDisk++;
+      for (const d of disks) {
+        diskCount++;
+        count(diskType, d.type);
+        count(diskSize, sizeBucket(d.gb));
+        count(diskModel, d.model);
+      }
+    } else if (a.category === 'Storage') {
+      // a loose drive is itself one disk
+      diskCount++;
+      count(diskType, guessDiskType(`${a.manufacturer_model} ${a.storage_drives || ''}`));
+      const gbm = String(`${a.storage_drives || ''} ${a.manufacturer_model || ''}`).match(/(\d+(?:\.\d+)?)\s*(TB|GB)/i);
+      count(diskSize, sizeBucket(gbm ? Math.round(Number(gbm[1]) * (gbm[2].toUpperCase() === 'TB' ? 1024 : 1)) : null));
+      count(diskModel, a.manufacturer_model);
+    }
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    total: assets.length,
+    no_tag: noTag,
+    disk_count: diskCount,
+    computers_without_disk: noDisk,
+    by_category: toList(byCategory),
+    by_status: toList(byStatus),
+    by_health: toList(byHealth),
+    by_brand: toList(byBrand),
+    by_model: toList(byModel),
+    by_location: toList(byLocation),
+    disk_types: toList(diskType),
+    disk_sizes: toList(diskSize),
+    disk_models: toList(diskModel),
+    ram: toList(byRam),
+    cpu: toList(byCpu),
+    models: Object.values(models).sort((a, b) => b.count - a.count)
+  };
+}
+
 // Minimal ZIP writer (stored, no compression) — keeps the project dependency-free
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -2109,6 +2226,17 @@ Respond ONLY in JSON format:
       const success = queries.deletePhoto(photoId);
       if (!success) return sendJson(res, 404, { error: 'Photo not found' });
       return sendJson(res, 200, { success: true });
+    }
+
+    // GET /api/reports/summary?status=&category=  (bulk counts for the summary report page)
+    if (method === 'GET' && pathname === '/api/reports/summary') {
+      const status = parsedUrl.searchParams.get('status') || 'all';
+      const category = parsedUrl.searchParams.get('category') || 'all';
+      const computerCats = ['PC', 'Single PC', 'Laptop', 'Server'];
+      const assets = queries.getAllAssets({ limit: 100000 }).filter(a =>
+        (status === 'all' || a.status === status) &&
+        (category === 'all' || (category === 'computers' ? computerCats.includes(a.category) : a.category === category)));
+      return sendJson(res, 200, buildSummaryReport(assets));
     }
 
     // GET /api/export/csv
