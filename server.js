@@ -1706,10 +1706,14 @@ const server = http.createServer(async (req, res) => {
         storage_drives: data.storage_drives || data.storage,
         c_space: data.c_space || data.cSpace,
         network_devices: data.network_devices || data.networkDevices,
-        gpu: data.gpu,
+        // Linux lspci lines: "00:02.0 VGA compatible controller: Intel ... (rev 09)" -> "Intel ..."
+        gpu: typeof data.gpu === 'string'
+          ? data.gpu.split(' / ').map(g => g.replace(/^[0-9a-f:.]+ [^:]*: /i, '').replace(/\s*\(rev [0-9a-fx]+\)\s*$/i, '')).join(' / ')
+          : data.gpu,
         // Offline (bench) scans only have a test monitor attached: never record it
         monitors: data.offline === true ? '' : data.monitors,
-        disk_health: data.disk_health || data.diskHealth || null
+        disk_health: data.disk_health || data.diskHealth || null,
+        source: data.source === 'usb-kit' ? 'usb-kit' : null
       });
 
       if (data.source === 'usb-kit') queries.markPendingSource(result.batch_id, 'usb-kit');

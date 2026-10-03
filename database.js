@@ -1076,13 +1076,17 @@ const queries = {
     const serialNum = (scanData.serial_number || '').trim();
     const diskHealth = normalizeDiskHealth(scanData.disk_health);
     const isSerialValid = serialNum && serialNum.toLowerCase() !== 'unknown' && serialNum.toLowerCase() !== 'to be filled by o.e.m.' && serialNum.length > 3;
+    // The host name only identifies a machine on its own installed OS. USB-kit scans often come from live
+    // sessions ("mint") or a bench disk moved between machines, so those match by serial number only.
+    const GENERIC_HOSTS = new Set(['linux-host', 'mint', 'ubuntu', 'localhost', 'live', 'debian', 'kali', 'fedora', 'user-pc']);
+    const nameMatchAllowed = compName && !GENERIC_HOSTS.has(compName.toLowerCase()) && scanData.source !== 'usb-kit';
 
     // 1. Check if this machine is ALREADY registered as an approved asset in `assets` table!
     let existingAsset = null;
     if (isSerialValid) {
       existingAsset = db.prepare('SELECT * FROM assets WHERE LOWER(serial_number) = LOWER(?)').get(serialNum);
     }
-    if (!existingAsset && compName && compName.toLowerCase() !== 'linux-host') {
+    if (!existingAsset && nameMatchAllowed) {
       existingAsset = db.prepare('SELECT * FROM assets WHERE LOWER(computer_name) = LOWER(?)').get(compName);
     }
 
@@ -1144,7 +1148,7 @@ const queries = {
     if (isSerialValid) {
       existingPending = db.prepare("SELECT * FROM pending_scans WHERE LOWER(serial_number) = LOWER(?) AND status = 'pending'").get(serialNum);
     }
-    if (!existingPending && compName) {
+    if (!existingPending && nameMatchAllowed) {
       existingPending = db.prepare("SELECT * FROM pending_scans WHERE LOWER(computer_name) = LOWER(?) AND category != 'Monitor' AND status = 'pending'").get(compName);
     }
 

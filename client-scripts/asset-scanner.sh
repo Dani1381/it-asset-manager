@@ -252,7 +252,11 @@ for dev in /sys/block/*; do
   if [ -z "$STORAGE" ]; then STORAGE="$item"; else STORAGE="$STORAGE / $item"; fi
 done
 if [ -z "$STORAGE" ] && command -v lsblk >/dev/null 2>&1; then
-  STORAGE=$(LC_ALL=C lsblk -dnb -o SIZE,RM,MODEL 2>/dev/null | awk '$2!="1" { $2=""; $0=$0; print }' | awk 'NF>1 { gb=int($1/1073741824); if(gb<1) gb=1; $1=""; sub(/^ /,""); printf "%s (%dGB)\n", $0, gb }' | join_slash)
+  # KEY="value" pairs, because TRAN is empty for NVMe and would shift plain columns; skip USB / removable
+  STORAGE=$(LC_ALL=C lsblk -dnbP -o SIZE,RM,TRAN,MODEL 2>/dev/null \
+    | awk '{ s=$0; size=s; sub(/.*SIZE="/,"",size); sub(/".*/,"",size); rm=s; sub(/.*RM="/,"",rm); sub(/".*/,"",rm);
+             tr=s; sub(/.*TRAN="/,"",tr); sub(/".*/,"",tr); md=s; sub(/.*MODEL="/,"",md); sub(/".*/,"",md);
+             if (rm!="1" && tr!="usb" && md!="") print size, md }' | awk 'NF>1 { gb=int($1/1073741824); if(gb<1) gb=1; $1=""; sub(/^ /,""); printf "%s (%dGB)\n", $0, gb }' | join_slash)
 fi
 [ -z "$STORAGE" ] && STORAGE="Internal Storage"
 
