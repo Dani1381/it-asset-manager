@@ -246,6 +246,37 @@ if (-not $IsAdmin) {
     Write-Host "      Tip: run this scanner as Administrator for full SMART data (wear %, temperature, errors)." -ForegroundColor DarkYellow
 }
 
+
+# What was found / sent, shown at the end of every run
+function Show-Summary($res) {
+    Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
+    if ($UserName -match '^\d{3,6}$') { Write-Host ("  Property no. : " + $UserName) -ForegroundColor White } else { Write-Host ("  Name         : " + $UserName) }
+    Write-Host ("  Computer     : " + $Comp)
+    Write-Host ("  Model        : " + $Model)
+    Write-Host ("  Serial       : " + $Serial)
+    Write-Host ("  OS           : " + $OS)
+    Write-Host ("  CPU          : " + $CPU)
+    Write-Host ("  RAM          : " + $RAM)
+    Write-Host ("  Disks        : " + $Storage)
+    Write-Host ("  C: space     : " + $CSpace)
+    Write-Host ("  GPU          : " + $GPU)
+    Write-Host ("  Monitors     : " + $Monitors)
+    Write-Host ("  IP           : " + $IP)
+    foreach ($dh in $DiskHealth) {
+        $h = "  Drive health : $($dh.model) = $($dh.health_status)"
+        if ($null -ne $dh.wear_percent) { $h += ", life left $(100 - $dh.wear_percent)%" }
+        if ($dh.predict_failure -eq $true) { $h += ", SMART FAILURE PREDICTED" }
+        Write-Host $h
+    }
+    if ($res) {
+        if ($res.is_update) { Write-Host ("  Server       : already registered as " + $res.property_id + " - specs updated") -ForegroundColor Cyan }
+        elseif ($res.is_pending_update) { Write-Host "  Server       : was already waiting for approval - updated" -ForegroundColor Cyan }
+        else { Write-Host "  Server       : added to the approval queue" -ForegroundColor Cyan }
+        foreach ($it in @($res.items)) { Write-Host ("    - " + $it.category + ": " + $it.name) -ForegroundColor Cyan }
+    }
+    Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
+}
+
 Write-Host "[5/5] Looking for the IT Asset Server..." -ForegroundColor Yellow
 $SERVER_URL = Find-Server
 if ($SERVER_URL) { Write-Host "      Using $SERVER_URL" -ForegroundColor Gray }
@@ -282,7 +313,7 @@ function Send-Scan([string]$body) {
     Invoke-RestMethod -Uri "$SERVER_URL/api/assets/scan" -Method Post -Headers $Headers -ContentType "application/json; charset=utf-8" -Body $bytes -TimeoutSec 15
 }
 
-$SafeName = ($Comp -replace '[^A-Za-z0-9_-]', '_')
+$SafeName = if ($UserName -match '^\d{3,6}$') { $UserName } else { ($Comp -replace '[^A-Za-z0-9_-]', '_') }
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $FileName = "${SafeName}_${Stamp}.json"
 
@@ -294,6 +325,7 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $SentDir $FileName), $Json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "========================================================" -ForegroundColor Green
     Write-Host "[SUCCESS] Sent to the server. Items found: $($res.items_count)" -ForegroundColor Green
+    Show-Summary $res
     Write-Host "Admin can now review it in the dashboard (Pending scans)." -ForegroundColor Green
     Write-Host "========================================================" -ForegroundColor Green
 } catch {
@@ -304,6 +336,7 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $ScanDir $FileName), $Json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "========================================================" -ForegroundColor Yellow
     Write-Host "[SAVED ON USB] Server not reachable from this computer." -ForegroundColor Yellow
+    Show-Summary $null
     Write-Host "Saved to: scans\$FileName" -ForegroundColor Yellow
     Write-Host "It will be sent automatically next time this USB runs on a" -ForegroundColor Yellow
     Write-Host "computer that can reach the server, or import it from the panel." -ForegroundColor Yellow

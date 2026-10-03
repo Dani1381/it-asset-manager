@@ -245,6 +245,37 @@ if (-not $IsAdmin) {
     Write-Host "      Tip: run this scanner as Administrator for full SMART data (wear %, temperature, errors)." -ForegroundColor DarkYellow
 }
 
+
+# What was found / sent, shown at the end of every run
+function Show-Summary($res) {
+    Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
+    if ($UserName -match '^\d{3,6}$') { Write-Host ("  Property no. : " + $UserName) -ForegroundColor White } else { Write-Host ("  Name         : " + $UserName) }
+    Write-Host ("  Computer     : " + $Comp)
+    Write-Host ("  Model        : " + $Model)
+    Write-Host ("  Serial       : " + $Serial)
+    Write-Host ("  OS           : " + $OS)
+    Write-Host ("  CPU          : " + $CPU)
+    Write-Host ("  RAM          : " + $RAM)
+    Write-Host ("  Disks        : " + $Storage)
+    Write-Host ("  C: space     : " + $CSpace)
+    Write-Host ("  GPU          : " + $GPU)
+    Write-Host ("  Monitors     : " + $Monitors)
+    Write-Host ("  IP           : " + $IP)
+    foreach ($dh in $DiskHealth) {
+        $h = "  Drive health : $($dh.model) = $($dh.health_status)"
+        if ($null -ne $dh.wear_percent) { $h += ", life left $(100 - $dh.wear_percent)%" }
+        if ($dh.predict_failure -eq $true) { $h += ", SMART FAILURE PREDICTED" }
+        Write-Host $h
+    }
+    if ($res) {
+        if ($res.is_update) { Write-Host ("  Server       : already registered as " + $res.property_id + " - specs updated") -ForegroundColor Cyan }
+        elseif ($res.is_pending_update) { Write-Host "  Server       : was already waiting for approval - updated" -ForegroundColor Cyan }
+        else { Write-Host "  Server       : added to the approval queue" -ForegroundColor Cyan }
+        foreach ($it in @($res.items)) { Write-Host ("    - " + $it.category + ": " + $it.name) -ForegroundColor Cyan }
+    }
+    Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
+}
+
 Write-Host "[5/5] Looking for the IT Asset Server..." -ForegroundColor Yellow
 $SERVER_URL = Find-Server
 if ($SERVER_URL) { Write-Host "      Using $SERVER_URL" -ForegroundColor Gray } else { $SERVER_URL = $SERVER_URLS[0] }
@@ -273,6 +304,7 @@ try {
     $res = Invoke-RestMethod -Uri "$SERVER_URL/api/assets/scan" -Method Post -Headers $Headers -Body $Payload -TimeoutSec 15
     Write-Host "========================================================" -ForegroundColor Green
     Write-Host "[SUCCESS] Specifications successfully sent to server!" -ForegroundColor Green
+    Show-Summary $res
     Write-Host "Auto-split items: $($res.items_count)" -ForegroundColor Cyan
     Write-Host "Admin can now review and assign property tag in dashboard." -ForegroundColor Green
     Write-Host "========================================================" -ForegroundColor Green

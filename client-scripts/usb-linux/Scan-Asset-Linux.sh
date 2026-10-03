@@ -111,8 +111,46 @@ if [ -z "$PAYLOAD" ]; then
 fi
 PAYLOAD="${PAYLOAD%\}},\"scannedAt\":\"$(date +%Y-%m-%dT%H:%M:%S)\",\"source\":\"usb-kit\"}"
 
-COMP=$(hostname 2>/dev/null | tr -c 'A-Za-z0-9_-' '_')
-FILE="${COMP}_$(date +%Y%m%d_%H%M%S).json"
+# File name = property number typed at the name prompt (host name when none was typed)
+if printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then
+  FILE_BASE="$EMP_NAME"
+else
+  FILE_BASE=$(hostname 2>/dev/null | tr -c 'A-Za-z0-9_-' '_')
+fi
+FILE="${FILE_BASE}_$(date +%Y%m%d_%H%M%S).json"
+
+# Value of a string field in the JSON payload (for the summary)
+jf() { printf '%s' "$PAYLOAD" | sed 's/,"diskHealth".*//' | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
+
+show_summary() { # [server reply]
+  echo "--------------------------------------------------------"
+  if printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then echo "  Property no. : $EMP_NAME"; else echo "  Name         : $EMP_NAME"; fi
+  echo "  Computer     : $(jf computerName)"
+  echo "  Model        : $(jf model)"
+  echo "  Serial       : $(jf serialNumber)"
+  echo "  OS           : $(jf os)"
+  echo "  CPU          : $(jf cpu)"
+  echo "  RAM          : $(jf ram)"
+  echo "  Disks        : $(jf storage)"
+  echo "  Root space   : $(jf cSpace)"
+  echo "  GPU          : $(jf gpu)"
+  echo "  Monitors     : $(jf monitors)"
+  echo "  IP           : $(jf ip)"
+  # drive health entries: "model":"..." ... "health_status":"..."
+  printf '%s' "$PAYLOAD" | grep -o '"model":"[^"]*","serial":"[^"]*"[^}]*"health_status":"[^"]*"' \
+    | sed 's/"model":"\([^"]*\)".*"health_status":"\([^"]*\)"/  Drive health : \1 = \2/'
+  if [ -n "$1" ]; then
+    if printf '%s' "$1" | grep -q '"is_update"[[:space:]]*:[[:space:]]*true'; then
+      echo "  Server       : already registered as $(printf '%s' "$1" | sed -n 's/.*"property_id":"\([^"]*\)".*/\1/p') - specs updated"
+    elif printf '%s' "$1" | grep -q '"is_pending_update"[[:space:]]*:[[:space:]]*true'; then
+      echo "  Server       : was already waiting for approval - updated"
+    else
+      echo "  Server       : added to the approval queue"
+    fi
+    printf '%s' "$1" | grep -o '"category":"[^"]*","name":"[^"]*"' | sed 's/"category":"\([^"]*\)","name":"\([^"]*\)"/    - \1: \2/'
+  fi
+  echo "--------------------------------------------------------"
+}
 
 # ---- 3) Send, or save offline ----
 SENT=0
@@ -126,6 +164,7 @@ if [ "$SENT" = "1" ]; then
   printf '%s' "$PAYLOAD" > "$SENT_DIR/$FILE" 2>/dev/null
   echo "========================================================"
   echo "[SUCCESS] Sent to $SERVER"
+  show_summary "$REPLY"
   echo "Admin can now review it in the dashboard (Pending scans)."
   echo "========================================================"
   # Deliver scans saved earlier on computers without network
@@ -147,6 +186,7 @@ else
   if printf '%s' "$OFFLINE" > "$SCAN_DIR/$FILE" 2>/dev/null; then
     echo "========================================================"
     echo "[SAVED] Not sent to the server. Saved to: $SCAN_DIR/$FILE"
+    show_summary ""
     echo "It is sent automatically on the next run on a connected computer,"
     echo "or import it from the panel (Tools > Import USB scans)."
     echo "========================================================"

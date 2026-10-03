@@ -1068,9 +1068,9 @@
           }
         }
 
-        const savedMsg = created.no_tag
-          ? `دستگاه بدون شماره اموال ثبت شد. کد داخلی: ${created.property_id}`
-          : `دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`;
+        const savedMsg = (created.no_tag
+          ? `✅ دستگاه بدون شماره اموال ثبت شد. کد داخلی: ${created.property_id}`
+          : `✅ دستگاه با موفقیت ثبت شد! شناسه اموال: ${created.property_id}`) + '\n\n' + savedSummary(created, pendingPhotos.length);
 
         if (reviewJob) {
           // Queue item done (its photos now belong to the asset): continue with the next ready one
@@ -1092,6 +1092,28 @@
         btn.textContent = '💾 ثبت نهایی دستگاه';
         btn.disabled = false;
       }
+    }
+
+    // Details of what was just saved, shown in the success message
+    function savedSummary(a, photoCount) {
+      const statusText = { active: 'در حال استفاده', in_storage: 'در انبار', repair: 'نیازمند تعمیر', retired: 'اسقاط' };
+      const rows = [
+        ['دسته‌بندی', categoryLabel(a.category)],
+        ['مدل', a.manufacturer_model],
+        ['سریال', a.serial_number],
+        ['وضعیت', statusText[a.status] || a.status],
+        ['سلامت', findHealth(a.health).fa],
+        ['پردازنده', a.cpu],
+        ['رم', a.ram],
+        ['هارد', a.storage_drives],
+        ['گرافیک', a.gpu],
+        ['نمایشگر', a.monitors],
+        ['کاربر', a.user_name],
+        ['محل', a.location],
+        ['واحد', a.department],
+        ['عکس', photoCount ? `${photoCount} عدد` : '']
+      ];
+      return rows.filter(([, v]) => v && String(v).trim()).map(([k, v]) => `• ${k}: ${v}`).join('\n');
     }
 
     function shrinkDataUrl(dataUrl, maxSide, quality) {

@@ -1182,6 +1182,17 @@ async function approvePendingItem(id, defaultCategory) {
     await checkPendingScans();
     await loadAssets();
     await loadStats();
+
+    // Show exactly what was registered
+    try {
+      const a = await (await fetch(`/api/assets/${data.asset_id}`)).json();
+      const statusText = { active: 'در حال استفاده', in_storage: 'در انبار', repair: 'نیازمند تعمیر', retired: 'اسقاط' };
+      const rows = [['مدل', a.manufacturer_model], ['سریال', a.serial_number], ['وضعیت', statusText[a.status] || a.status],
+        ['سلامت', typeof findHealth === 'function' ? findHealth(a.health).fa : a.health], ['پردازنده', a.cpu], ['رم', a.ram],
+        ['هارد', a.storage_drives], ['گرافیک', a.gpu], ['کاربر', a.user_name], ['نام سیستم', a.computer_name]];
+      alert(`✅ ثبت شد — شماره اموال: ${a.no_tag ? 'ندارد (' + a.property_id + ')' : a.property_id}\n\n` +
+        rows.filter(([, v]) => v && String(v).trim()).map(([k, v]) => `• ${k}: ${v}`).join('\n'));
+    } catch (e) {}
   } catch (e) {
     alert('خطا: ' + e.message);
   }
