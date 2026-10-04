@@ -72,6 +72,11 @@ node server.js
 > ⚠️ **نکته حیاتی:** `DANI_API_KEY` فقط در User scope ذخیره است؛ اگر داخل process سرور export نشود،
 > تمام تست‌های هوش مصنوعی (`lookup-model`، `test-ai`، اسکن عکس) با خطا مواجه می‌شوند.
 
+> 🔁 **راه‌اندازی خودکار:** تسک ویندوزی `Arka Asset Manager` موقع ورود به ویندوز و هر ۱۰ دقیقه
+> (اگر سرور خاموش بود) سرور را با `tools\start-server.ps1` بالا می‌آورد. بعد از کشتن سرور قدیمی می‌توانی
+> به‌جای دستور بالا `Start-ScheduledTask -TaskName 'Arka Asset Manager'` بزنی؛ لاگ در
+> `%LOCALAPPDATA%\ArkaAssetManager\server.log` است.
+
 سپس روی لاگ job صبر کن تا بنر راه‌اندازی را ببینی:
 
 ```
