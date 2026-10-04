@@ -115,6 +115,47 @@ function buildHealthPicker(container, input) {
   return set;
 }
 
+// ---- Storage text -> one chip per disk ("TOSHIBA DT01ACA050 (466GB) / Lexar SSD NM620 256GB (238GB)") ----
+function guessDiskKind(model) {
+  const m = String(model || '');
+  if (/nvme|\bsn\d{3}\b|mzvl|pm9\d\d|\b9[78]0\b|\bnm\d{3}\b/i.test(m)) return 'NVMe';
+  if (/ssd|\bsu\d{3}\b|a400|c800|evo|mx500|bx500|sandisk|lexar|green 2\.5|\bmz7/i.test(m)) return 'SSD';
+  if (/^st\d|wdc|\bwd\d|\bwd(blue|black|red|purple)|hgst|hitachi|toshiba|seagate|barracuda|maxtor|samsung hd\d|hdd|\bdt01|\bhd7\d\d|hard (drive|disk)/i.test(m)) return 'HDD';
+  return '';
+}
+
+function parseDisks(text) {
+  return String(text || '').split(' / ').map(s => s.trim())
+    .filter(s => s && !/^\d?$/.test(s) && !/usb device|flash drive/i.test(s))
+    .map(s => {
+      const m = s.match(/^(.*?)\s*\((\d+(?:\.\d+)?)\s*(GB|TB)\)\s*$/i);
+      const model = (m ? m[1] : s).replace(/\s+ATA Device$/i, '').trim();
+      let size = '';
+      if (m) {
+        const gb = Number(m[2]) * (m[3].toUpperCase() === 'TB' ? 1024 : 1);
+        size = gb >= 1000 ? `${Math.round(gb / 1024 * 10) / 10}TB` : `${Math.round(gb)}GB`;
+      }
+      return { model, size, kind: guessDiskKind(s) };
+    });
+}
+
+function diskChipsHtml(text) {
+  const disks = parseDisks(text);
+  if (!disks.length) return '';
+  const icon = { NVMe: '⚡', SSD: '💠', HDD: '💿' };
+  const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+  return `<span class="disk-chips">${disks.map(d => `
+    <span class="disk-chip kind-${(d.kind || 'other').toLowerCase()}" title="${e(d.model)}${d.size ? ' · ' + d.size : ''}">
+      <span class="disk-chip-icon">${icon[d.kind] || '💾'}</span>
+      ${d.kind ? `<span class="disk-chip-kind">${d.kind}</span>` : ''}
+      ${d.size ? `<span class="disk-chip-size">${e(d.size)}</span>` : ''}
+      <span class="disk-chip-model">${e(d.model)}</span>
+    </span>`).join('')}</span>`;
+}
+
+window.parseDisks = parseDisks;
+window.diskChipsHtml = diskChipsHtml;
+
 window.HEALTH_STATES = HEALTH_STATES;
 window.findHealth = findHealth;
 window.healthLabel = healthLabel;

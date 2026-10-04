@@ -2070,3 +2070,28 @@ input.form-control:disabled { opacity: 0.55; cursor: not-allowed; }
   .report-card, .report-kpi { break-inside: avoid; background: #fff !important; border-color: #ccc !important; color: #000 !important; }
   .rt-bar span { background: #555 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---- Disk chips: one bubble per drive ---- */
+.disk-chips { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; min-width: 0; }
+.disk-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem; max-width: 100%;
+  padding: 0.12rem 0.55rem; border-radius: 999px; font-size: 0.78rem; line-height: 1.6;
+  border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.12); color: #e2e8f0;
+  direction: ltr; white-space: nowrap;
+}
+.disk-chip-icon { font-size: 0.85rem; }
+.disk-chip-kind { font-weight: 800; letter-spacing: 0.02em; }
+.disk-chip-size { font-weight: 700; }
+.disk-chip-model { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; max-width: 16rem; }
+.disk-chip.kind-nvme { background: rgba(168, 85, 247, 0.15); border-color: rgba(192, 132, 252, 0.5); }
+.disk-chip.kind-nvme .disk-chip-kind { color: #d8b4fe; }
+.disk-chip.kind-ssd { background: rgba(16, 185, 129, 0.13); border-color: rgba(52, 211, 153, 0.5); }
+.disk-chip.kind-ssd .disk-chip-kind { color: #6ee7b7; }
+.disk-chip.kind-hdd { background: rgba(245, 158, 11, 0.12); border-color: rgba(251, 191, 36, 0.45); }
+.disk-chip.kind-hdd .disk-chip-kind { color: #fcd34d; }
+/* On dashboard cards keep them compact: type + size, model in the tooltip */
+.asset-key-specs .disk-chip-model { display: none; }
+body.light-mode .disk-chip { color: #0f172a; }
+body.light-mode .disk-chip.kind-nvme .disk-chip-kind { color: #7e22ce; }
+body.light-mode .disk-chip.kind-ssd .disk-chip-kind { color: #047857; }
+body.light-mode .disk-chip.kind-hdd .disk-chip-kind { color: #b45309; }

@@ -355,7 +355,10 @@ function keySpecsHtml(asset) {
   if (['pc', 'laptop', 'server'].includes(fam)) {
     if (hasRealSpec(asset.cpu)) specs.push({ icon: '🖥️', value: asset.cpu, label: 'CPU' });
     if (hasRealSpec(asset.ram)) specs.push({ icon: '🧠', value: asset.ram, label: 'RAM' });
-    if (hasRealSpec(asset.storage_drives)) specs.push({ icon: '💾', value: asset.storage_drives, label: 'Storage' });
+    // one chip per disk instead of "A (466GB) / B (238GB)"
+    const chips = hasRealSpec(asset.storage_drives) && typeof diskChipsHtml === 'function' ? diskChipsHtml(asset.storage_drives) : '';
+    if (chips) specs.push({ icon: '💾', value: asset.storage_drives, label: 'Storage', html: chips });
+    else if (hasRealSpec(asset.storage_drives)) specs.push({ icon: '💾', value: asset.storage_drives, label: 'Storage' });
   } else if (fam === 'monitor') {
     specs = monitorHighlights(`${asset.monitors || ''} ${asset.manufacturer_model || ''}`);
     // Monitor model codes carry the diagonal: S27C31x, C24F390, LA2206, P232, S231d
@@ -374,7 +377,7 @@ function keySpecsHtml(asset) {
   return `<div class="asset-key-specs">${specs.slice(0, 4).map(s => `
     <div class="key-spec" title="${escapeHtml((s.label ? s.label + ': ' : '') + s.value)}">
       <span class="key-spec-icon">${s.icon}</span>
-      <span class="key-spec-value">${escapeHtml(s.value)}</span>
+      ${s.html ? s.html : `<span class="key-spec-value">${escapeHtml(s.value)}</span>`}
     </div>`).join('')}</div>`;
 }
 

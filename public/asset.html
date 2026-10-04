@@ -430,7 +430,10 @@
       document.getElementById('spec-ip').textContent = a.ip_address || '-';
       document.getElementById('spec-cpu').textContent = a.cpu || '-';
       document.getElementById('spec-ram').textContent = a.ram || '-';
-      document.getElementById('spec-storage').textContent = a.storage_drives || '-';
+      // one chip per disk (type, size, model)
+      const storageChips = typeof diskChipsHtml === 'function' ? diskChipsHtml(a.storage_drives) : '';
+      if (storageChips) document.getElementById('spec-storage').innerHTML = storageChips;
+      else document.getElementById('spec-storage').textContent = a.storage_drives || '-';
       document.getElementById('spec-cspace').textContent = a.c_space || '-';
       document.getElementById('spec-gpu').textContent = a.gpu || '-';
       document.getElementById('spec-monitors').textContent = a.monitors || '-';
