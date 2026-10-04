@@ -973,7 +973,7 @@ function guessDiskType(model) {
   const m = String(model || '');
   if (/nvme|\bsn\d{3}\b|mzvl|pm9\d\d|\b9[78]0\b|\bnm\d{3}\b/i.test(m)) return 'NVMe';
   if (/ssd|\bsu\d{3}\b|a400|c800|evo|mx500|bx500|sandisk|lexar|green 2\.5|\bmz7/i.test(m)) return 'SSD';
-  if (/^st\d|wdc|\bwd\d|\bwd(blue|black|red|purple)|hgst|hitachi|toshiba|seagate|barracuda|hdd|\bdt01|\bhd7\d\d|hard (drive|disk)/i.test(m)) return 'HDD';
+  if (/^st\d|wdc|\bwd\d|\bwd(blue|black|red|purple)|hgst|hitachi|toshiba|seagate|barracuda|maxtor|samsung hd\d|hdd|\bdt01|\bhd7\d\d|hard (drive|disk)/i.test(m)) return 'HDD';
   return 'نامشخص';
 }
 
