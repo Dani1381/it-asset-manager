@@ -1811,6 +1811,17 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'Invalid scan data: computer_name or serial_number required' });
       }
 
+      // Monitors with the property numbers typed for them (same order). Offline (bench) scans keep only
+      // monitors that got a property number - an untagged screen there is just the test monitor.
+      const scanMonitors = (() => {
+        const ids = Array.isArray(data.monitorPropertyIds) ? data.monitorPropertyIds : (Array.isArray(data.monitor_property_ids) ? data.monitor_property_ids : []);
+        const raw = String(data.monitors || '');
+        if (data.offline !== true) return { names: data.monitors, ids };
+        const parts = raw.split(' / ').map(s => s.trim());
+        const kept = parts.map((n, i) => ({ n, id: String(ids[i] ?? '').trim() })).filter(x => x.n && x.id && !/^(-|none|no|nadaare|ندارد|0)$/i.test(x.id));
+        return { names: kept.map(x => x.n).join(' / '), ids: kept.map(x => x.id) };
+      })();
+
       const result = queries.ingestScan({
         user_name: data.user_name || data.userName,
         computer_name: compName,
@@ -1827,10 +1838,13 @@ const server = http.createServer(async (req, res) => {
         gpu: typeof data.gpu === 'string'
           ? data.gpu.split(' / ').map(g => g.replace(/^[0-9a-f:.]+ [^:]*: /i, '').replace(/\s*\(rev [0-9a-fx]+\)\s*$/i, '')).join(' / ')
           : data.gpu,
-        // Offline (bench) scans only have a test monitor attached: never record it
-        monitors: data.offline === true ? '' : data.monitors,
+        monitors: scanMonitors.names,
         disk_health: data.disk_health || data.diskHealth || null,
-        source: data.source === 'usb-kit' ? 'usb-kit' : null
+        source: data.source === 'usb-kit' ? 'usb-kit' : null,
+        // Property numbers typed in the scanner popups (computer + one per monitor, same order as `monitors`)
+        property_id: data.property_id || data.propertyId || null,
+        monitor_property_ids: scanMonitors.ids,
+        offline: data.offline === true
       });
 
       if (data.source === 'usb-kit') queries.markPendingSource(result.batch_id, 'usb-kit');

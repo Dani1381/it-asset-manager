@@ -264,6 +264,8 @@ function initDb() {
   if (!pendingCols.includes('disk_health')) db.exec('ALTER TABLE pending_scans ADD COLUMN disk_health TEXT');
   // Where a scan came from ('usb-kit' = flash-drive kit, those devices go to storage on approval)
   if (!pendingCols.includes('source')) db.exec('ALTER TABLE pending_scans ADD COLUMN source TEXT');
+  // Property number typed in the scanner popups (computer and each monitor); prefilled on approval
+  if (!pendingCols.includes('property_id')) db.exec('ALTER TABLE pending_scans ADD COLUMN property_id TEXT');
 
   // Migration: manual "cover photo" flag per asset
   const photoCols = db.prepare('PRAGMA table_info(asset_photos)').all().map(c => c.name);
@@ -402,6 +404,13 @@ function migrateModelNames() {
     }
   }
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('model_names_normalized_v1', ?)").run(String(changes.length));
+}
+
+// Property number typed in a scanner popup: Latin digits, no spaces; empty / "none" = no tag
+function cleanPropertyId(v) {
+  const s = String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim();
+  if (!s || /^(-|none|no|nadaare|nadare|ندارد|0)$/i.test(s)) return null;
+  return s.replace(/\s+/g, '').slice(0, 40);
 }
 
 const SPEC_PLACEHOLDER_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
@@ -1166,6 +1175,7 @@ const queries = {
           c_space = COALESCE(?, c_space),
           gpu = COALESCE(?, gpu),
           disk_health = COALESCE(?, disk_health),
+          property_id = COALESCE(?, property_id),
           created_at = ?
         WHERE id = ?
       `).run(
@@ -1179,6 +1189,7 @@ const queries = {
         scanData.c_space || null,
         scanData.gpu || null,
         diskHealth ? diskHealth.json : null,
+        cleanPropertyId(scanData.property_id),
         now,
         existingPending.id
       );
@@ -1235,17 +1246,23 @@ const queries = {
     if (diskHealth) {
       db.prepare('UPDATE pending_scans SET disk_health = ? WHERE id = ?').run(diskHealth.json, Number(pcRes.lastInsertRowid));
     }
-    createdItems.push({ id: Number(pcRes.lastInsertRowid), category: mainCategory, name: scanData.manufacturer_model || scanData.computer_name });
+    const pcPropertyId = cleanPropertyId(scanData.property_id);
+    if (pcPropertyId) db.prepare('UPDATE pending_scans SET property_id = ? WHERE id = ?').run(pcPropertyId, Number(pcRes.lastInsertRowid));
+    createdItems.push({ id: Number(pcRes.lastInsertRowid), category: mainCategory, name: scanData.manufacturer_model || scanData.computer_name, property_id: pcPropertyId });
 
     // Auto-Split Connected Monitors as separate individual assets
     const rawMonitors = scanData.monitors || '';
+    const monitorIds = Array.isArray(scanData.monitor_property_ids) ? scanData.monitor_property_ids : [];
     if (rawMonitors && rawMonitors.trim() && rawMonitors.toLowerCase() !== 'default display') {
-      const monList = rawMonitors.split(/[\/,;]+/)
-        .map(s => s.trim())
-        .filter(s => s && s.length > 2 && s.toLowerCase() !== 'default display');
+      // Split on " / " only, so model names containing "/" or "," stay whole and stay aligned with their property numbers
+      const parts = rawMonitors.includes(' / ') ? rawMonitors.split(' / ') : rawMonitors.split(/[\/,;]+/);
+      const monList = parts.map((s, idx) => ({ name: s.trim(), pid: cleanPropertyId(monitorIds[idx]) }))
+        .filter(x => x.name && x.name.length > 2 && x.name.toLowerCase() !== 'default display');
 
       for (let i = 0; i < monList.length; i++) {
-        const monModel = monList[i];
+        // Offline (bench) scans: only monitors given a property number are real; the rest is the test screen
+        if (scanData.offline && !monList[i].pid) continue;
+        const monModel = monList[i].name;
         const monNotes = `نمایشگر شماره ${i + 1} متصل به سیستم ${scanData.computer_name || 'کاربر'} (${scanData.user_name || ''})`;
 
         const monRes = insertPending.run(
@@ -1266,7 +1283,8 @@ const queries = {
           now
         );
 
-        createdItems.push({ id: Number(monRes.lastInsertRowid), category: 'Monitor', name: monModel });
+        if (monList[i].pid) db.prepare('UPDATE pending_scans SET property_id = ? WHERE id = ?').run(monList[i].pid, Number(monRes.lastInsertRowid));
+        createdItems.push({ id: Number(monRes.lastInsertRowid), category: 'Monitor', name: monModel, property_id: monList[i].pid });
       }
     }
 

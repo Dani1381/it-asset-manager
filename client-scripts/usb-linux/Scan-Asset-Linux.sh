@@ -111,8 +111,39 @@ if [ -z "$PAYLOAD" ]; then
 fi
 PAYLOAD="${PAYLOAD%\}},\"scannedAt\":\"$(date +%Y-%m-%dT%H:%M:%S)\",\"source\":\"usb-kit\"}"
 
-# File name = property number typed at the name prompt (host name when none was typed)
-if printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then
+# ---- Property numbers: one popup for the computer, one per detected monitor ----
+ask() { # title text -> answer on stdout (zenity window when there is a desktop, otherwise the terminal)
+  if { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } && command -v zenity >/dev/null 2>&1; then
+    zenity --entry --title="$1" --text="$2" 2>/dev/null
+  elif [ -t 0 ]; then
+    local a=""; read -r -t 180 -p "$2 " a; echo "$a"
+  fi
+}
+field() { printf '%s' "$PAYLOAD" | sed 's/,"diskHealth".*//' | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
+
+PROPERTY_ID=$(ask "IT Asset Inventory - Computer" "Property number (asset tag) of THIS COMPUTER ($(field model)) - leave empty if it has no tag:" | tr -d '[:space:]')
+MON_NAMES=()
+MON_IDS=()
+while IFS= read -r mon || [ -n "$mon" ]; do   # "|| -n" keeps the last monitor (no trailing newline)
+  mon=$(printf '%s' "$mon" | sed 's/^ *//; s/ *$//')
+  [ -z "$mon" ] && continue
+  [ "$mon" = "Default Display" ] && continue
+  MON_NAMES+=("$mon")
+done < <(field monitors | sed 's| / |\n|g')
+for i in "${!MON_NAMES[@]}"; do
+  MON_IDS+=("$(ask "IT Asset Inventory - Monitor $((i + 1))" "Property number of MONITOR $((i + 1)) of ${#MON_NAMES[@]} (${MON_NAMES[$i]}) - leave empty if it has no tag:" | tr -d '[:space:]')")
+done
+log "Computer property no.: ${PROPERTY_ID:-none}"
+for i in "${!MON_NAMES[@]}"; do log "Monitor $((i + 1)): ${MON_NAMES[$i]} -> ${MON_IDS[$i]:-no tag}"; done
+
+ids_json=""
+for v in "${MON_IDS[@]}"; do ids_json="${ids_json:+$ids_json,}\"$(json_str "$v")\""; done
+PAYLOAD="${PAYLOAD%\}},\"propertyId\":\"$(json_str "$PROPERTY_ID")\",\"monitorPropertyIds\":[${ids_json}]}"
+
+# File name = the computer's property number (or a number typed at the name prompt, else the host name)
+if [ -n "$PROPERTY_ID" ]; then
+  FILE_BASE=$(printf '%s' "$PROPERTY_ID" | tr -c 'A-Za-z0-9_-' '_')
+elif printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then
   FILE_BASE="$EMP_NAME"
 else
   FILE_BASE=$(hostname 2>/dev/null | tr -c 'A-Za-z0-9_-' '_')
@@ -124,7 +155,10 @@ jf() { printf '%s' "$PAYLOAD" | sed 's/,"diskHealth".*//' | sed -n "s/.*\"$1\":\
 
 show_summary() { # [server reply]
   echo "--------------------------------------------------------"
-  if printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then echo "  Property no. : $EMP_NAME"; else echo "  Name         : $EMP_NAME"; fi
+  if [ -n "$PROPERTY_ID" ]; then echo "  Property no. : $PROPERTY_ID"
+  elif printf '%s' "$EMP_NAME" | grep -qE '^[0-9]{3,6}$'; then echo "  Property no. : $EMP_NAME"
+  else echo "  Property no. : (none)"; fi
+  echo "  User         : $EMP_NAME"
   echo "  Computer     : $(jf computerName)"
   echo "  Model        : $(jf model)"
   echo "  Serial       : $(jf serialNumber)"
@@ -134,7 +168,11 @@ show_summary() { # [server reply]
   echo "  Disks        : $(jf storage)"
   echo "  Root space   : $(jf cSpace)"
   echo "  GPU          : $(jf gpu)"
-  echo "  Monitors     : $(jf monitors)"
+  if [ "${#MON_NAMES[@]}" -gt 0 ]; then
+    for i in "${!MON_NAMES[@]}"; do echo "  Monitor $((i + 1))    : ${MON_NAMES[$i]}  [property no.: ${MON_IDS[$i]:-no tag}]"; done
+  else
+    echo "  Monitors     : $(jf monitors)"
+  fi
   echo "  IP           : $(jf ip)"
   # drive health entries: "model":"..." ... "health_status":"..."
   printf '%s' "$PAYLOAD" | grep -o '"model":"[^"]*","serial":"[^"]*"[^}]*"health_status":"[^"]*"' \
@@ -181,8 +219,8 @@ if [ "$SENT" = "1" ]; then
   done
 else
   [ -n "$SERVER" ] && report "error" "server rejected the scan: ${REPLY:0:200}"
-  # Offline = bench / workshop scan: the screen attached is only a test monitor, so it is left out
-  OFFLINE=$(printf '%s' "$PAYLOAD" | sed 's/"monitors":"[^"]*"/"monitors":"","offline":true/')
+  # Offline = bench / workshop scan: the server keeps only monitors given a property number (an untagged one is the test screen)
+  OFFLINE="${PAYLOAD%\}},\"offline\":true}"
   if printf '%s' "$OFFLINE" > "$SCAN_DIR/$FILE" 2>/dev/null; then
     echo "========================================================"
     echo "[SAVED] Not sent to the server. Saved to: $SCAN_DIR/$FILE"

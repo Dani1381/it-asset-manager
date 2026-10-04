@@ -1119,7 +1119,7 @@ async function loadPendingScansList() {
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.4rem;">
             <div style="display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 260px;">
               <label style="font-size: 0.82rem; color: #94a3b8; white-space: nowrap;">شماره اموال فیزیکی:</label>
-              <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${escapeHtml(usbPropId(it) || nextId)}" placeholder="مثال: AST-0010">
+              <input type="text" id="pending-prop-id-${it.id}" class="form-control" style="max-width: 170px; padding: 0.3rem 0.6rem; font-size: 0.88rem; font-family: monospace;" value="${escapeHtml(it.property_id || usbPropId(it) || nextId)}" title="${it.property_id ? 'شماره اموالی که در اسکنر وارد شد' : ''}" placeholder="مثال: AST-0010">
               <label class="no-tag-toggle" style="margin: 0;">
                 <input type="checkbox" id="pending-no-tag-${it.id}" onchange="document.getElementById('pending-prop-id-${it.id}').disabled = this.checked">
                 <span>ندارد</span>

@@ -157,6 +157,23 @@ try {
     if ($MonList) { $Monitors = ($MonList -join ' / ') }
 } catch {}
 
+# Property numbers (asset tags): one popup for the computer, then one per detected monitor
+$PropertyId = ""
+$MonitorPropertyIds = @()
+$MonNames = @()
+if ($MonList) { $MonNames = @($MonList) }
+try {
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+    $PropertyId = [Microsoft.VisualBasic.Interaction]::InputBox("Property number (asset tag) of THIS COMPUTER:`n$Model`n`nLeave empty if it has no tag.", "IT Asset Inventory - Computer", "")
+    for ($i = 0; $i -lt $MonNames.Count; $i++) {
+        $MonitorPropertyIds += [Microsoft.VisualBasic.Interaction]::InputBox("Property number (asset tag) of MONITOR $($i + 1) of $($MonNames.Count):`n$($MonNames[$i])`n`nLeave empty if it has no tag.", "IT Asset Inventory - Monitor $($i + 1)", "")
+    }
+} catch {}
+$PropertyId = ([string]$PropertyId).Trim()
+$MonitorPropertyIds = @($MonitorPropertyIds | ForEach-Object { ([string]$_).Trim() })
+if ($PropertyId) { Write-Host "      Computer property no.: $PropertyId" -ForegroundColor Gray }
+for ($i = 0; $i -lt $MonNames.Count; $i++) { $p = if ($MonitorPropertyIds[$i]) { $MonitorPropertyIds[$i] } else { 'no tag' }; Write-Host "      Monitor $($i + 1): $($MonNames[$i]) -> $p" -ForegroundColor Gray }
+
 Write-Host "[4/5] Checking drive health (SMART)..." -ForegroundColor Cyan
 $IsAdmin = $false
 try {
@@ -249,7 +266,10 @@ if (-not $IsAdmin) {
 # What was found / sent, shown at the end of every run
 function Show-Summary($res) {
     Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
-    if ($UserName -match '^\d{3,6}$') { Write-Host ("  Property no. : " + $UserName) -ForegroundColor White } else { Write-Host ("  Name         : " + $UserName) }
+    if ($PropertyId) { Write-Host ("  Property no. : " + $PropertyId) -ForegroundColor White }
+    elseif ($UserName -match '^\d{3,6}$') { Write-Host ("  Property no. : " + $UserName) -ForegroundColor White }
+    else { Write-Host "  Property no. : (none)" }
+    Write-Host ("  User         : " + $UserName)
     Write-Host ("  Computer     : " + $Comp)
     Write-Host ("  Model        : " + $Model)
     Write-Host ("  Serial       : " + $Serial)
@@ -259,7 +279,12 @@ function Show-Summary($res) {
     Write-Host ("  Disks        : " + $Storage)
     Write-Host ("  C: space     : " + $CSpace)
     Write-Host ("  GPU          : " + $GPU)
-    Write-Host ("  Monitors     : " + $Monitors)
+    if ($MonNames.Count) {
+        for ($i = 0; $i -lt $MonNames.Count; $i++) {
+            $mp = if ($MonitorPropertyIds[$i]) { $MonitorPropertyIds[$i] } else { 'no tag' }
+            Write-Host ("  Monitor " + ($i + 1) + "    : " + $MonNames[$i] + "  [property no.: " + $mp + "]")
+        }
+    } else { Write-Host ("  Monitors     : " + $Monitors) }
     Write-Host ("  IP           : " + $IP)
     foreach ($dh in $DiskHealth) {
         $h = "  Drive health : $($dh.model) = $($dh.health_status)"
@@ -294,6 +319,8 @@ $Payload = @{
     gpu = $GPU
     monitors = $Monitors
     diskHealth = @($DiskHealth)
+    propertyId = $PropertyId
+    monitorPropertyIds = @($MonitorPropertyIds)
 } | ConvertTo-Json -Depth 6
 
 try {
