@@ -43,7 +43,7 @@ function applyRoleUI() {
 
   if (!isAdmin()) {
     // Viewer role: hide admin-only controls
-    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn', 'nav-logs-btn', 'nav-scanner-win', 'nav-scanner-linux', 'nav-usb-kit', 'nav-usb-import', 'nav-rotate-key'];
+    const adminOnly = ['nav-users-btn', 'nav-settings-btn', 'nav-sync-photos-btn', 'nav-add-btn', 'fab-add-btn', 'nav-backup-btn', 'nav-logs-btn', 'nav-scanner-win', 'nav-scanner-linux', 'nav-usb-kit', 'nav-usb-import', 'nav-rotate-key', 'nav-bulk-photo'];
     adminOnly.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';

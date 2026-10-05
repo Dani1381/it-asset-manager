@@ -1423,6 +1423,47 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { input: name, name: queries.normalizeModelName(name) });
     }
 
+    // GET /api/models/merge-suggestions — names that look like the same product
+    if (method === 'GET' && pathname === '/api/models/merge-suggestions') {
+      return sendJson(res, 200, { groups: queries.modelMergeSuggestions() });
+    }
+
+    // POST /api/models/merge { from: [names], to: name } — one name for all of them
+    if (method === 'POST' && pathname === '/api/models/merge') {
+      const d = await parseRequestBody(req);
+      const from = (Array.isArray(d.from) ? d.from : []).map(s => String(s || '').trim()).filter(Boolean);
+      const to = String(d.to || '').trim();
+      if (!from.length || !to) return sendJson(res, 400, { error: 'نام مدل‌ها مشخص نیست' });
+      const changed = queries.mergeModels(from, to);
+      queries.addLog('INFO', 'MODEL_MERGE', `${changed} دستگاه به مدل «${to}» یکی شد`, from.join(' | '), req.socket?.remoteAddress || '');
+      return sendJson(res, 200, { success: true, changed });
+    }
+
+    // POST /api/photos/bulk { image: dataUrl, asset_ids: [..], set_primary } — one photo for many devices
+    if (method === 'POST' && pathname === '/api/photos/bulk') {
+      const d = await parseRequestBody(req);
+      const ids = [...new Set((Array.isArray(d.asset_ids) ? d.asset_ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+      const m = String(d.image || '').match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+      if (!m) return sendJson(res, 400, { error: 'عکس نامعتبر است' });
+      if (!ids.length) return sendJson(res, 400, { error: 'هیچ دستگاهی انتخاب نشده' });
+      if (ids.length > 500) return sendJson(res, 400, { error: 'حداکثر ۵۰۰ دستگاه در هر بار' });
+      const ext = m[1] === 'png' ? '.png' : m[1] === 'webp' ? '.webp' : '.jpg';
+      const buf = Buffer.from(m[2], 'base64');
+      let added = 0;
+      const skipped = [];
+      for (const id of ids) {
+        const asset = queries.getAssetById(id);
+        if (!asset) { skipped.push(id); continue; }
+        const fileName = `asset_${id}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}_bulk${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, fileName), buf);
+        const photoId = queries.addPhoto(id, fileName, String(d.original_name || 'bulk.jpg').slice(0, 120), String(d.caption || 'Device Photo (bulk)').slice(0, 120), { propagate: false });
+        if (d.set_primary) queries.setPrimaryPhoto(photoId);
+        added++;
+      }
+      queries.addLog('SUCCESS', 'PHOTO_BULK', `یک عکس برای ${added} دستگاه ثبت شد`, d.set_primary ? 'به‌عنوان کاور' : '', req.socket?.remoteAddress || '');
+      return sendJson(res, 200, { success: true, added, skipped });
+    }
+
     // GET /api/models/search?q=...&category=... (similar models already in the DB, as you type)
     if (method === 'GET' && pathname === '/api/models/search') {
       const q = parsedUrl.searchParams.get('q') || '';

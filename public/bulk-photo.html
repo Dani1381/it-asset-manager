@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>عکس گروهی - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container bulk-page">
+    <h2>📷 عکس گروهی</h2>
+    <p class="bulk-help">یک عکس انتخاب کنید و مشخص کنید برای کدام دستگاه‌ها ثبت شود؛ مثلاً یک عکس برای همه‌ی «HP EliteDesk 800 G3» ها.</p>
+
+    <section class="report-card bulk-photo-box">
+      <div class="bulk-photo-pick" onclick="document.getElementById('bulk-file').click()">
+        <img id="bulk-preview" alt="" hidden>
+        <div id="bulk-placeholder">📸 برای انتخاب عکس کلیک کنید</div>
+      </div>
+      <input type="file" id="bulk-file" accept="image/*" hidden onchange="pickPhoto(event)">
+      <label class="bulk-opt"><input type="checkbox" id="bulk-primary" checked> این عکس، عکس اصلی (کاور) دستگاه‌ها باشد</label>
+    </section>
+
+    <section class="report-card">
+      <h3>1) انتخاب سریع بر اساس مدل</h3>
+      <div id="model-buttons" class="bulk-models"></div>
+    </section>
+
+    <section class="report-card">
+      <h3>2) یا دستگاه‌ها را تک‌تک انتخاب کنید <span class="report-total" id="sel-count">0 انتخاب</span></h3>
+      <div class="bulk-filters">
+        <input type="text" id="q" class="form-control" placeholder="جستجو: مدل، شماره اموال، محل..." oninput="renderList()">
+        <select id="cat" class="filter-select" onchange="renderList()"><option value="all">📁 همه دسته‌ها</option></select>
+        <label class="bulk-opt"><input type="checkbox" id="only-nophoto" onchange="renderList()"> فقط دستگاه‌های بدون عکس</label>
+      </div>
+      <div class="bulk-list-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="selectShown(true)">✅ انتخاب همه‌ی نمایش‌داده‌شده‌ها</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="selectShown(false)">✖ برداشتن انتخاب</button>
+      </div>
+      <div id="device-list" class="bulk-list"></div>
+    </section>
+
+    <div class="bulk-submit">
+      <button type="button" id="submit-btn" class="btn btn-success" onclick="submitBulk()">💾 ثبت عکس برای دستگاه‌های انتخاب‌شده</button>
+      <div id="bulk-status"></div>
+    </div>
+  </main>
+
+  <script>
+    try {
+      const u = JSON.parse(localStorage.getItem('arka_user') || 'null');
+      if (!u) location.href = '/login.html';
+      else if (!u.is_admin) { alert('این صفحه فقط برای مدیر سیستم است.'); location.href = '/'; }
+    } catch (e) { location.href = '/login.html'; }
+
+    let assets = [];
+    let photo = null;
+    const selected = new Set();
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+
+    for (const c of ASSET_CATEGORIES) {
+      const o = document.createElement('option'); o.value = c.value; o.textContent = `${c.icon} ${c.fa}`;
+      document.getElementById('cat').appendChild(o);
+    }
+
+    async function load() {
+      assets = await (await fetch('/api/assets?limit=100000')).json();
+      // models with how many devices each has
+      const byModel = {};
+      for (const a of assets) {
+        const m = a.manufacturer_model || 'نامشخص';
+        (byModel[m] ||= []).push(a);
+      }
+      document.getElementById('model-buttons').innerHTML = Object.entries(byModel)
+        .sort((x, y) => y[1].length - x[1].length)
+        .map(([m, list]) => `<button type="button" class="bulk-model" data-model="${esc(m)}" onclick="selectModel(this.dataset.model)">
+            ${categoryIcon(list[0].category)} ${esc(m)} <span class="bulk-model-n">${list.length}</span></button>`).join('');
+      renderList();
+    }
+
+    function shownAssets() {
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      const cat = document.getElementById('cat').value;
+      const noPhoto = document.getElementById('only-nophoto').checked;
+      return assets.filter(a =>
+        (cat === 'all' || a.category === cat) &&
+        (!noPhoto || !a.primary_photo) &&
+        (!q || [a.manufacturer_model, a.property_id, a.location, a.user_name, a.computer_name].join(' ').toLowerCase().includes(q)));
+    }
+
+    function renderList() {
+      const list = shownAssets();
+      document.getElementById('device-list').innerHTML = list.map(a => `
+        <label class="bulk-item ${selected.has(a.id) ? 'is-on' : ''}">
+          <input type="checkbox" ${selected.has(a.id) ? 'checked' : ''} onchange="toggle(${a.id}, this.checked)">
+          ${a.primary_photo ? `<img src="/uploads/${encodeURIComponent(a.primary_photo)}" alt="" loading="lazy">` : `<span class="bulk-noimg">${categoryIcon(a.category)}</span>`}
+          <span class="bulk-item-text">
+            <strong>${esc(a.property_id)}</strong> · ${esc(a.manufacturer_model || '-')}
+            <small>${esc(categoryLabel(a.category))}${a.location ? ' · ' + esc(a.location) : ''} · 📷 ${a.photo_count || 0}</small>
+          </span>
+        </label>`).join('') || '<div class="report-empty">دستگاهی با این فیلتر نیست</div>';
+      document.getElementById('sel-count').textContent = `${selected.size} انتخاب`;
+    }
+
+    function toggle(id, on) { on ? selected.add(id) : selected.delete(id); renderList(); }
+    function selectShown(on) { for (const a of shownAssets()) on ? selected.add(a.id) : selected.delete(a.id); renderList(); }
+    function selectModel(m) {
+      for (const a of assets) if ((a.manufacturer_model || 'نامشخص') === m) selected.add(a.id);
+      document.getElementById('q').value = m === 'نامشخص' ? '' : m;
+      renderList();
+    }
+
+    function pickPhoto(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          // same size the add form uses
+          const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          photo = { data: c.toDataURL('image/jpeg', 0.82), name: file.name };
+          const p = document.getElementById('bulk-preview');
+          p.src = photo.data; p.hidden = false;
+          document.getElementById('bulk-placeholder').hidden = true;
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function submitBulk() {
+      const status = document.getElementById('bulk-status');
+      if (!photo) { alert('اول عکس را انتخاب کنید.'); return; }
+      if (!selected.size) { alert('هیچ دستگاهی انتخاب نشده.'); return; }
+      if (!confirm(`این عکس برای ${selected.size} دستگاه ثبت شود؟`)) return;
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true; status.textContent = '⏳ در حال ثبت...';
+      try {
+        const res = await fetch('/api/photos/bulk', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: photo.data, original_name: photo.name, asset_ids: [...selected], set_primary: document.getElementById('bulk-primary').checked })
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'خطا');
+        status.textContent = `✅ عکس برای ${d.added} دستگاه ثبت شد.`;
+        selected.clear();
+        await load();
+      } catch (e) {
+        status.textContent = '⚠️ ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

@@ -276,6 +276,7 @@ function initDb() {
   // Physical condition set by the operator (default healthy) — values in HEALTH_VALUES
   if (!assetCols.includes('health')) db.exec("ALTER TABLE assets ADD COLUMN health TEXT NOT NULL DEFAULT 'healthy'");
   migrateModelNames();
+  migrateModelNamesV2();
   // Placeholder specs like "N/A (monitor, no CPU)" were saved by older AI lookups; they are not data
   for (const col of SPEC_PLACEHOLDER_FIELDS) {
     db.exec(`UPDATE assets SET ${col} = NULL WHERE UPPER(TRIM(${col})) IN ('N/A', 'NA') OR UPPER(TRIM(${col})) LIKE 'N/A (%'`);
@@ -381,9 +382,22 @@ function canonicalModelName(raw) {
     s = (brandless ? ['Samsung', ...parts] : parts).join(' ');
   }
 
+  // Samsung variant / region letters after the 3-digit model: "C24F390FHM" / "S22F355HN" -> "C24F390" / "S22F355"
+  s = s.split(' ').map((w, i, arr) => (/^samsung$/i.test(arr[0]) && i > 0) ? w.replace(/^([SCU]\d{2}[A-Z]\d{3})[A-Z]{1,3}$/, '$1') : w).join(' ');
+
+  // Long form-factor names -> the usual abbreviation
+  s = s.replace(/\bSmall Form Factor\b/gi, 'SFF').replace(/\bMicro Tower\b/gi, 'MT').replace(/\bUltra[- ]?Slim Desktop\b/gi, 'USDT').replace(/\bDesktop Mini\b/gi, 'DM');
+  // Sizes and descriptions that are not part of the model ("21.5-INCH", "LED Monitor", trailing "PC")
+  s = s.replace(/\s+\d{2}(?:\.\d)?\s*(?:-?\s*inch(?:es)?|"|''|in\b)/gi, '');
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(/\s+(PC|Desktop(?: PC)?|Computer|Business PC|(?:LED|LCD|IPS|TFT)?\s*Monitor|Display|Full HD|FHD|LED|LCD)$/i, '').trim();
+  } while (s !== prev && s.split(' ').length > 2);
+
   // Model codes typed in lower case ("c24f390") -> upper case; mixed case is left alone
   s = s.split(' ').map(w => (/\d/.test(w) && /[a-z]/.test(w) && w === w.toLowerCase() && w.length > 3) ? w.toUpperCase() : w).join(' ');
-  return s.slice(0, 120);
+  return s.replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
 // Same model already stored under another spelling? Use the stored one.
@@ -393,7 +407,13 @@ function matchExistingModelName(name) {
   const rows = db.prepare(`SELECT manufacturer_model AS m, COUNT(*) AS n FROM assets
     WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != '' GROUP BY manufacturer_model ORDER BY n DESC`).all();
   const hit = rows.find(r => compactText(r.m) === key);
-  return hit ? hit.m : name;
+  if (hit) return hit.m;
+  // A stored family name with a wildcard "x" ("Samsung S27C31x") covers "Samsung S27C310"
+  const wild = rows.find(r => {
+    const k = compactText(r.m);
+    return /x$/.test(k) && k.length === key.length && key.startsWith(k.slice(0, -1)) && /\d$/.test(key);
+  });
+  return wild ? wild.m : name;
 }
 
 function normalizeModelName(raw) {
@@ -424,6 +444,67 @@ function migrateModelNames() {
     }
   }
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('model_names_normalized_v1', ?)").run(String(changes.length));
+}
+
+// Second pass (after the "extra words" rules): re-normalise every name and merge names that become the same
+// model into the most used spelling. Backup first; runs once.
+function migrateModelNamesV2() {
+  if (db.prepare("SELECT value FROM settings WHERE key = 'model_names_normalized_v2'").get()) return;
+  const rows = db.prepare(`SELECT manufacturer_model AS m, COUNT(*) AS n FROM assets
+    WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != '' GROUP BY manufacturer_model ORDER BY n DESC`).all();
+  const groups = new Map(); // compact canonical key -> { target, names[] }
+  for (const r of rows) {
+    const canon = canonicalModelName(r.m);
+    const key = compactText(canon);
+    if (!groups.has(key)) groups.set(key, { target: canon, names: [] });
+    groups.get(key).names.push(r.m);
+  }
+  const changes = [];
+  for (const g of groups.values()) for (const n of g.names) if (n !== g.target) changes.push([n, g.target]);
+  if (changes.length) {
+    try {
+      const dir = path.join(__dirname, 'backups');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      db.exec(`VACUUM INTO '${path.join(dir, `inventory_before_model_merge_${Date.now()}.db`).replace(/'/g, "''")}'`);
+    } catch (e) {
+      console.error('Model merge skipped: backup failed', e.message);
+      return;
+    }
+    const upd = db.prepare('UPDATE assets SET manufacturer_model = ? WHERE manufacturer_model = ?');
+    for (const [from, to] of changes) {
+      upd.run(to, from);
+      console.log(`[model merge] "${from}" -> "${to}"`);
+    }
+  }
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('model_names_normalized_v2', ?)").run(String(changes.length));
+}
+
+// Models that look like the same product under different names (for the manual merge tool)
+function modelMergeSuggestions() {
+  const rows = db.prepare(`SELECT manufacturer_model AS model, category, COUNT(*) AS count FROM assets
+    WHERE manufacturer_model IS NOT NULL AND TRIM(manufacturer_model) != '' GROUP BY manufacturer_model, category`).all();
+  const groups = [];
+  const used = new Set();
+  for (let i = 0; i < rows.length; i++) {
+    if (used.has(i)) continue;
+    const g = [rows[i]];
+    for (let j = i + 1; j < rows.length; j++) {
+      if (used.has(j) || rows[j].category !== rows[i].category) continue;
+      const a = compactText(rows[i].model), b = compactText(rows[j].model);
+      // one name contains the other (extra words), or they are nearly the same string
+      const contained = (a.length >= 6 && b.includes(a)) || (b.length >= 6 && a.includes(b));
+      // different model numbers (S22F350 vs S22F355, G2 vs G3) are different products, however alike the text
+      const digits = s => (s.match(/\d+/g) || []).join('-');
+      const similar = diceSimilarity(a, b) >= 0.9 && digits(a) === digits(b);
+      if (contained || similar) { g.push(rows[j]); used.add(j); }
+    }
+    if (g.length > 1) {
+      used.add(i);
+      g.sort((x, y) => y.count - x.count || x.model.length - y.model.length);
+      groups.push({ category: g[0].category, suggested: g[0].model, models: g });
+    }
+  }
+  return groups;
 }
 
 // Property number typed in a scanner popup: Latin digits, no spaces; empty / "none" = no tag
@@ -809,6 +890,22 @@ const queries = {
 
   normalizeModelName(name) {
     return normalizeModelName(name);
+  },
+
+  modelMergeSuggestions() {
+    return modelMergeSuggestions();
+  },
+
+  // Rename every asset of the given models to one name (manual merge tool)
+  mergeModels(fromNames, toName) {
+    const to = String(toName || '').trim();
+    if (!to) return 0;
+    const upd = db.prepare('UPDATE assets SET manufacturer_model = ?, updated_at = ? WHERE manufacturer_model = ?');
+    const now = new Date().toISOString();
+    let n = 0;
+    for (const f of fromNames) if (f !== to) n += upd.run(to, now, f).changes;
+    if (n) scheduleBackup();
+    return n;
   },
 
   // ---- Component moves (parts history) ----
@@ -1448,7 +1545,7 @@ const queries = {
   },
 
   // Photos
-  addPhoto(assetId, fileName, originalName = '', caption = '') {
+  addPhoto(assetId, fileName, originalName = '', caption = '', { propagate = true } = {}) {
     const now = new Date().toISOString();
     const result = db.prepare(`
       INSERT INTO asset_photos (asset_id, file_name, original_name, caption, created_at)
@@ -1457,7 +1554,8 @@ const queries = {
     const photoId = Number(result.lastInsertRowid);
 
     // Propagate this new photo to all other assets of the same model that have no photo
-    try {
+    // (off for bulk uploads: the user picked exactly which devices get it)
+    if (propagate) try {
       const asset = db.prepare('SELECT manufacturer_model FROM assets WHERE id = ?').get(assetId);
       if (asset && asset.manufacturer_model) {
         queries.propagatePhotoToSameModel(photoId, asset.manufacturer_model);

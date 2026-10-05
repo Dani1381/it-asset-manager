@@ -49,6 +49,21 @@
       <div id="count-result" class="count-result"></div>
     </section>
 
+    <section class="report-card merge-box no-print" id="merge-box" hidden>
+      <h3>🔗 ادغام مدل‌های تکراری <span class="report-total">یک کالا با چند اسم</span></h3>
+      <p class="merge-help">اسم‌های تکراری موقع ثبت خودکار یکی می‌شوند (کلمه‌های اضافه مثل «PC»، «LED Monitor»، «21.5-INCH» حذف و «Small Form Factor» به SFF تبدیل می‌شود). اینجا موارد باقی‌مانده را دستی یکی کنید.</p>
+      <div id="merge-suggestions"></div>
+      <details class="merge-manual">
+        <summary>ادغام دستی: چند مدل را انتخاب کنید و یک اسم نهایی بدهید</summary>
+        <input type="text" id="merge-filter" class="form-control" placeholder="فیلتر مدل‌ها..." oninput="renderManualMerge()">
+        <div id="merge-manual-list" class="merge-manual-list"></div>
+        <div class="merge-manual-actions">
+          <input type="text" id="merge-target" class="form-control" placeholder="اسم نهایی مدل" dir="ltr">
+          <button type="button" class="btn btn-primary btn-sm" onclick="manualMerge()">🔗 ادغام انتخاب‌شده‌ها</button>
+        </div>
+      </details>
+    </section>
+
     <div class="report-grid" id="tables"></div>
   </main>
 
@@ -151,6 +166,56 @@
           </div>`).join('');
     }
 
+    // ---- Merge duplicate model names (admins) ----
+    const IS_ADMIN = (() => { try { return !!JSON.parse(localStorage.getItem('arka_user') || '{}').is_admin; } catch (e) { return false; } })();
+
+    async function loadMergeSuggestions() {
+      if (!IS_ADMIN) return;
+      document.getElementById('merge-box').hidden = false;
+      const { groups } = await (await fetch('/api/models/merge-suggestions')).json();
+      document.getElementById('merge-suggestions').innerHTML = groups.length ? groups.map((g, gi) => `
+        <div class="merge-group">
+          ${g.models.map((m, mi) => `
+            <label class="merge-option"><input type="radio" name="mg-${gi}" value="${esc(m.model)}" ${mi === 0 ? 'checked' : ''}>
+              <span dir="ltr">${esc(m.model)}</span> <span class="bulk-model-n">${m.count}</span></label>`).join('')}
+          <button type="button" class="btn btn-primary btn-sm" onclick="mergeGroup(${gi})">🔗 همه را به اسم انتخاب‌شده تبدیل کن</button>
+        </div>`).join('') : '<div class="report-empty">✅ مدل تکراری پیدا نشد.</div>';
+      window.__mergeGroups = groups;
+      renderManualMerge();
+    }
+
+    async function doMerge(from, to) {
+      const res = await fetch('/api/models/merge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }) });
+      const d = await res.json();
+      if (!res.ok) { alert(d.error || 'خطا'); return; }
+      alert(`✅ ${d.changed} دستگاه به «${to}» تبدیل شد.`);
+      await load();
+      await loadMergeSuggestions();
+    }
+
+    function mergeGroup(gi) {
+      const g = window.__mergeGroups[gi];
+      const to = document.querySelector(`input[name="mg-${gi}"]:checked`).value;
+      const from = g.models.map(m => m.model).filter(m => m !== to);
+      if (confirm(`${from.join('، ')}\n\n← همه «${to}» شوند؟`)) doMerge(from, to);
+    }
+
+    function renderManualMerge() {
+      if (!report) return;
+      const f = (document.getElementById('merge-filter').value || '').toLowerCase();
+      document.getElementById('merge-manual-list').innerHTML = report.models
+        .filter(m => !f || m.model.toLowerCase().includes(f))
+        .map(m => `<label class="merge-option"><input type="checkbox" class="mm" value="${esc(m.model)}" onchange="if (this.checked && !document.getElementById('merge-target').value) document.getElementById('merge-target').value = this.value">
+          <span dir="ltr">${esc(m.model)}</span> <span class="bulk-model-n">${m.count}</span></label>`).join('');
+    }
+
+    function manualMerge() {
+      const from = [...document.querySelectorAll('.mm:checked')].map(x => x.value);
+      const to = document.getElementById('merge-target').value.trim();
+      if (from.length < 1 || !to) { alert('حداقل یک مدل را انتخاب و اسم نهایی را وارد کنید.'); return; }
+      if (confirm(`${from.join('، ')}\n\n← همه «${to}» شوند؟`)) doMerge(from, to);
+    }
+
     function downloadCsv() {
       if (!report) return;
       const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -174,7 +239,7 @@
       URL.revokeObjectURL(a.href);
     }
 
-    load();
+    load().then(loadMergeSuggestions);
   </script>
 </body>
 </html>
