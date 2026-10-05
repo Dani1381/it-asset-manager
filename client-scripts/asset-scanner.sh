@@ -332,6 +332,8 @@ if [ -z "$MONITORS" ] && command -v xrandr >/dev/null 2>&1; then
   ')
   while IFS=$'\t' read -r conn hex; do
     [ -z "$hex" ] && continue
+    # built-in panel of a laptop / all-in-one: part of the device, not a monitor asset
+    case "$conn" in *eDP*|*LVDS*|*DSI*) continue ;; esac
     mon_name=$(printf '%s' "$hex" | edid_name_from_hex)
     [ -z "$mon_name" ] && mon_name="$conn"
     if [ -z "$MONITORS" ]; then MONITORS="$mon_name"; else MONITORS="$MONITORS / $mon_name"; fi
@@ -340,6 +342,15 @@ fi
 
 [ -z "$MONITORS" ] && MONITORS="Default Display"
 echo "      Detected monitors: $MONITORS"
+
+# Chassis (SMBIOS): 13 = all-in-one, 8/9/10/14/30/31/32 = portable / laptop; the server uses it for the category
+CHASSIS=""
+case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null)" in
+  13) CHASSIS="all-in-one" ;;
+  8|9|10|14|30|31|32) CHASSIS="laptop" ;;
+  3|4|5|6|7|15|16|35|36) CHASSIS="desktop" ;;
+  17|23|28|29) CHASSIS="server" ;;
+esac
 
 # ----------------------------------------------------------------------------
 # Build JSON payload (identical field names as the Windows scanner)
@@ -446,7 +457,7 @@ for dev in /sys/block/*; do
 done
 [ -z "$SMARTCTL" ] && warn "      Tip: install smartmontools and run as root (sudo) for full drive health data."
 
-PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumber":"%s","os":"%s","ip":"%s","cpu":"%s","ram":"%s","storage":"%s","cSpace":"%s","gpu":"%s","monitors":"%s","diskHealth":[%s]}' \
+PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumber":"%s","os":"%s","ip":"%s","cpu":"%s","ram":"%s","storage":"%s","cSpace":"%s","gpu":"%s","monitors":"%s","chassis":"%s","diskHealth":[%s]}' \
   "$(json_escape "$USER_NAME")" \
   "$(json_escape "$COMP")" \
   "$(json_escape "$MODEL")" \
@@ -459,6 +470,7 @@ PAYLOAD=$(printf '{"userName":"%s","computerName":"%s","model":"%s","serialNumbe
   "$(json_escape "$CSpace")" \
   "$(json_escape "$GPU")" \
   "$(json_escape "$MONITORS")" \
+  "$CHASSIS" \
   "$DISK_HEALTH_JSON")
 
 if [ "$DRY_RUN" = "1" ]; then

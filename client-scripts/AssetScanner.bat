@@ -173,11 +173,26 @@ try { $GPU = (((Get-CimInstance Win32_VideoController -ErrorAction Stop).Name -j
 
 Write-Host "[3/5] Scanning Connected Monitors..." -ForegroundColor Cyan
 $Monitors = "Default Display"
+$MonList = @()
 try {
-    $MonList = (Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue) | ForEach-Object {
-        -join [char[]]($_.UserFriendlyName | Where-Object {$_ -ne 0})
-    } | Where-Object {$_ -ne ''}
-    if ($MonList) { $Monitors = ($MonList -join ' / ') }
+    # Connection type per screen: a built-in panel (laptop / all-in-one: internal, LVDS, embedded DisplayPort)
+    # is part of the computer, not a separate monitor asset
+    $conn = @{}
+    Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorConnectionParams -ErrorAction SilentlyContinue | ForEach-Object { $conn[$_.InstanceName] = [int64]$_.VideoOutputTechnology }
+    $internalTypes = @(2147483648, -2147483648, 6, 11, 13)
+    $MonList = @(Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue | Where-Object {
+        -not ($conn.ContainsKey($_.InstanceName) -and ($internalTypes -contains $conn[$_.InstanceName]))
+    } | ForEach-Object { -join [char[]]($_.UserFriendlyName | Where-Object {$_ -ne 0}) } | Where-Object {$_ -ne ''})
+    if ($MonList.Count) { $Monitors = ($MonList -join ' / ') }
+} catch {}
+
+# Chassis (SMBIOS): 13 = all-in-one, 8/9/10/14/30/31/32 = laptop; the server uses it for the category
+$Chassis = ""
+try {
+    $ct = @((Get-CimInstance Win32_SystemEnclosure -ErrorAction Stop).ChassisTypes)[0]
+    if ($ct -eq 13) { $Chassis = 'all-in-one' }
+    elseif (@(8, 9, 10, 14, 30, 31, 32) -contains $ct) { $Chassis = 'laptop' }
+    elseif (@(3, 4, 5, 6, 7, 15, 16, 35, 36) -contains $ct) { $Chassis = 'desktop' }
 } catch {}
 
 # Property numbers (asset tags): one popup for the computer, then one per detected monitor
@@ -344,6 +359,7 @@ $Payload = @{
     diskHealth = @($DiskHealth)
     propertyId = $PropertyId
     monitorPropertyIds = @($MonitorPropertyIds)
+    chassis = $Chassis
 } | ConvertTo-Json -Depth 6
 
 try {
@@ -351,7 +367,7 @@ try {
         "Content-Type" = "application/json; charset=utf-8"
         "X-IAM-Key" = $SERVER_KEY
     }
-    $res = Invoke-RestMethod -Uri "$SERVER_URL/api/assets/scan" -Method Post -Headers $Headers -Body $Payload -TimeoutSec 15
+    $res = Invoke-RestMethod -Uri "$SERVER_URL/api/assets/scan" -Method Post -Headers $Headers -Body ([System.Text.Encoding]::UTF8.GetBytes($Payload)) -TimeoutSec 15
     Write-Host "========================================================" -ForegroundColor Green
     Write-Host "[SUCCESS] Specifications successfully sent to server!" -ForegroundColor Green
     Show-Summary $res

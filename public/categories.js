@@ -4,6 +4,7 @@
 const ASSET_CATEGORIES = [
   { value: 'PC',           icon: '🖥️', fa: 'کامپیوتر / کیس',            en: 'Computers / Towers',      family: 'pc' },
   { value: 'Single PC',    icon: '💻', fa: 'تک کیس / سیستم کاربر',       en: 'Single PC / User System', family: 'pc' },
+  { value: 'All-in-One',   icon: '🖥️', fa: 'آل‌این‌وان (All-in-One)',      en: 'All-in-One PCs',          family: 'pc' },
   { value: 'Laptop',       icon: '💻', fa: 'لپ‌تاپ',                      en: 'Laptops',                 family: 'laptop' },
   { value: 'Server',       icon: '🗄️', fa: 'سرور',                        en: 'Servers',                 family: 'server' },
   { value: 'Monitor',      icon: '📺', fa: 'مانیتور',                     en: 'Monitors',                family: 'monitor' },

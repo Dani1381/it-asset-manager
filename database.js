@@ -509,6 +509,10 @@ function modelMergeSuggestions() {
   return groups;
 }
 
+function isAllInOneModel(model) {
+  return /all.?in.?one|\baio\b|eliteone|proone|\bimac\b|ideacentre\s*a\d|thinkcentre\s*m\d{2,3}z/i.test(String(model || ''));
+}
+
 // Property number typed in a scanner popup: Latin digits, no spaces; empty / "none" = no tag
 function cleanPropertyId(v) {
   const s = String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim();
@@ -1395,10 +1399,12 @@ const queries = {
     db.exec('BEGIN IMMEDIATE');
     try {
 
-    // Determine PC / Laptop Category
+    // Determine PC / All-in-One / Laptop category (SMBIOS chassis from the scanner first, then the model name)
     let mainCategory = 'PC';
     const m = (scanData.manufacturer_model || '').toLowerCase();
-    if (m.includes('laptop') || m.includes('notebook') || m.includes('latitude') || m.includes('thinkpad') || m.includes('elitebook') || m.includes('probook')) {
+    if (scanData.chassis === 'all-in-one' || isAllInOneModel(m)) {
+      mainCategory = 'All-in-One';
+    } else if (scanData.chassis === 'laptop' || m.includes('laptop') || m.includes('notebook') || m.includes('latitude') || m.includes('thinkpad') || m.includes('elitebook') || m.includes('probook')) {
       mainCategory = 'Laptop';
     }
 
@@ -1853,11 +1859,11 @@ const queries = {
     const repair = db.prepare("SELECT COUNT(*) as count FROM assets WHERE status = 'repair'").get().count;
     const retired = db.prepare("SELECT COUNT(*) as count FROM assets WHERE status = 'retired'").get().count;
 
-    const pcs = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category IN ('PC', 'Single PC', 'Laptop')").get().count;
+    const pcs = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category IN ('PC', 'Single PC', 'All-in-One', 'Laptop')").get().count;
     const diskAlerts = db.prepare("SELECT COUNT(*) as count FROM assets WHERE disk_health_status IN ('warning', 'critical')").get().count;
     const noTag = db.prepare('SELECT COUNT(*) as count FROM assets WHERE no_tag = 1').get().count;
     const monitors = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category = 'Monitor'").get().count;
-    const others = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category NOT IN ('PC', 'Single PC', 'Laptop', 'Monitor')").get().count;
+    const others = db.prepare("SELECT COUNT(*) as count FROM assets WHERE category NOT IN ('PC', 'Single PC', 'All-in-One', 'Laptop', 'Monitor')").get().count;
 
     const withPhotos = db.prepare('SELECT COUNT(DISTINCT asset_id) as count FROM asset_photos').get().count;
     const pendingPhotos = total - withPhotos;

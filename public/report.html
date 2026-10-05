@@ -110,7 +110,7 @@
         fetch('/api/assets?limit=100000').then(x => x.json())
       ]);
       report = r;
-      const computers = ['PC', 'Single PC', 'Laptop', 'Server'];
+      const computers = ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'];
       allAssets = a.filter(x => (st === 'all' || x.status === st) && (cat === 'all' || (cat === 'computers' ? computers.includes(x.category) : x.category === cat)));
       render();
       runCount();

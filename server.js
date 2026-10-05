@@ -290,7 +290,7 @@ async function testGeminiKey(key) {
 
 // Map whatever category text the AI returns ("modem", "Wi-Fi router", "مودم", ...)
 // onto one of the app's category values. Falls back to the model name.
-const CATEGORY_VALUES = ['PC', 'Single PC', 'Laptop', 'Server', 'Monitor', 'Storage', 'Printer', 'Modem', 'Router',
+const CATEGORY_VALUES = ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server', 'Monitor', 'Storage', 'Printer', 'Modem', 'Router',
   'Access Point', 'Network', 'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral',
   'Refrigerator', 'TV', 'Attendance Device', 'Water Cooler', 'Heater', 'Air Conditioner', 'Kitchen Appliance', 'Fan', 'Office Machine', 'Other'];
 const CATEGORY_KEYWORDS = [
@@ -303,6 +303,7 @@ const CATEGORY_KEYWORDS = [
   ['Air Conditioner', /air\s*condition|\bsplit\b|\bac unit\b|کولر|اسپلیت/i],
   ['Kitchen Appliance', /microwave|kettle|samovar|tea\s*maker|coffee|toaster|مایکروویو|سماور|چای\s*ساز|قهوه\s*ساز/i],
   ['Fan', /\bfan\b|پنکه/i],
+  ['All-in-One', /all.?in.?one|\baio\b|eliteone|proone|\bimac\b|ideacentre\s*a\d|thinkcentre\s*m\d{2,3}z|آل\s*این\s*وان/i],
   ['Office Machine', /shredder|laminat|binding|paper\s*cutter|کاغذ\s*خرد|پرس|لمینت/i],
   ['Modem', /modem|adsl|vdsl|dsl-|\blte\b|\b4g\b|\b5g\b|gpon|ont\b|archer\s*vr|\bvr\d{3}|\btl-mr\d|\bmr\d{4}|\bb3\d{2}\b|\be5\d{3}|مودم/i],
   ['Access Point', /access\s*point|\bap\b|unifi|\beap\d|cap\s*ac|mesh|اکسس/i],
@@ -349,11 +350,11 @@ CATEGORY GUIDE (pick the single best match, using the exact English value):
 - Server: rack/tower servers (ProLiant, PowerEdge)
 - UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
 - Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
-- PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+- PC: desktop computers / cases; All-in-One: computer built into its screen (EliteOne, ProOne, OptiPlex AIO, iMac); Laptop; Monitor; Printer: printers, scanners, copiers
 - Refrigerator; TV: televisions; Attendance Device: fingerprint / card time-attendance terminals; Water Cooler: water dispensers; Heater: electric heaters / radiators; Air Conditioner: split / AC units; Kitchen Appliance: microwave, kettle, samovar, coffee maker; Fan; Office Machine: shredder, laminator, binding machine
 
 {
-  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
+  "category": "PC" | "Single PC" | "All-in-One" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
   "manufacturer_model": "Full brand and model name, e.g. HP EliteDesk 800 G3 SFF or Samsung S27C31x",
   "serial_number": "Serial number (S/N, Serial No, Service Tag) if visible, else null",
   "cpu": "CPU / Processor details if mentioned, else null",
@@ -390,7 +391,7 @@ const SMART_SCAN_MAX_IMAGES = 6;
 const SCAN_FIELDS = ['property_id', 'category', 'manufacturer_model', 'serial_number', 'computer_name', 'ip_address',
   'user_name', 'location', 'department', 'purchase_date', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors'];
 
-const SCAN_CATEGORY_LIST = '"PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other"';
+const SCAN_CATEGORY_LIST = '"PC" | "All-in-One" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other"';
 
 function toLatinDigits(s) {
   return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
@@ -571,7 +572,7 @@ function removeQueueFiles(files) {
 
 // Fill empty spec fields from the online model lookup. Computers: CPU / GPU only (RAM and disks vary per unit).
 async function enrichFromInternet(fields) {
-  const fam = ['PC', 'Single PC', 'Laptop', 'Server'].includes(fields.category) ? 'computer' : (fields.category || 'other');
+  const fam = ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'].includes(fields.category) ? 'computer' : (fields.category || 'other');
   // A same-model record already in the database fills these when the asset is saved; no need to ask online
   if (queries.getModelSpecTemplate(fields.manufacturer_model, fam === 'computer' ? null : fields.category)) return [];
 
@@ -816,13 +817,13 @@ CATEGORY GUIDE (pick the single best match, using the exact English value):
 - Server: rack/tower servers (ProLiant, PowerEdge)
 - UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
 - Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
-- PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+- PC: desktop computers / cases; All-in-One: computer built into its screen (EliteOne, ProOne, OptiPlex AIO, iMac); Laptop; Monitor; Printer: printers, scanners, copiers
 - Refrigerator; TV: televisions; Attendance Device: fingerprint / card time-attendance terminals; Water Cooler: water dispensers; Heater: electric heaters / radiators; Air Conditioner: split / AC units; Kitchen Appliance: microwave, kettle, samovar, coffee maker; Fan; Office Machine: shredder, laminator, binding machine
 
 {
   "recognized": true,
   "canonical_name": "Full clean model name (e.g. HP EliteDesk 800 G3 Small Form Factor)",
-  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
+  "category": "PC" | "Single PC" | "All-in-One" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
   "default_cpu": "Most common standard CPU for this model (e.g. Intel Core i5-6500 CPU @ 3.20GHz)",
   "cpu_options": ["Intel Core i5-6500 @ 3.20GHz", "Intel Core i7-6700 @ 3.40GHz", "Intel Core i3-6100 @ 3.70GHz"],
   "default_ram": "Standard factory RAM (e.g. 8 GB DDR4 or 16 GB)",
@@ -1037,7 +1038,7 @@ function buildSummaryReport(assets) {
   const byCategory = {}, byStatus = {}, byHealth = {}, byBrand = {}, byModel = {}, byRam = {}, byCpu = {}, byLocation = {};
   const diskType = {}, diskSize = {}, diskModel = {};
   const models = {};
-  const computerCats = new Set(['PC', 'Single PC', 'Laptop', 'Server']);
+  const computerCats = new Set(['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server']);
   let diskCount = 0, noDisk = 0, noTag = 0, totalValue = 0, pricedCount = 0;
 
   for (const a of assets) {
@@ -1979,7 +1980,32 @@ const server = http.createServer(async (req, res) => {
         return { names: kept.map(x => x.n).join(' / '), ids: kept.map(x => x.id) };
       })();
 
+      // All-in-one / laptop: its own built-in screen is reported like a monitor by older scanners.
+      // Drop "monitors" that are that panel: named after the computer's model ("OptiPlex 7440" on an
+      // "OptiPlex 7440 AIO") or a bare panel code ("LGD05A3", "AUO213E").
+      const deviceModel = String(data.manufacturer_model || data.model || '');
+      const chassis = String(data.chassis || '').toLowerCase();
+      const builtInScreen = chassis === 'all-in-one' || chassis === 'laptop' ||
+        /all.?in.?one|\baio\b|eliteone|proone|\bimac\b|laptop|notebook|latitude|thinkpad|elitebook|probook|ideapad|vostro|inspiron \d{4}\b/i.test(deviceModel);
+      if (builtInScreen && scanMonitors.names) {
+        const modelKey = deviceModel.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const modelNums = deviceModel.match(/\d{3,5}/g) || [];
+        const parts = String(scanMonitors.names).split(' / ');
+        const keep = parts.map((n, i) => ({ n: n.trim(), id: scanMonitors.ids[i] })).filter(x => {
+          const k = x.n.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const isPanelCode = /^(lgd|auo|boe|cmn|sdc|shp|ivo|chm|ncp|sec|mei|hsd|inl|lpl|cpt|ltn|lp\d)[0-9a-z]{2,6}$/i.test(k);
+          const namedLikeDevice = (k.length >= 4 && modelKey.includes(k)) || modelNums.some(num => x.n.includes(num)) || /built.?in|internal|all.?in.?one|\baio\b/i.test(x.n);
+          return x.n && !isPanelCode && !namedLikeDevice;
+        });
+        if (keep.length !== parts.length) {
+          queries.addLog('INFO', 'SCANNER', `نمایشگر داخلی دستگاه ${deviceModel || compName} مانیتور جدا حساب نشد`, parts.filter(p => !keep.some(k => k.n === p.trim())).join(' | '));
+        }
+        scanMonitors.names = keep.map(x => x.n).join(' / ');
+        scanMonitors.ids = keep.map(x => x.id);
+      }
+
       const result = queries.ingestScan({
+        chassis: chassis || null,
         user_name: data.user_name || data.userName,
         computer_name: compName,
         manufacturer_model: data.manufacturer_model || data.model,
@@ -2404,7 +2430,7 @@ Respond ONLY in JSON format:
     if (method === 'GET' && pathname === '/api/reports/summary') {
       const status = parsedUrl.searchParams.get('status') || 'all';
       const category = parsedUrl.searchParams.get('category') || 'all';
-      const computerCats = ['PC', 'Single PC', 'Laptop', 'Server'];
+      const computerCats = ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'];
       const assets = queries.getAllAssets({ limit: 100000 }).filter(a =>
         (status === 'all' || a.status === status) &&
         (category === 'all' || (category === 'computers' ? computerCats.includes(a.category) : a.category === category)));

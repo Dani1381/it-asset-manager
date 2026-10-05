@@ -979,7 +979,7 @@
       // property numbers for the target box
       try {
         const list = await (await fetch('/api/assets?limit=10000')).json();
-        document.getElementById('parts-asset-ids').innerHTML = list.filter(a => a.id !== currentAsset.id && ['PC', 'Single PC', 'Laptop', 'Server'].includes(a.category))
+        document.getElementById('parts-asset-ids').innerHTML = list.filter(a => a.id !== currentAsset.id && ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'].includes(a.category))
           .map(a => `<option value="${escapeHtml(a.property_id)}">${escapeHtml(a.manufacturer_model || '')}</option>`).join('');
       } catch (e) {}
     }
