@@ -129,7 +129,9 @@
         kpi(dt.NVMe || 0, 'هارد NVMe') +
         kpi(dt.HDD || 0, 'هارد HDD (مکانیکی)') +
         kpi(r.computers_without_disk, 'کامپیوتر بدون هارد', r.computers_without_disk ? 'is-warn' : '') +
-        kpi(r.no_tag, 'بدون شماره اموال', r.no_tag ? 'is-warn' : '');
+        kpi(r.no_tag, 'بدون شماره اموال', r.no_tag ? 'is-warn' : '') +
+        // total value only when some devices have a price
+        (r.priced_count ? kpi(formatPrice(r.total_value, true).replace(' تومان', ''), `ارزش کل (تومان) — ${r.priced_count} دستگاه قیمت‌دار`, 'is-money') : '');
 
       document.getElementById('tables').innerHTML = SECTIONS.map(s => {
         const rows = r[s.key] || [];

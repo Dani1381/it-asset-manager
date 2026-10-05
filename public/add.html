@@ -282,6 +282,11 @@
             </div>
 
             <div class="form-group">
+              <label class="form-label">💰 قیمت (تومان) — اختیاری</label>
+              <input type="text" id="price" class="form-control" inputmode="numeric" placeholder="مثلاً 12,500,000" dir="ltr">
+            </div>
+
+            <div class="form-group">
               <label class="form-label" data-i18n="field_ip">🌐 آدرس شبکه (IP)</label>
               <input type="text" id="ip_address" class="form-control" placeholder="192.168.10.194">
             </div>
@@ -454,6 +459,7 @@
       setHealth('initial_ok');
       showHint();
 
+      bindPriceInput(document.getElementById('price'));
       refreshQueueCount();
       const jobParam = new URLSearchParams(location.search).get('job');
       if (jobParam) loadReviewJob(parseInt(jobParam, 10));
@@ -870,7 +876,7 @@
 
     // ---- Photo intake queue ----
     const QUEUE_FORM_FIELDS = ['category', 'status', 'health', 'property_id', 'manufacturer_model', 'serial_number', 'user_name',
-      'computer_name', 'location', 'department', 'purchase_date', 'ip_address', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'notes'];
+      'computer_name', 'location', 'department', 'purchase_date', 'ip_address', 'price', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'notes'];
     let reviewJob = null; // set when this page reviews a queued item (?job=ID)
 
     // Photos go to the background queue; the form is cleared for the next device
@@ -1011,6 +1017,7 @@
         gpu: document.getElementById('gpu').value.trim(),
         monitors: document.getElementById('monitors').value.trim(),
         ip_address: document.getElementById('ip_address').value.trim(),
+        price: document.getElementById('price').value.trim() || null,
         notes: document.getElementById('notes').value.trim(),
         is_automated: 0
       };
@@ -1111,6 +1118,7 @@
         ['کاربر', a.user_name],
         ['محل', a.location],
         ['واحد', a.department],
+        ['قیمت', typeof formatPrice === 'function' ? formatPrice(a.price) : ''],
         ['عکس', photoCount ? `${photoCount} عدد` : '']
       ];
       return rows.filter(([, v]) => v && String(v).trim()).map(([k, v]) => `• ${k}: ${v}`).join('\n');

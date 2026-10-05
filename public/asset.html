@@ -87,6 +87,7 @@
               <tr><td class="label-col" data-i18n="field_comp_name">نام سیستم:</td><td class="val-col" id="spec-comp-name"></td></tr>
               <tr><td class="label-col" data-i18n="field_location">مکان / اتاق:</td><td class="val-col" id="spec-location"></td></tr>
               <tr><td class="label-col" data-i18n="field_department">واحد / بخش:</td><td class="val-col" id="spec-department"></td></tr>
+              <tr id="price-row" hidden><td class="label-col">💰 قیمت:</td><td class="val-col" id="spec-price" style="font-weight: 800; color: #fcd34d;"></td></tr>
               <tr><td class="label-col">سیستم عامل (OS):</td><td class="val-col" id="spec-os"></td></tr>
               <tr><td class="label-col" data-i18n="field_ip">آدرس شبکه (IP):</td><td class="val-col" id="spec-ip" style="font-family: monospace;"></td></tr>
               <tr><td class="label-col" data-i18n="field_cpu">پردازنده (CPU):</td><td class="val-col" id="spec-cpu"></td></tr>
@@ -294,6 +295,11 @@
                 <input type="text" id="edit-department" class="form-control">
               </div>
 
+              <div class="form-group">
+                <label class="form-label">💰 قیمت (تومان) — خالی = نمایش داده نمی‌شود</label>
+                <input type="text" id="edit-price" class="form-control" inputmode="numeric" placeholder="مثلاً 12,500,000" dir="ltr">
+              </div>
+
               <div class="form-group full-width">
                 <label class="form-label" data-i18n="field_notes">توضیحات</label>
                 <textarea id="edit-notes" class="form-control"></textarea>
@@ -449,6 +455,10 @@
       document.getElementById('spec-comp-name').textContent = a.computer_name || '-';
       document.getElementById('spec-location').textContent = a.location || '-';
       document.getElementById('spec-department').textContent = a.department || '-';
+      // price row only when there is a price
+      const priceText = typeof formatPrice === 'function' ? formatPrice(a.price) : '';
+      document.getElementById('price-row').hidden = !priceText;
+      document.getElementById('spec-price').textContent = priceText;
       document.getElementById('spec-os').textContent = a.os_version || '-';
       document.getElementById('spec-ip').textContent = a.ip_address || '-';
       document.getElementById('spec-cpu').textContent = a.cpu || '-';
@@ -821,6 +831,9 @@
       document.getElementById('edit-monitors').value = currentAsset.monitors || '';
       document.getElementById('edit-location').value = currentAsset.location || '';
       document.getElementById('edit-department').value = currentAsset.department || '';
+      const priceInput = document.getElementById('edit-price');
+      priceInput.value = currentAsset.price ? Number(currentAsset.price).toLocaleString('en-US') : '';
+      if (!priceInput.dataset.bound) { bindPriceInput(priceInput); priceInput.dataset.bound = '1'; }
       document.getElementById('edit-notes').value = currentAsset.notes || '';
 
       document.getElementById('edit-modal').classList.add('active');
@@ -857,6 +870,7 @@
         monitors: document.getElementById('edit-monitors').value.trim(),
         location: document.getElementById('edit-location').value.trim(),
         department: document.getElementById('edit-department').value.trim(),
+        price: document.getElementById('edit-price').value.trim() || null,
         notes: document.getElementById('edit-notes').value.trim()
       };
 

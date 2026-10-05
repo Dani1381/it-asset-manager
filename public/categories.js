@@ -19,6 +19,15 @@ const ASSET_CATEGORIES = [
   { value: 'Projector',    icon: '📽️', fa: 'ویدئو پروژکتور',              en: 'Projectors',              family: 'projector' },
   { value: 'Tablet',       icon: '📱', fa: 'تبلت / موبایل',               en: 'Tablets / Phones',        family: 'tablet' },
   { value: 'Peripheral',   icon: '⌨️', fa: 'کیبورد / ماوس / هدست',        en: 'Keyboards / Mice / Headsets', family: 'peripheral' },
+  { value: 'Attendance Device', icon: '👆', fa: 'دستگاه حضور و غیاب (انگشت‌زنی)', en: 'Time Attendance (Fingerprint)', family: 'office' },
+  { value: 'Office Machine', icon: '🗂️', fa: 'کاغذخردکن / پرس / لمینیت',   en: 'Shredders / Binding / Laminators', family: 'office' },
+  { value: 'TV',           icon: '📺', fa: 'تلویزیون',                     en: 'Televisions',             family: 'appliance' },
+  { value: 'Refrigerator', icon: '🧊', fa: 'یخچال / فریزر',                en: 'Refrigerators / Freezers', family: 'appliance' },
+  { value: 'Water Cooler', icon: '🚰', fa: 'آبسردکن',                      en: 'Water Coolers',           family: 'appliance' },
+  { value: 'Heater',       icon: '🔥', fa: 'بخاری برقی / گرمایشی',         en: 'Electric Heaters',        family: 'appliance' },
+  { value: 'Air Conditioner', icon: '❄️', fa: 'کولر / اسپلیت',            en: 'Air Conditioners',        family: 'appliance' },
+  { value: 'Kitchen Appliance', icon: '🍲', fa: 'مایکروویو / سماور / چای‌ساز', en: 'Kitchen Appliances',   family: 'appliance' },
+  { value: 'Fan',          icon: '🌀', fa: 'پنکه',                         en: 'Fans',                    family: 'appliance' },
   { value: 'Other',        icon: '🔌', fa: 'سایر قطعات',                  en: 'Other Hardware',          family: 'other' }
 ];
 
@@ -266,6 +275,31 @@ function gpuChipHtml(gpu) {
   if (!list || !list.length) return '';
   return `<span class="part-chips">${list.map(g => partChip('gpu', g.name, [g.kind], '', String(gpu))).join('')}</span>`;
 }
+
+// ---- Price (Toman) ----
+function formatPrice(v, short) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const fa = x => x.toLocaleString('fa-IR');
+  if (short) {
+    if (n >= 1e9) return `${fa(Math.round(n / 1e8) / 10)} میلیارد تومان`;
+    if (n >= 1e6) return `${fa(Math.round(n / 1e5) / 10)} میلیون تومان`;
+    if (n >= 1e3) return `${fa(Math.round(n / 1e3))} هزار تومان`;
+  }
+  return `${fa(n)} تومان`;
+}
+
+// "12500000" while typing -> "12,500,000" (accepts Persian digits)
+function bindPriceInput(input) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const digits = input.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d]/g, '');
+    input.value = digits ? Number(digits).toLocaleString('en-US') : '';
+  });
+}
+
+window.formatPrice = formatPrice;
+window.bindPriceInput = bindPriceInput;
 
 window.cpuInfo = cpuInfo;
 window.ramInfo = ramInfo;

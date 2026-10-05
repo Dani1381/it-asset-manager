@@ -275,6 +275,8 @@ function initDb() {
   if (!assetCols.includes('no_tag')) db.exec('ALTER TABLE assets ADD COLUMN no_tag INTEGER NOT NULL DEFAULT 0');
   // Physical condition set by the operator (default healthy) — values in HEALTH_VALUES
   if (!assetCols.includes('health')) db.exec("ALTER TABLE assets ADD COLUMN health TEXT NOT NULL DEFAULT 'healthy'");
+  // Purchase / book value in Toman (empty = unknown, then it is not shown anywhere)
+  if (!assetCols.includes('price')) db.exec('ALTER TABLE assets ADD COLUMN price INTEGER');
   migrateModelNames();
   migrateModelNamesV2();
   // Placeholder specs like "N/A (monitor, no CPU)" were saved by older AI lookups; they are not data
@@ -516,6 +518,19 @@ function cleanPropertyId(v) {
   return s.replace(/\s+/g, '').slice(0, 20);
 }
 
+// Price typed as "12,500,000" / "۱۲٬۵۰۰٬۰۰۰" / "12.5m" -> integer Toman; empty / 0 / text -> null
+function parsePrice(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+  let s = String(v).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[,٬،\s]|تومان|toman/gi, '').trim();
+  let mult = 1;
+  if (/(m|میلیون)$/i.test(s)) { mult = 1e6; s = s.replace(/(m|میلیون)$/i, ''); }
+  else if (/(k|هزار)$/i.test(s)) { mult = 1e3; s = s.replace(/(k|هزار)$/i, ''); }
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * mult) : null;
+}
+
 const SPEC_PLACEHOLDER_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
 function stripSpecPlaceholders(data) {
   for (const f of SPEC_PLACEHOLDER_FIELDS) {
@@ -630,7 +645,8 @@ function searchModels(query, category = null, limit = 8) {
 // Computers (PC / Laptop / Server) differ per unit, so they are only suggested.
 // ---------------------------------------------------------------------------
 const FIXED_SPEC_CATEGORIES = new Set(['Monitor', 'Storage', 'Printer', 'Modem', 'Router', 'Access Point', 'Network',
-  'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral']);
+  'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral',
+  'Refrigerator', 'TV', 'Attendance Device', 'Water Cooler', 'Heater', 'Air Conditioner', 'Kitchen Appliance', 'Fan', 'Office Machine']);
 const MODEL_SPEC_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];
 
 function isFixedSpecCategory(category) {
@@ -1071,13 +1087,13 @@ const queries = {
         manufacturer_model, serial_number, os_version, ip_address,
         cpu, ram, storage_drives, c_space, network_devices,
         gpu, monitors, location, department, purchase_date, notes,
-        is_automated, last_scanned_at, created_at, updated_at, no_tag, health
+        is_automated, last_scanned_at, created_at, updated_at, no_tag, health, price
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?
       )
     `);
 
@@ -1109,7 +1125,8 @@ const queries = {
         now,
         now,
         noTag ? 1 : 0,
-        normalizeHealth(data.health, 'initial_ok')
+        normalizeHealth(data.health, 'initial_ok'),
+        parsePrice(data.price)
       );
 
       const newId = Number(result.lastInsertRowid);
@@ -1174,7 +1191,8 @@ const queries = {
         last_scanned_at = COALESCE(?, last_scanned_at),
         updated_at = ?,
         no_tag = ?,
-        health = ?
+        health = ?,
+        price = ?
       WHERE id = ?
     `);
 
@@ -1204,6 +1222,7 @@ const queries = {
       now,
       noTag,
       data.health !== undefined ? normalizeHealth(data.health, current.health || 'healthy') : (current.health || 'healthy'),
+      data.price !== undefined ? parsePrice(data.price) : (current.price ?? null),
       id
     );
 

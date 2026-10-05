@@ -291,8 +291,19 @@ async function testGeminiKey(key) {
 // Map whatever category text the AI returns ("modem", "Wi-Fi router", "مودم", ...)
 // onto one of the app's category values. Falls back to the model name.
 const CATEGORY_VALUES = ['PC', 'Single PC', 'Laptop', 'Server', 'Monitor', 'Storage', 'Printer', 'Modem', 'Router',
-  'Access Point', 'Network', 'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral', 'Other'];
+  'Access Point', 'Network', 'UPS', 'VoIP Phone', 'Camera', 'Projector', 'Tablet', 'Peripheral',
+  'Refrigerator', 'TV', 'Attendance Device', 'Water Cooler', 'Heater', 'Air Conditioner', 'Kitchen Appliance', 'Fan', 'Office Machine', 'Other'];
 const CATEGORY_KEYWORDS = [
+  // Appliances / office equipment first: "Smart TV display", "fingerprint terminal" must not land in Monitor / Peripheral
+  ['Attendance Device', /attendance|time\s*clock|fingerprint|biometric|zkteco|\bzk\b|virdi|suprema|anviz|حضور\s*و\s*غیاب|انگشت/i],
+  ['TV', /\btv\b|television|smart\s*tv|تلویزیون/i],
+  ['Refrigerator', /refrigerator|fridge|freezer|یخچال|فریزر/i],
+  ['Water Cooler', /water\s*(cooler|dispenser)|آب\s*سرد|آبسرد/i],
+  ['Heater', /heater|radiator|بخاری|گرمایش|شوفاژ/i],
+  ['Air Conditioner', /air\s*condition|\bsplit\b|\bac unit\b|کولر|اسپلیت/i],
+  ['Kitchen Appliance', /microwave|kettle|samovar|tea\s*maker|coffee|toaster|مایکروویو|سماور|چای\s*ساز|قهوه\s*ساز/i],
+  ['Fan', /\bfan\b|پنکه/i],
+  ['Office Machine', /shredder|laminat|binding|paper\s*cutter|کاغذ\s*خرد|پرس|لمینت/i],
   ['Modem', /modem|adsl|vdsl|dsl-|\blte\b|\b4g\b|\b5g\b|gpon|ont\b|archer\s*vr|\bvr\d{3}|\btl-mr\d|\bmr\d{4}|\bb3\d{2}\b|\be5\d{3}|مودم/i],
   ['Access Point', /access\s*point|\bap\b|unifi|\beap\d|cap\s*ac|mesh|اکسس/i],
   ['Router', /router|routerboard|mikrotik|\brb\d|\bccr\d|\bhap\b|\bisr\s*\d|روتر/i],
@@ -339,9 +350,10 @@ CATEGORY GUIDE (pick the single best match, using the exact English value):
 - UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
 - Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
 - PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+- Refrigerator; TV: televisions; Attendance Device: fingerprint / card time-attendance terminals; Water Cooler: water dispensers; Heater: electric heaters / radiators; Air Conditioner: split / AC units; Kitchen Appliance: microwave, kettle, samovar, coffee maker; Fan; Office Machine: shredder, laminator, binding machine
 
 {
-  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other",
+  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
   "manufacturer_model": "Full brand and model name, e.g. HP EliteDesk 800 G3 SFF or Samsung S27C31x",
   "serial_number": "Serial number (S/N, Serial No, Service Tag) if visible, else null",
   "cpu": "CPU / Processor details if mentioned, else null",
@@ -378,7 +390,7 @@ const SMART_SCAN_MAX_IMAGES = 6;
 const SCAN_FIELDS = ['property_id', 'category', 'manufacturer_model', 'serial_number', 'computer_name', 'ip_address',
   'user_name', 'location', 'department', 'purchase_date', 'cpu', 'ram', 'storage_drives', 'gpu', 'monitors'];
 
-const SCAN_CATEGORY_LIST = '"PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other"';
+const SCAN_CATEGORY_LIST = '"PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other"';
 
 function toLatinDigits(s) {
   return String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
@@ -805,11 +817,12 @@ CATEGORY GUIDE (pick the single best match, using the exact English value):
 - UPS: uninterruptible power supplies; VoIP Phone: desk / IP phones; Camera: CCTV cameras, DVR/NVR
 - Projector; Tablet: tablets and phones; Peripheral: keyboard, mouse, headset, webcam
 - PC: desktop computers / cases; Laptop; Monitor; Printer: printers, scanners, copiers
+- Refrigerator; TV: televisions; Attendance Device: fingerprint / card time-attendance terminals; Water Cooler: water dispensers; Heater: electric heaters / radiators; Air Conditioner: split / AC units; Kitchen Appliance: microwave, kettle, samovar, coffee maker; Fan; Office Machine: shredder, laminator, binding machine
 
 {
   "recognized": true,
   "canonical_name": "Full clean model name (e.g. HP EliteDesk 800 G3 Small Form Factor)",
-  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Other",
+  "category": "PC" | "Single PC" | "Laptop" | "Server" | "Monitor" | "Storage" | "Printer" | "Modem" | "Router" | "Access Point" | "Network" | "UPS" | "VoIP Phone" | "Camera" | "Projector" | "Tablet" | "Peripheral" | "Refrigerator" | "TV" | "Attendance Device" | "Water Cooler" | "Heater" | "Air Conditioner" | "Kitchen Appliance" | "Fan" | "Office Machine" | "Other",
   "default_cpu": "Most common standard CPU for this model (e.g. Intel Core i5-6500 CPU @ 3.20GHz)",
   "cpu_options": ["Intel Core i5-6500 @ 3.20GHz", "Intel Core i7-6700 @ 3.40GHz", "Intel Core i3-6100 @ 3.70GHz"],
   "default_ram": "Standard factory RAM (e.g. 8 GB DDR4 or 16 GB)",
@@ -1025,10 +1038,11 @@ function buildSummaryReport(assets) {
   const diskType = {}, diskSize = {}, diskModel = {};
   const models = {};
   const computerCats = new Set(['PC', 'Single PC', 'Laptop', 'Server']);
-  let diskCount = 0, noDisk = 0, noTag = 0;
+  let diskCount = 0, noDisk = 0, noTag = 0, totalValue = 0, pricedCount = 0;
 
   for (const a of assets) {
     count(byCategory, a.category);
+    if (Number(a.price) > 0) { totalValue += Number(a.price); pricedCount++; }
     count(byStatus, a.status);
     count(byHealth, a.health || 'healthy');
     count(byLocation, (a.location || '').trim() || 'ثبت نشده');
@@ -1067,6 +1081,8 @@ function buildSummaryReport(assets) {
     no_tag: noTag,
     disk_count: diskCount,
     computers_without_disk: noDisk,
+    total_value: totalValue,
+    priced_count: pricedCount,
     by_category: toList(byCategory),
     by_status: toList(byStatus),
     by_health: toList(byHealth),
@@ -2396,7 +2412,7 @@ Respond ONLY in JSON format:
         'Manufacturer/Model', 'Serial Number', 'OS Version', 'IP Address',
         'CPU', 'RAM', 'Storage Drives', 'C: Drive Space', 'Network Devices',
         'GPU', 'Monitors', 'Location', 'Department', 'Notes', 'Created At', 'Last Scanned At',
-        'Disk Health', 'Disk Details', 'Has Property Tag', 'Condition'
+        'Disk Health', 'Disk Details', 'Has Property Tag', 'Condition', 'Price (Toman)'
       ];
 
       // Short human-readable disk summary for the CSV
@@ -2442,7 +2458,8 @@ Respond ONLY in JSON format:
           csvEscape(a.disk_health_status || ''),
           csvEscape(diskSummary(a.disk_health)),
           csvEscape(a.no_tag ? 'No' : 'Yes'),
-          csvEscape(a.health || 'healthy')
+          csvEscape(a.health || 'healthy'),
+          csvEscape(a.price || '')
         ].join(','))
       ].join('\r\n');
 

@@ -496,6 +496,7 @@ function renderAssets(assets) {
             <span class="user-name-text">${escapeHtml(asset.user_name || getTranslation('unassigned'))}</span>
           </div>
 
+          ${asset.price && typeof formatPrice === 'function' ? `<div class="card-price" title="${escapeHtml(formatPrice(asset.price))}">💰 ${escapeHtml(formatPrice(asset.price, true))}</div>` : ''}
           ${keySpecsHtml(asset)}
 
           <div class="asset-specs-list">
