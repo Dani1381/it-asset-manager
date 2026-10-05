@@ -430,12 +430,20 @@
       document.getElementById('spec-ip').textContent = a.ip_address || '-';
       document.getElementById('spec-cpu').textContent = a.cpu || '-';
       document.getElementById('spec-ram').textContent = a.ram || '-';
+      // CPU / RAM / GPU as chips with generation, clock, DDR type...
+      const setChips = (id, html, fallback) => {
+        const el = document.getElementById(id);
+        if (html) el.innerHTML = html; else el.textContent = fallback || '-';
+      };
+      setChips('spec-cpu', typeof cpuChipHtml === 'function' ? cpuChipHtml(a.cpu) : '', a.cpu);
+      setChips('spec-ram', typeof ramChipHtml === 'function' ? ramChipHtml(a.ram, a.cpu) : '', a.ram);
+      setChips('spec-gpu', typeof gpuChipHtml === 'function' ? gpuChipHtml(a.gpu) : '', a.gpu);
+
       // one chip per disk (type, size, model)
       const storageChips = typeof diskChipsHtml === 'function' ? diskChipsHtml(a.storage_drives) : '';
       if (storageChips) document.getElementById('spec-storage').innerHTML = storageChips;
       else document.getElementById('spec-storage').textContent = a.storage_drives || '-';
       document.getElementById('spec-cspace').textContent = a.c_space || '-';
-      document.getElementById('spec-gpu').textContent = a.gpu || '-';
       document.getElementById('spec-monitors').textContent = a.monitors || '-';
       document.getElementById('spec-network').textContent = a.network_devices || '-';
       document.getElementById('spec-notes').textContent = a.notes || '-';

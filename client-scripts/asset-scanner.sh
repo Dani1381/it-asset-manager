@@ -224,6 +224,21 @@ if [ -n "$MEM_KB" ] && [ "$MEM_KB" -gt 0 ] 2>/dev/null; then
 fi
 [ -z "$RAM" ] && RAM="8 GB (Standard)"
 
+# RAM type / speed / modules from SMBIOS (root, or passwordless sudo as on a Linux Mint live session)
+DMI=""
+if command -v dmidecode >/dev/null 2>&1; then
+  if [ "$(id -u)" = "0" ]; then DMI=$(dmidecode -t 17 2>/dev/null)
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then DMI=$(sudo -n dmidecode -t 17 2>/dev/null); fi
+fi
+if [ -n "$DMI" ]; then
+  MEM_TYPE=$(printf '%s\n' "$DMI" | awk -F': ' '/^[[:space:]]*Type: (DDR|LPDDR)/{ print $2; exit }')
+  MEM_SPEED=$(printf '%s\n' "$DMI" | awk -F': ' '/^[[:space:]]*(Configured Memory Speed|Configured Clock Speed|Speed): [0-9]/{ sub(/ .*/, "", $2); print $2; exit }')
+  MEM_MODS=$(printf '%s\n' "$DMI" | awk -F': ' '/^[[:space:]]*Size: [0-9]+ (GB|MB)/{ split($2, a, " "); g = (a[2] == "MB") ? a[1] / 1024 : a[1]; c[g]++ } END { s = ""; for (k in c) s = s (s ? " + " : "") c[k] "x" k "GB"; print s }')
+  [ -n "$MEM_TYPE" ] && RAM="$RAM $MEM_TYPE"
+  [ -n "$MEM_SPEED" ] && RAM="$RAM ${MEM_SPEED}MHz"
+  [ -n "$MEM_MODS" ] && RAM="$RAM ($MEM_MODS)"
+fi
+
 # Physical disks
 # USB sticks / card readers (e.g. the USB scanner kit itself) are not part of the computer
 is_external_disk() { # /sys/block/<dev>

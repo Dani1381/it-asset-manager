@@ -88,6 +88,12 @@ try { $CPU = (Get-CimInstance Win32_Processor -ErrorAction Stop).Name } catch {
     }
 }
 
+# CPU cores / threads, e.g. "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz (4 Cores / 4 Threads)"
+try {
+    $p0 = @(Get-CimInstance Win32_Processor -ErrorAction Stop)[0]
+    if ($p0.NumberOfCores) { $CPU = "$CPU ($($p0.NumberOfCores) Cores / $($p0.NumberOfLogicalProcessors) Threads)" }
+} catch {}
+
 # RAM
 $RAM = ""
 try {
@@ -107,6 +113,23 @@ try {
     }
 }
 if (-not $RAM) { $RAM = "8 GB (Standard)" }
+
+# RAM type / speed / modules, e.g. "16 GB DDR4 2400MHz (2x8GB)"
+try {
+    $mods = @(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
+    if ($mods.Count -gt 0 -and $RAM_GB) {
+        $typeMap = @{ 20 = 'DDR'; 21 = 'DDR2'; 24 = 'DDR3'; 26 = 'DDR4'; 34 = 'DDR5'; 35 = 'LPDDR5' }
+        $memType = $typeMap[[int]$mods[0].SMBIOSMemoryType]
+        if (-not $memType) { $memType = @{ 20 = 'DDR'; 21 = 'DDR2'; 24 = 'DDR3' }[[int]$mods[0].MemoryType] }
+        $speed = if ($mods[0].ConfiguredClockSpeed) { $mods[0].ConfiguredClockSpeed } else { $mods[0].Speed }
+        $groups = $mods | ForEach-Object { [math]::Round($_.Capacity / 1GB) } | Group-Object | Sort-Object Name
+        $modText = ($groups | ForEach-Object { "$($_.Count)x$($_.Name)GB" }) -join ' + '
+        $RAM = "$RAM_GB GB"
+        if ($memType) { $RAM += " $memType" }
+        if ($speed) { $RAM += " $($speed)MHz" }
+        if ($modText) { $RAM += " ($modText)" }
+    }
+} catch {}
 
 # Disks
 $Storage = ""

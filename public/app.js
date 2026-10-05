@@ -353,8 +353,10 @@ function keySpecsHtml(asset) {
   const fam = deviceFamily(asset);
   let specs = [];
   if (['pc', 'laptop', 'server'].includes(fam)) {
-    if (hasRealSpec(asset.cpu)) specs.push({ icon: '🖥️', value: asset.cpu, label: 'CPU' });
-    if (hasRealSpec(asset.ram)) specs.push({ icon: '🧠', value: asset.ram, label: 'RAM' });
+    const cpuChip = hasRealSpec(asset.cpu) && typeof cpuChipHtml === 'function' ? cpuChipHtml(asset.cpu) : '';
+    const ramChip = hasRealSpec(asset.ram) && typeof ramChipHtml === 'function' ? ramChipHtml(asset.ram, asset.cpu) : '';
+    if (hasRealSpec(asset.cpu)) specs.push({ icon: '🖥️', value: asset.cpu, label: 'CPU', html: cpuChip });
+    if (hasRealSpec(asset.ram)) specs.push({ icon: '🧠', value: asset.ram, label: 'RAM', html: ramChip });
     // one chip per disk instead of "A (466GB) / B (238GB)"
     const chips = hasRealSpec(asset.storage_drives) && typeof diskChipsHtml === 'function' ? diskChipsHtml(asset.storage_drives) : '';
     if (chips) specs.push({ icon: '💾', value: asset.storage_drives, label: 'Storage', html: chips });

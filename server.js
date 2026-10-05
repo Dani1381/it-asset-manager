@@ -1830,7 +1830,8 @@ const server = http.createServer(async (req, res) => {
         serial_number: serialNum,
         os_version: data.os_version || data.os,
         ip_address: data.ip_address || data.ip,
-        cpu: data.cpu,
+        // "Core(TM)2 Duo CPU     E8400  @ 3.00GHz" -> single spaces
+        cpu: typeof data.cpu === 'string' ? data.cpu.replace(/\s+/g, ' ').trim() : data.cpu,
         ram: data.ram,
         storage_drives: data.storage_drives || data.storage,
         c_space: data.c_space || data.cSpace,

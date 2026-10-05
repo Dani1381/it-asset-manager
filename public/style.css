@@ -2095,3 +2095,53 @@ body.light-mode .disk-chip { color: #0f172a; }
 body.light-mode .disk-chip.kind-nvme .disk-chip-kind { color: #7e22ce; }
 body.light-mode .disk-chip.kind-ssd .disk-chip-kind { color: #047857; }
 body.light-mode .disk-chip.kind-hdd .disk-chip-kind { color: #b45309; }
+
+/* ---- Detail page on phones: nothing may push past the screen edge ---- */
+.specs-table { table-layout: fixed; }
+.specs-table td.val-col { min-width: 0; }
+@media (max-width: 600px) {
+  .specs-table, .specs-table tbody, .specs-table tr, .specs-table td { display: block; width: 100%; }
+  .specs-table tr { padding: 0.55rem 0.2rem; border-bottom: 1px solid var(--border-color); }
+  .specs-table td { border-bottom: 0; padding: 0.1rem 0.25rem; }
+  .specs-table td.label-col { width: 100%; font-size: 0.78rem; }
+  .specs-table td.val-col { font-size: 0.92rem; }
+  .disk-chip, .part-chip { white-space: normal; flex-wrap: wrap; }
+  .disk-chip-model, .part-chip-detail { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .detail-grid, .detail-grid > * { min-width: 0; max-width: 100%; }
+}
+
+/* ---- CPU / RAM / GPU chips (same look as the disk chips) ---- */
+.part-chips { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; min-width: 0; }
+.part-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%;
+  padding: 0.12rem 0.6rem; border-radius: 999px; font-size: 0.8rem; line-height: 1.6;
+  border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(148, 163, 184, 0.12); color: #e2e8f0;
+  direction: ltr; white-space: nowrap;
+}
+.part-chip-main { font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+.part-chip-tag { font-size: 0.72rem; font-weight: 700; padding: 0 0.4rem; border-radius: 999px; background: rgba(255, 255, 255, 0.1); direction: rtl; }
+.part-chip-tag.is-dim { opacity: 0.75; font-style: italic; }
+.part-chip-detail { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+.part-chip.part-cpu { background: rgba(59, 130, 246, 0.14); border-color: rgba(96, 165, 250, 0.5); }
+.part-chip.part-cpu .part-chip-main { color: #93c5fd; }
+.part-chip.part-ram { background: rgba(6, 182, 212, 0.13); border-color: rgba(34, 211, 238, 0.5); }
+.part-chip.part-ram .part-chip-main { color: #67e8f9; }
+.part-chip.part-gpu { background: rgba(236, 72, 153, 0.12); border-color: rgba(244, 114, 182, 0.45); }
+.part-chip.part-gpu .part-chip-main { color: #f9a8d4; }
+/* dashboard cards: chips side by side, keep the card tidy */
+.asset-key-specs .key-spec { min-width: 0; }
+.asset-key-specs .part-chips, .asset-key-specs .disk-chips { flex-wrap: wrap; }
+body.light-mode .part-chip { color: #0f172a; }
+body.light-mode .part-chip.part-cpu .part-chip-main { color: #1d4ed8; }
+body.light-mode .part-chip.part-ram .part-chip-main { color: #0e7490; }
+body.light-mode .part-chip.part-gpu .part-chip-main { color: #be185d; }
+body.light-mode .part-chip-tag { background: rgba(15, 23, 42, 0.07); }
+/* chips never wider than their cell: long model names get "..." */
+.disk-chip, .part-chip { max-width: 100%; min-width: 0; }
+.disk-chip-model, .part-chip-main, .part-chip-detail { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.disk-chip-icon, .disk-chip-kind, .disk-chip-size, .part-chip-tag { flex: 0 0 auto; }
+.specs-table .disk-chips, .specs-table .part-chips { max-width: 100%; }
+/* the main name (Core i5-6500, 8 GB...) is never cut; tags wrap to a second line instead */
+.part-chip { flex-wrap: wrap; white-space: normal; row-gap: 0.15rem; border-radius: 14px; }
+.part-chip-main { flex: 0 0 auto; overflow: visible; white-space: nowrap; }
+.disk-chip { flex-wrap: wrap; row-gap: 0.15rem; border-radius: 14px; }

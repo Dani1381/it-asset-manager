@@ -156,6 +156,123 @@ function diskChipsHtml(text) {
 window.parseDisks = parseDisks;
 window.diskChipsHtml = diskChipsHtml;
 
+// ---- CPU / RAM / GPU details for the component chips ----
+const chipEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+
+function cpuInfo(cpu) {
+  const raw = String(cpu || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+  const info = { raw, name: '', gen: null, ghz: '', threads: '', cores: '', family: '' };
+  let m;
+  if ((m = raw.match(/\b(i[3579])-\s?(\d{4,5})([A-Z]{0,2})\b/i))) {
+    info.name = `Core ${m[1].toLowerCase()}-${m[2]}${m[3] || ''}`;
+    const num = m[2];
+    info.gen = num.length === 5 ? Number(num.slice(0, 2)) : Number(num[0]);
+    info.family = 'core';
+  } else if ((m = raw.match(/\b(i[3579]) CPU\s+(\d{3})\b/i))) {          // 1st gen: "Core(TM) i5 CPU 650"
+    info.name = `Core ${m[1].toLowerCase()} ${m[2]}`; info.gen = 1; info.family = 'core';
+  } else if ((m = raw.match(/Core\(TM\)2 (Duo|Quad)\s+CPU\s+([A-Z]\d{4})/i) || raw.match(/Core 2 (Duo|Quad)\s+([A-Z]?\d{4})/i))) {
+    info.name = `Core 2 ${m[1]} ${m[2]}`; info.family = 'core2';
+  } else if ((m = raw.match(/\b(Pentium|Celeron|Xeon|Athlon)(?:\(R\))?\s*(?:CPU\s*)?([A-Z]?\d{3,4}[A-Z]?(?:\s*v\d)?)/i))) {
+    info.name = `${m[1]} ${m[2]}`; info.family = m[1].toLowerCase();
+  } else if ((m = raw.match(/Ryzen\s+\d\s+\d{4}\w*/i))) {
+    info.name = m[0]; info.family = 'ryzen';
+  } else {
+    info.name = raw.replace(/\(R\)|\(TM\)|CPU|@.*$/gi, '').replace(/\s+/g, ' ').trim();
+  }
+  if ((m = raw.match(/@\s*([\d.]+)\s*GHz/i))) info.ghz = `${Number(m[1])}GHz`;
+  if ((m = raw.match(/(\d+)\s*Threads?/i))) info.threads = m[1];
+  if ((m = raw.match(/(\d+)\s*Cores?/i))) info.cores = m[1];
+  return info;
+}
+
+// DDR generation a desktop of this CPU uses (estimate when the scanner did not report it)
+function ramTypeFromCpu(ci) {
+  if (!ci) return '';
+  if (ci.family === 'core2') return 'DDR2/DDR3';
+  if (ci.family === 'core' && ci.gen) {
+    if (ci.gen <= 5) return 'DDR3';
+    if (ci.gen <= 11) return 'DDR4';
+    return 'DDR4/DDR5';
+  }
+  if (ci.family === 'ryzen') return 'DDR4';
+  return '';
+}
+
+function ramInfo(ram, cpu) {
+  const raw = String(ram || '').trim();
+  const m = raw.match(/(\d+(?:\.\d+)?)\s*GB/i);
+  if (!m) return null;
+  const type = (raw.match(/\bDDR\d\w*\b/i) || [''])[0].toUpperCase();
+  const speed = (raw.match(/(\d{3,4})\s*MHz/i) || [])[1] || '';
+  // "(2x8GB)" or "(2x4GB + 1x8GB)" -> "2×8GB" / "2×4GB + 1×8GB"
+  const modGroup = (raw.match(/\(([^)]*\d+\s*[x×]\s*\d+(?:\.\d+)?\s*GB[^)]*)\)/i) || [])[1] || '';
+  const modules = modGroup.replace(/\s*[x×]\s*/g, '×').replace(/\s+/g, ' ').trim();
+  const guessed = type ? '' : ramTypeFromCpu(cpuInfo(cpu));
+  return { gb: `${Math.round(Number(m[1]))} GB`, type: type || guessed, guessed: !type && !!guessed, speed: speed ? `${speed}MHz` : '', modules };
+}
+
+function gpuInfo(gpu) {
+  const raw = String(gpu || '').replace(/^[0-9a-f:.]+ [^:]*: /i, '').replace(/\s+/g, ' ').trim();
+  if (!raw || /^(standard graphics|n\/?a)/i.test(raw)) return null;
+  const parts = raw.split(' / ').map(s => s.trim()).filter(Boolean);
+  return parts.map(p => {
+    const dedicated = /nvidia|geforce|quadro|radeon (rx|pro|hd \d{4})|amd radeon(?! graphics)|\bgtx\b|\brtx\b/i.test(p) && !/radeon\(tm\) graphics|vega \d+ graphics/i.test(p);
+    let name = p.replace(/\(R\)|\(TM\)|Corporation|Integrated Graphics Controller|Graphics Controller/gi, '').replace(/\s+/g, ' ').trim();
+    const hd = p.match(/\[([^\]]+)\]/); // lspci: "IvyBridge GT2 [HD Graphics 4000]"
+    if (hd) name = `Intel ${hd[1]}`;
+    // lspci family names without the marketing name
+    else if (/2nd Generation Core Processor Family/i.test(p)) name = 'Intel HD Graphics 2000/3000';
+    else if (/3rd Gen Core processor Graphics/i.test(p)) name = 'Intel HD Graphics 2500/4000';
+    else if (/4th Gen Core Processor Integrated Graphics|Xeon E3-1200 v3/i.test(p)) name = 'Intel HD Graphics 4400/4600';
+    else if (/^Intel\s*(?:Corporation\s*)?\d{1,2}(?:st|nd|rd|th) Gen/i.test(name)) name = 'Intel HD Graphics';
+    return { name, kind: dedicated ? 'مجزا' : 'آنبرد' };
+  });
+}
+
+// One coloured chip; `compact` hides the long detail (dashboard cards)
+function partChip(kind, mainText, tags, detail, title) {
+  return `<span class="part-chip part-${kind}" title="${chipEsc(title || '')}">
+    <span class="part-chip-main">${chipEsc(mainText)}</span>
+    ${tags.filter(Boolean).map(t => `<span class="part-chip-tag${t.dim ? ' is-dim' : ''}">${chipEsc(t.text || t)}</span>`).join('')}
+    ${detail ? `<span class="part-chip-detail">${chipEsc(detail)}</span>` : ''}
+  </span>`;
+}
+
+function cpuChipHtml(cpu) {
+  const c = cpuInfo(cpu);
+  if (!c) return '';
+  const tags = [];
+  if (c.gen) tags.push(`نسل ${c.gen}`);
+  if (c.ghz) tags.push(c.ghz);
+  if (c.cores && c.threads) tags.push(`${c.cores} هسته / ${c.threads} رشته`);
+  else if (c.threads) tags.push(`${c.threads} رشته`);
+  return `<span class="part-chips">${partChip('cpu', c.name, tags, '', c.raw)}</span>`;
+}
+
+function ramChipHtml(ram, cpu) {
+  const r = ramInfo(ram, cpu);
+  if (!r) return '';
+  const tags = [];
+  if (r.type) tags.push({ text: r.guessed ? `${r.type} ≈` : r.type, dim: r.guessed });
+  if (r.speed) tags.push(r.speed);
+  if (r.modules) tags.push(r.modules);
+  const title = r.guessed ? `${ram} — نوع رم از روی نسل پردازنده تخمین زده شده` : String(ram);
+  return `<span class="part-chips">${partChip('ram', r.gb, tags, '', title)}</span>`;
+}
+
+function gpuChipHtml(gpu) {
+  const list = gpuInfo(gpu);
+  if (!list || !list.length) return '';
+  return `<span class="part-chips">${list.map(g => partChip('gpu', g.name, [g.kind], '', String(gpu))).join('')}</span>`;
+}
+
+window.cpuInfo = cpuInfo;
+window.ramInfo = ramInfo;
+window.cpuChipHtml = cpuChipHtml;
+window.ramChipHtml = ramChipHtml;
+window.gpuChipHtml = gpuChipHtml;
+
 window.HEALTH_STATES = HEALTH_STATES;
 window.findHealth = findHealth;
 window.healthLabel = healthLabel;
