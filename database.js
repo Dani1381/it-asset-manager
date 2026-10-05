@@ -409,8 +409,10 @@ function migrateModelNames() {
 // Property number typed in a scanner popup: Latin digits, no spaces; empty / "none" = no tag
 function cleanPropertyId(v) {
   const s = String(v ?? '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).trim();
-  if (!s || /^(-|none|no|nadaare|nadare|ندارد|0)$/i.test(s)) return null;
-  return s.replace(/\s+/g, '').slice(0, 40);
+  // Only something shaped like a tag counts ("1093", "AST-1234", "NT-0005"); free text such as
+  // "dont count this - test monitor" means: not a real asset
+  if (!/^[A-Za-z]{0,6}[- ]?\d{2,8}$/.test(s)) return null;
+  return s.replace(/\s+/g, '').slice(0, 20);
 }
 
 const SPEC_PLACEHOLDER_FIELDS = ['cpu', 'ram', 'storage_drives', 'gpu', 'monitors', 'network_devices'];

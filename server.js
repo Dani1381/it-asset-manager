@@ -1818,7 +1818,8 @@ const server = http.createServer(async (req, res) => {
         const raw = String(data.monitors || '');
         if (data.offline !== true) return { names: data.monitors, ids };
         const parts = raw.split(' / ').map(s => s.trim());
-        const kept = parts.map((n, i) => ({ n, id: String(ids[i] ?? '').trim() })).filter(x => x.n && x.id && !/^(-|none|no|nadaare|ندارد|0)$/i.test(x.id));
+        // a real tag looks like "1093" / "AST-1234"; free text ("dont count this, test monitor") = test screen
+        const kept = parts.map((n, i) => ({ n, id: String(ids[i] ?? '').trim() })).filter(x => x.n && /^[A-Za-z]{0,6}[- ]?\d{2,8}$/.test(x.id));
         return { names: kept.map(x => x.n).join(' / '), ids: kept.map(x => x.id) };
       })();
 
