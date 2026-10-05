@@ -328,17 +328,20 @@ async function initSmartFill() {
     }
   });
 
+  // Several drives per device: one row each
+  setupMultiDiskInput('storage_drives');
+  setupMultiDiskInput('edit-storage');
+
   // As-you-type suggestions from models already in the database
   setupModelAutocomplete('manufacturer_model', 'category', it => { if (window.onModelPicked) window.onModelPicked(it); });
   setupModelAutocomplete('edit-model', 'edit-category');
 
   // Attach text expansions
-  setupShorthand('storage_drives', SHORTHAND_RULES.storage);
+  // (storage shorthand now runs per row inside the multi-disk editor)
   setupShorthand('ram', SHORTHAND_RULES.ram);
   setupShorthand('cpu', SHORTHAND_RULES.cpu);
   setupShorthand('manufacturer_model', SHORTHAND_RULES.model, applyModelPreset);
 
-  setupShorthand('edit-storage', SHORTHAND_RULES.storage);
   setupShorthand('edit-ram', SHORTHAND_RULES.ram);
   setupShorthand('edit-cpu', SHORTHAND_RULES.cpu);
   setupShorthand('edit-model', SHORTHAND_RULES.model);
@@ -449,6 +452,88 @@ function setupModelAutocomplete(inputId, categoryId, onPick) {
 }
 window.setupModelAutocomplete = setupModelAutocomplete;
 
+// ---------------------------------------------------------------------------
+// Multi-disk editor: one row per drive instead of a single text box.
+// The original <input> stays (hidden) and keeps "A / B / C", so every other piece
+// of code that reads or writes .value keeps working; the rows follow it.
+// ---------------------------------------------------------------------------
+function setupMultiDiskInput(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.multiDisk) return;
+  input.dataset.multiDisk = '1';
+  input.dataset.multi = '1';
+
+  const box = document.createElement('div');
+  box.className = 'disk-editor';
+  input.insertAdjacentElement('afterend', box);
+  input.style.display = 'none';
+
+  const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  const getRaw = () => proto.get.call(input);
+  const setRaw = v => proto.set.call(input, v);
+  const split = v => String(v || '').split(' / ').map(s => s.trim()).filter(Boolean);
+  let rendering = false;
+
+  function sync() {
+    const vals = [...box.querySelectorAll('.disk-row-input')].map(i => i.value.trim()).filter(Boolean);
+    setRaw(vals.join(' / '));
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  }
+
+  function addRow(value = '', focus = false) {
+    const row = document.createElement('div');
+    row.className = 'disk-row';
+    row.innerHTML = `<span class="disk-row-n"></span>
+      <input type="text" class="form-control disk-row-input" dir="ltr" placeholder="مثلاً 256GB NVMe SSD یا WD 500GB HDD">
+      <button type="button" class="disk-row-del" title="حذف این هارد">✖</button>`;
+    const field = row.querySelector('input');
+    field.value = value;
+    field.addEventListener('input', () => { if (!rendering) sync(); });
+    // the same shorthand as the old single box: "nvme 256" -> "256GB NVMe SSD"
+    field.addEventListener('blur', () => {
+      const v = field.value.trim();
+      for (const r of SHORTHAND_RULES.storage) if (r.pattern.test(v)) { field.value = r.replace; sync(); break; }
+    });
+    row.querySelector('.disk-row-del').addEventListener('click', () => {
+      row.remove();
+      if (!box.querySelector('.disk-row')) addRow();
+      number();
+      sync();
+    });
+    box.insertBefore(row, addBtn);
+    number();
+    if (focus) field.focus();
+  }
+
+  function number() {
+    box.querySelectorAll('.disk-row').forEach((r, i) => { r.querySelector('.disk-row-n').textContent = `${i + 1}`; });
+  }
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-secondary btn-sm disk-add-btn';
+  addBtn.textContent = '➕ افزودن هارد / SSD';
+  addBtn.addEventListener('click', () => addRow('', true));
+  box.appendChild(addBtn);
+
+  function render() {
+    rendering = true;
+    box.querySelectorAll('.disk-row').forEach(r => r.remove());
+    const vals = split(getRaw());
+    (vals.length ? vals : ['']).forEach(v => addRow(v));
+    rendering = false;
+  }
+
+  // Code that sets input.value (AI scan, same-model copy, edit form...) redraws the rows
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get: getRaw,
+    set(v) { setRaw(v); render(); }
+  });
+  render();
+}
+window.setupMultiDiskInput = setupMultiDiskInput;
+
 // Render interactive chips below a form field
 function setupFieldChips(inputId, defaultChips = [], dbItems = [], callback) {
   const input = document.getElementById(inputId);
@@ -502,6 +587,15 @@ function setupFieldChips(inputId, defaultChips = [], dbItems = [], callback) {
 
     btn.onclick = (e) => {
       e.preventDefault();
+      if (input.dataset.multi) {
+        // multi-disk field: a chip adds one more drive instead of replacing the list
+        const list = String(input.value || '').split(' / ').map(s => s.trim()).filter(Boolean);
+        if (!list.some(d => d.toLowerCase() === chip.value.toLowerCase())) list.push(chip.value);
+        input.value = list.join(' / ');
+        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (err) {}
+        if (callback) callback(chip.value);
+        return;
+      }
       input.value = chip.value;
       input.focus();
       // Visual feedback
