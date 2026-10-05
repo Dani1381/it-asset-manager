@@ -1082,6 +1082,56 @@ function buildSummaryReport(assets) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Component moves: a part taken out of one device can be put into another
+// ---------------------------------------------------------------------------
+const COMPONENT_FIELDS = { ram: 'ram', storage: 'storage_drives', cpu: 'cpu', gpu: 'gpu' };
+const COMPONENT_ACTIONS = ['correction', 'moved_to', 'spare', 'sold', 'broken', 'from_device', 'new_part', 'other'];
+
+function ramGb(s) {
+  const m = String(s || '').match(/(\d+(?:\.\d+)?)\s*GB/i);
+  return m ? Number(m[1]) : 0;
+}
+function ramType(s) {
+  return (String(s || '').match(/\bDDR\d\w*\b/i) || [''])[0].toUpperCase();
+}
+// "8 GB" + 4 GB -> "12 GB DDR4" (module details are no longer known after a change)
+function ramPlus(current, deltaGb, typeHint) {
+  const total = Math.max(0, Math.round((ramGb(current) + deltaGb) * 10) / 10);
+  if (!total) return '';
+  const type = ramType(current) || ramType(typeHint);
+  return `${total} GB${type ? ' ' + type : ''}`;
+}
+function diskList(s) {
+  return String(s || '').split(' / ').map(x => x.trim()).filter(Boolean);
+}
+const diskKey = d => d.toLowerCase().replace(/\s*\(\d+(?:\.\d+)?\s*(gb|tb)\)\s*$/i, '').replace(/\s+ata device$/i, '').trim();
+function storagePlus(current, parts) {
+  const list = diskList(current);
+  for (const p of diskList(parts)) if (!list.some(d => diskKey(d) === diskKey(p))) list.push(p);
+  return list.join(' / ');
+}
+function storageMinus(current, parts) {
+  const drop = new Set(diskList(parts).map(diskKey));
+  return diskList(current).filter(d => !drop.has(diskKey(d))).join(' / ');
+}
+
+// Apply the other side of a move: add the part to the target device, or take it from the source device
+function applyComponentToOther(other, component, direction, part) {
+  const field = COMPONENT_FIELDS[component];
+  const patch = {};
+  if (component === 'ram') {
+    patch.ram = ramPlus(other.ram, direction === 'removed' ? ramGb(part) : -ramGb(part), part);
+  } else if (component === 'storage') {
+    patch.storage_drives = direction === 'removed' ? storagePlus(other.storage_drives, part) : storageMinus(other.storage_drives, part);
+  } else {
+    // a CPU / GPU is a single part: moving it in replaces the target's, taking it out leaves the source empty
+    patch[field] = direction === 'removed' ? part : '';
+  }
+  queries.updateAsset(other.id, patch);
+  return patch;
+}
+
 // Minimal ZIP writer (stored, no compression) — keeps the project dependency-free
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -1658,6 +1708,48 @@ const server = http.createServer(async (req, res) => {
 
       const assets = queries.getAllAssets({ search, category, status, limit, offset });
       return sendJson(res, 200, assets);
+    }
+
+    // POST /api/assets/:id/component-change — what happened to a part changed in the edit form
+    // { component: ram|storage|cpu|gpu, direction: removed|added, part, old_value, new_value, action, other_property_id, note }
+    const compChangeMatch = pathname.match(/^\/api\/assets\/(\d+)\/component-change$/);
+    if (method === 'POST' && compChangeMatch) {
+      const id = parseInt(compChangeMatch[1], 10);
+      const asset = queries.getAssetById(id);
+      if (!asset) return sendJson(res, 404, { error: 'Asset not found' });
+      const d = await parseRequestBody(req);
+      const component = String(d.component || '');
+      const direction = d.direction === 'added' ? 'added' : 'removed';
+      const action = String(d.action || '');
+      if (!COMPONENT_FIELDS[component]) return sendJson(res, 400, { error: 'قطعه نامعتبر است' });
+      if (!COMPONENT_ACTIONS.includes(action)) return sendJson(res, 400, { error: 'نوع تغییر نامعتبر است' });
+      const part = String(d.part || '').slice(0, 300);
+
+      let other = null;
+      let otherPatch = null;
+      if (action === 'moved_to' || action === 'from_device') {
+        const opid = String(d.other_property_id || '').trim();
+        other = opid ? queries.getAssetByPropertyId(opid) : null;
+        if (!other) return sendJson(res, 400, { error: `دستگاهی با شماره اموال «${opid}» پیدا نشد.` });
+        if (other.id === id) return sendJson(res, 400, { error: 'دستگاه مقصد نمی‌تواند همین دستگاه باشد.' });
+        otherPatch = applyComponentToOther(other, component, action === 'moved_to' ? 'removed' : 'added', part);
+      }
+
+      queries.addComponentMove({
+        asset_id: id, property_id: asset.property_id, component, direction, part,
+        old_value: String(d.old_value || '').slice(0, 300), new_value: String(d.new_value || '').slice(0, 300),
+        action, other_asset_id: other ? other.id : null, other_property_id: other ? other.property_id : null,
+        note: String(d.note || '').slice(0, 300), created_by: sessionUser ? sessionUser.username : null
+      });
+      const labels = { ram: 'رم', storage: 'هارد', cpu: 'پردازنده', gpu: 'گرافیک' };
+      queries.addLog('INFO', 'COMPONENT', `${labels[component]} «${part}» ${direction === 'removed' ? 'از' : 'به'} ${asset.property_id}: ${action}` + (other ? ` (${other.property_id})` : ''), String(d.note || ''), req.socket?.remoteAddress || '');
+      return sendJson(res, 200, { success: true, other: other ? { id: other.id, property_id: other.property_id, ...otherPatch } : null });
+    }
+
+    // GET /api/assets/:id/component-history
+    const compHistMatch = pathname.match(/^\/api\/assets\/(\d+)\/component-history$/);
+    if (method === 'GET' && compHistMatch) {
+      return sendJson(res, 200, queries.getComponentMoves(parseInt(compHistMatch[1], 10)));
     }
 
     // GET /api/assets/:id

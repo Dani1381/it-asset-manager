@@ -210,6 +210,26 @@ function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_pending_scans_status ON pending_scans(status);
 
+    -- What happened to a part when a device was edited (RAM / disk / CPU moved, sold, broken...)
+    CREATE TABLE IF NOT EXISTS component_moves (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id INTEGER NOT NULL,
+      property_id TEXT,
+      component TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      part TEXT,
+      old_value TEXT,
+      new_value TEXT,
+      action TEXT NOT NULL,
+      other_asset_id INTEGER,
+      other_property_id TEXT,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_component_moves_asset ON component_moves(asset_id);
+    CREATE INDEX IF NOT EXISTS idx_component_moves_other ON component_moves(other_asset_id);
+
     -- Photo intake queue: photos taken now, AI-processed in the background, reviewed and approved later
     CREATE TABLE IF NOT EXISTS photo_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -789,6 +809,21 @@ const queries = {
 
   normalizeModelName(name) {
     return normalizeModelName(name);
+  },
+
+  // ---- Component moves (parts history) ----
+  addComponentMove(m) {
+    const r = db.prepare(`INSERT INTO component_moves (asset_id, property_id, component, direction, part, old_value, new_value,
+      action, other_asset_id, other_property_id, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      m.asset_id, m.property_id || null, m.component, m.direction, m.part || null, m.old_value || null, m.new_value || null,
+      m.action, m.other_asset_id || null, m.other_property_id || null, m.note || null, m.created_by || null, new Date().toISOString());
+    scheduleBackup();
+    return Number(r.lastInsertRowid);
+  },
+
+  // Moves recorded on this asset, plus parts other assets sent to / took from it
+  getComponentMoves(assetId) {
+    return db.prepare('SELECT * FROM component_moves WHERE asset_id = ? OR other_asset_id = ? ORDER BY id DESC').all(assetId, assetId);
   },
 
   // ---- Photo intake queue ----
@@ -1393,6 +1428,9 @@ const queries = {
 
   // Delete asset
   deleteAsset(id) {
+    // Its own parts history goes with it; moves seen from another device keep the property number as text
+    db.prepare('DELETE FROM component_moves WHERE asset_id = ?').run(id);
+    db.prepare('UPDATE component_moves SET other_asset_id = NULL WHERE other_asset_id = ?').run(id);
     // Also remove photos from disk
     const photos = db.prepare('SELECT file_name FROM asset_photos WHERE asset_id = ?').all(id);
     for (const p of photos) {

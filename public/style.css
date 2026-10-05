@@ -2145,3 +2145,27 @@ body.light-mode .part-chip-tag { background: rgba(15, 23, 42, 0.07); }
 .part-chip { flex-wrap: wrap; white-space: normal; row-gap: 0.15rem; border-radius: 14px; }
 .part-chip-main { flex: 0 0 auto; overflow: visible; white-space: nowrap; }
 .disk-chip { flex-wrap: wrap; row-gap: 0.15rem; border-radius: 14px; }
+
+/* ---- Parts changes window & parts history ---- */
+.parts-intro { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 0.8rem; line-height: 1.7; }
+.parts-change { border: 1px solid var(--border-color); border-radius: 12px; padding: 0.75rem 0.85rem; margin-bottom: 0.7rem; background: var(--bg-input); }
+.parts-change-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; }
+.parts-badge { font-size: 0.72rem; font-weight: 700; padding: 0.05rem 0.5rem; border-radius: 999px; }
+.parts-badge.removed { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+.parts-badge.added { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+.parts-part { font-weight: 800; overflow-wrap: anywhere; }
+.parts-diff { font-size: 0.76rem; color: var(--text-dim); margin: 0.3rem 0 0.5rem; overflow-wrap: anywhere; text-align: right; }
+.parts-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.3rem 0.8rem; }
+.parts-action { display: flex; align-items: center; gap: 0.4rem; font-size: 0.86rem; cursor: pointer; }
+.parts-target { margin-top: 0.5rem; }
+.parts-target[hidden] { display: none; }
+.parts-note { margin-top: 0.5rem; font-size: 0.85rem; }
+.parts-history { margin-top: 1.2rem; }
+.parts-history[hidden] { display: none; }
+.parts-row { padding: 0.5rem 0.2rem; border-bottom: 1px solid var(--border-color); }
+.parts-row:last-child { border-bottom: 0; }
+.parts-row-main { font-size: 0.9rem; font-weight: 600; }
+.parts-row-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.parts-row-meta a { color: #93c5fd; }
+/* the "what happened to this part?" window opens over the edit form */
+#parts-modal { z-index: 3000; }

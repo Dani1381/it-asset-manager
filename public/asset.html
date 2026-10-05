@@ -110,6 +110,12 @@
             <div id="disk-health-list" class="disk-health-list"></div>
             <div id="disk-health-meta" class="disk-health-meta"></div>
           </div>
+
+          <!-- Parts history: RAM / disks / CPU moved, sold, broken... -->
+          <div id="parts-history-section" class="parts-history" hidden>
+            <h3 class="disk-health-title"><span>🔧</span> <span>تاریخچه قطعات</span></h3>
+            <div id="parts-history-list"></div>
+          </div>
         </div>
 
         <!-- Right: Photo Gallery & Sticker Preview -->
@@ -176,6 +182,23 @@
       </div>
 
       <!-- Edit Modal Form -->
+      <!-- Asked when RAM / disk / CPU changed in the edit form -->
+      <div id="parts-modal" class="modal-backdrop">
+        <div class="modal-dialog" style="max-width: 620px;">
+          <div class="modal-header">
+            <h3 class="modal-title">🔧 این قطعه چی شد؟</h3>
+            <button type="button" class="modal-close" onclick="closePartsModal()">&times;</button>
+          </div>
+          <p class="parts-intro">مشخصات قطعات این دستگاه تغییر کرده. برای هر مورد بگویید چه اتفاقی افتاده تا در تاریخچه ثبت شود؛ اگر به دستگاه دیگری منتقل شده، خودکار روی آن دستگاه هم اضافه می‌شود.</p>
+          <div id="parts-changes"></div>
+          <datalist id="parts-asset-ids"></datalist>
+          <div class="wizard-nav-btns" style="margin-top: 1rem;">
+            <button type="button" class="btn btn-secondary" onclick="closePartsModal()">انصراف</button>
+            <button type="button" class="btn btn-success" id="parts-save-btn" onclick="confirmPartsAndSave()">💾 ثبت تغییرات</button>
+          </div>
+        </div>
+      </div>
+
       <div id="edit-modal" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-header">
@@ -473,6 +496,7 @@
 
       // Drive health (only for devices that run the scanner / have disks)
       renderDiskHealth(a);
+      renderPartsHistory(a);
 
       // Photos
       renderPhotos(a.photos || []);
@@ -836,6 +860,17 @@
         notes: document.getElementById('edit-notes').value.trim()
       };
 
+      // RAM / disk / CPU changed? Ask what happened to the part before saving
+      const changes = detectPartChanges(currentAsset, payload);
+      if (changes.length) {
+        pendingEdit = { payload, changes };
+        openPartsModal(changes);
+        return;
+      }
+      await putAssetEdit(payload);
+    }
+
+    async function putAssetEdit(payload) {
       try {
         const res = await fetch(`/api/assets/${assetId}`, {
           method: 'PUT',
@@ -850,9 +885,169 @@
         }
         closeEditModal();
         await loadAssetDetails();
+        return true;
       } catch (e) {
         alert('خطا: ' + e.message);
+        return false;
       }
+    }
+
+    // ---- Parts changes (RAM / disks / CPU): what happened to the removed or added part ----
+    let pendingEdit = null;
+    const PART_LABEL = { ram: '🧠 رم', storage: '💾 هارد / SSD', cpu: '🖥️ پردازنده' };
+    const ACTIONS_REMOVED = [
+      ['correction', '✏️ اشتباه وارد شده بود / فقط اصلاح'],
+      ['moved_to', '🔁 منتقل شد به دستگاه دیگر'],
+      ['spare', '📦 رفت انبار قطعات'],
+      ['sold', '💰 فروخته شد'],
+      ['broken', '🔴 خراب شد / اسقاط'],
+      ['other', '📝 سایر']
+    ];
+    const ACTIONS_ADDED = [
+      ['correction', '✏️ اشتباه وارد شده بود / فقط اصلاح'],
+      ['from_device', '🔁 از دستگاه دیگری برداشته شد'],
+      ['new_part', '🛒 قطعه نو / از انبار قطعات'],
+      ['other', '📝 سایر']
+    ];
+
+    function gbOf(s) { const m = String(s || '').match(/(\d+(?:\.\d+)?)\s*GB/i); return m ? Number(m[1]) : 0; }
+    function ddrOf(s) { return (String(s || '').match(/\bDDR\d\w*\b/i) || [''])[0].toUpperCase(); }
+    function disksOf(s) { return String(s || '').split(' / ').map(x => x.trim()).filter(Boolean); }
+    const diskKeyOf = d => d.toLowerCase().replace(/\s*\(\d+(?:\.\d+)?\s*(gb|tb)\)\s*$/i, '').replace(/\s+ata device$/i, '').trim();
+
+    function detectPartChanges(oldA, p) {
+      const out = [];
+      // RAM: compare amounts, the difference is the part that left / arrived
+      const oGb = gbOf(oldA.ram), nGb = gbOf(p.ram);
+      if (oGb && nGb !== oGb) {
+        const diff = Math.round(Math.abs(oGb - nGb) * 10) / 10;
+        const type = ddrOf(oldA.ram) || ddrOf(p.ram);
+        out.push({ component: 'ram', direction: nGb < oGb ? 'removed' : 'added', part: `${diff} GB${type ? ' ' + type : ''}`, old_value: oldA.ram, new_value: p.ram });
+      }
+      // Disks: the drives that disappeared / appeared in the list
+      const oD = disksOf(oldA.storage_drives), nD = disksOf(p.storage_drives);
+      const removed = oD.filter(d => !nD.some(x => diskKeyOf(x) === diskKeyOf(d)));
+      const added = nD.filter(d => !oD.some(x => diskKeyOf(x) === diskKeyOf(d)));
+      if (removed.length) out.push({ component: 'storage', direction: 'removed', part: removed.join(' / '), old_value: oldA.storage_drives, new_value: p.storage_drives });
+      if (added.length && oD.length) out.push({ component: 'storage', direction: 'added', part: added.join(' / '), old_value: oldA.storage_drives, new_value: p.storage_drives });
+      // CPU replaced: the old processor is the part that left
+      const oc = String(oldA.cpu || '').trim(), nc = String(p.cpu || '').trim();
+      if (oc && nc !== oc) out.push({ component: 'cpu', direction: 'removed', part: oc, old_value: oc, new_value: nc });
+      return out;
+    }
+
+    async function openPartsModal(changes) {
+      const box = document.getElementById('parts-changes');
+      box.innerHTML = changes.map((c, i) => {
+        const actions = c.direction === 'removed' ? ACTIONS_REMOVED : ACTIONS_ADDED;
+        return `
+          <div class="parts-change" data-i="${i}">
+            <div class="parts-change-head">
+              <strong>${PART_LABEL[c.component]}</strong>
+              <span class="parts-badge ${c.direction}">${c.direction === 'removed' ? 'برداشته شد' : 'اضافه شد'}</span>
+              <span class="parts-part" dir="ltr">${escapeHtml(c.part)}</span>
+            </div>
+            <div class="parts-diff" dir="ltr">${escapeHtml(c.old_value || '-')} → ${escapeHtml(c.new_value || '-')}</div>
+            <div class="parts-actions">
+              ${actions.map(([v, label], k) => `
+                <label class="parts-action"><input type="radio" name="pa-${i}" value="${v}" ${k === 0 ? 'checked' : ''} onchange="partsActionChanged(${i})"> ${label}</label>`).join('')}
+            </div>
+            <div class="parts-target" id="pt-${i}" hidden>
+              <label class="form-label">${c.direction === 'removed' ? 'شماره اموال دستگاه مقصد' : 'از کدام دستگاه؟ (شماره اموال)'}</label>
+              <input type="text" class="form-control" id="pt-input-${i}" list="parts-asset-ids" placeholder="مثلاً 1102" dir="ltr">
+            </div>
+            <input type="text" class="form-control parts-note" id="pn-${i}" placeholder="توضیح (اختیاری)">
+          </div>`;
+      }).join('');
+      // one window at a time: the edit form comes back on "cancel"
+      document.getElementById('edit-modal').classList.remove('active');
+      document.getElementById('parts-modal').classList.add('active');
+      // property numbers for the target box
+      try {
+        const list = await (await fetch('/api/assets?limit=10000')).json();
+        document.getElementById('parts-asset-ids').innerHTML = list.filter(a => a.id !== currentAsset.id && ['PC', 'Single PC', 'Laptop', 'Server'].includes(a.category))
+          .map(a => `<option value="${escapeHtml(a.property_id)}">${escapeHtml(a.manufacturer_model || '')}</option>`).join('');
+      } catch (e) {}
+    }
+
+    function partsActionChanged(i) {
+      const v = document.querySelector(`input[name="pa-${i}"]:checked`).value;
+      document.getElementById(`pt-${i}`).hidden = !(v === 'moved_to' || v === 'from_device');
+    }
+
+    // "Cancel": back to the edit form with the typed values, nothing saved
+    function closePartsModal() {
+      document.getElementById('parts-modal').classList.remove('active');
+      if (pendingEdit) document.getElementById('edit-modal').classList.add('active');
+      pendingEdit = null;
+    }
+
+    async function confirmPartsAndSave() {
+      if (!pendingEdit) return;
+      const { payload, changes } = pendingEdit;
+      const answers = changes.map((c, i) => ({
+        ...c,
+        action: document.querySelector(`input[name="pa-${i}"]:checked`).value,
+        other_property_id: (document.getElementById(`pt-input-${i}`).value || '').trim(),
+        note: (document.getElementById(`pn-${i}`).value || '').trim()
+      }));
+      const missing = answers.find(a => (a.action === 'moved_to' || a.action === 'from_device') && !a.other_property_id);
+      if (missing) { alert('شماره اموال دستگاه دیگر را وارد کنید.'); return; }
+
+      const btn = document.getElementById('parts-save-btn');
+      btn.disabled = true;
+      const ok = await putAssetEdit(payload);
+      if (!ok) { btn.disabled = false; return; }
+      const results = [];
+      for (const a of answers) {
+        try {
+          const res = await fetch(`/api/assets/${assetId}/component-change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(a) });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'خطا');
+          if (data.other) {
+            const field = a.component === 'ram' ? data.other.ram : a.component === 'storage' ? data.other.storage_drives : data.other[a.component];
+            results.push(`• ${PART_LABEL[a.component]} ${a.direction === 'removed' ? '→' : '←'} ${data.other.property_id}: الان «${field || '-'}»`);
+          } else {
+            results.push(`• ${PART_LABEL[a.component]} «${a.part}»: ثبت شد`);
+          }
+        } catch (e) {
+          results.push(`• ${PART_LABEL[a.component]}: ⚠️ ${e.message}`);
+        }
+      }
+      btn.disabled = false;
+      document.getElementById('parts-modal').classList.remove('active');
+      pendingEdit = null;
+      alert('✅ تغییرات ذخیره شد\n\n' + results.join('\n'));
+      await loadAssetDetails();
+    }
+
+    const ACTION_TEXT = {
+      correction: '✏️ اصلاح اطلاعات', moved_to: '🔁 منتقل شد به', spare: '📦 انبار قطعات', sold: '💰 فروخته شد',
+      broken: '🔴 خراب / اسقاط', from_device: '🔁 برداشته شده از', new_part: '🛒 قطعه نو', other: '📝 سایر'
+    };
+
+    async function renderPartsHistory(a) {
+      const section = document.getElementById('parts-history-section');
+      let rows = [];
+      try { rows = await (await fetch(`/api/assets/${a.id}/component-history`)).json(); } catch (e) {}
+      if (!rows.length) { section.hidden = true; return; }
+      document.getElementById('parts-history-list').innerHTML = rows.map(r => {
+        const here = r.asset_id === a.id;
+        // seen from the other device: "received from" / "given to"
+        let text;
+        if (here) {
+          text = `${ACTION_TEXT[r.action] || r.action}${r.other_property_id ? ` <a href="/asset.html?id=${r.other_asset_id}">${escapeHtml(r.other_property_id)}</a>` : ''}`;
+        } else {
+          text = r.action === 'moved_to' ? `📥 دریافت از <a href="/asset.html?id=${r.asset_id}">${escapeHtml(r.property_id)}</a>`
+                                         : `📤 داده شد به <a href="/asset.html?id=${r.asset_id}">${escapeHtml(r.property_id)}</a>`;
+        }
+        const dir = here ? (r.direction === 'removed' ? '➖' : '➕') : (r.action === 'moved_to' ? '➕' : '➖');
+        return `<div class="parts-row">
+          <div class="parts-row-main">${dir} ${PART_LABEL[r.component] || r.component} <span class="parts-part" dir="ltr">${escapeHtml(r.part || '')}</span></div>
+          <div class="parts-row-meta">${text}${r.note ? ` · ${escapeHtml(r.note)}` : ''} · ${new Date(r.created_at).toLocaleString('fa-IR')}${r.created_by ? ' · ' + escapeHtml(r.created_by) : ''}</div>
+        </div>`;
+      }).join('');
+      section.hidden = false;
     }
 
     async function deleteCurrentAsset() {
