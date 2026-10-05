@@ -332,6 +332,12 @@ async function initSmartFill() {
   setupMultiDiskInput('storage_drives');
   setupMultiDiskInput('edit-storage');
 
+  // As-you-type suggestions for the other fields (add form + edit form)
+  for (const [id, field] of [
+    ['cpu', 'cpu'], ['ram', 'ram'], ['gpu', 'gpu'], ['monitors', 'monitors'], ['location', 'location'], ['department', 'department'], ['user_name', 'user'],
+    ['edit-cpu', 'cpu'], ['edit-ram', 'ram'], ['edit-gpu', 'gpu'], ['edit-monitors', 'monitors'], ['edit-location', 'location'], ['edit-department', 'department'], ['edit-user', 'user']
+  ]) setupFieldAutocomplete(id, field);
+
   // As-you-type suggestions from models already in the database
   setupModelAutocomplete('manufacturer_model', 'category', it => { if (window.onModelPicked) window.onModelPicked(it); });
   setupModelAutocomplete('edit-model', 'edit-category');
@@ -453,6 +459,87 @@ function setupModelAutocomplete(inputId, categoryId, onPick) {
 window.setupModelAutocomplete = setupModelAutocomplete;
 
 // ---------------------------------------------------------------------------
+// The same dropdown for other fields (RAM, CPU, GPU, each disk row, monitors,
+// location, department, user): values already used in the database, most used
+// first, typo tolerant. Opens on focus too, so you can just pick.
+// ---------------------------------------------------------------------------
+const FIELD_AC_ICON = { ram: '🧠', cpu: '🖥️', gpu: '🎮', storage: '💾', monitors: '📺', location: '📍', department: '🏢', user: '👤' };
+
+function setupFieldAutocomplete(inputOrId, field) {
+  const input = typeof inputOrId === 'string' ? document.getElementById(inputOrId) : inputOrId;
+  if (!input || input.dataset.acBound) return;
+  input.dataset.acBound = '1';
+  input.setAttribute('autocomplete', 'off');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'model-ac-wrap field-ac-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const list = document.createElement('div');
+  list.className = 'model-ac-list';
+  list.hidden = true;
+  wrap.appendChild(list);
+
+  let items = [], active = -1, timer = null, seq = 0;
+  const close = () => { list.hidden = true; active = -1; };
+
+  function render(query) {
+    if (!items.length) { close(); return; }
+    list.innerHTML = `<div class="model-ac-head">${FIELD_AC_ICON[field] || '🔎'} ${query ? 'پیشنهادهای مشابه' : 'پرکاربردترین‌ها'} در انبار</div>` + items.map((it, i) => `
+      <button type="button" class="model-ac-item${i === active ? ' active' : ''}" data-i="${i}">
+        <span class="model-ac-text">
+          <span class="model-ac-name">${acHighlight(it.value, query)}</span>
+          <span class="model-ac-meta">${it.count} بار استفاده شده</span>
+        </span>
+      </button>`).join('');
+    list.hidden = false;
+  }
+
+  function pick(i) {
+    const it = items[i];
+    if (!it) return;
+    input.value = it.value;
+    close();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function search() {
+    const q = input.value.trim();
+    const mySeq = ++seq;
+    try {
+      const res = await fetch(`/api/suggest?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}`);
+      if (!res.ok || mySeq !== seq) return;
+      const data = await res.json();
+      // nothing to offer when the only hit is exactly what is typed
+      items = (data.results || []).filter(r => r.value.toLowerCase() !== q.toLowerCase() || data.results.length > 1);
+      active = -1;
+      if (document.activeElement === input) render(q);
+    } catch (e) { /* offline: no suggestions */ }
+  }
+
+  input.addEventListener('input', e => {
+    if (!e.isTrusted) return; // value set from code / a pick: don't reopen
+    clearTimeout(timer);
+    timer = setTimeout(search, 200);
+  });
+  input.addEventListener('focus', () => search());
+  input.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(input.value); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(input.value); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); e.stopImmediatePropagation(); pick(active); }
+    else if (e.key === 'Escape') close();
+  });
+  list.addEventListener('mousedown', e => {
+    const b = e.target.closest('.model-ac-item');
+    if (b) { e.preventDefault(); pick(Number(b.dataset.i)); }
+  });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+}
+window.setupFieldAutocomplete = setupFieldAutocomplete;
+
+// ---------------------------------------------------------------------------
 // Multi-disk editor: one row per drive instead of a single text box.
 // The original <input> stays (hidden) and keeps "A / B / C", so every other piece
 // of code that reads or writes .value keeps working; the rows follow it.
@@ -489,6 +576,7 @@ function setupMultiDiskInput(inputId) {
     const field = row.querySelector('input');
     field.value = value;
     field.addEventListener('input', () => { if (!rendering) sync(); });
+    setupFieldAutocomplete(field, 'storage'); // suggestions from drives already registered
     // the same shorthand as the old single box: "nvme 256" -> "256GB NVMe SSD"
     field.addEventListener('blur', () => {
       const v = field.value.trim();

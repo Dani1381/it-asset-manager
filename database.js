@@ -912,6 +912,37 @@ const queries = {
     return modelMergeSuggestions();
   },
 
+  // As-you-type suggestions for one field from the values already stored (with how often each is used).
+  // Disks are counted per drive ("A / B" -> A, B); RAM / CPU / GPU spellings are merged by their compact form.
+  suggestFieldValues(field, query, limit = 8) {
+    const COLS = { ram: 'ram', cpu: 'cpu', gpu: 'gpu', storage: 'storage_drives', monitors: 'monitors', location: 'location', department: 'department', user: 'user_name' };
+    const col = COLS[field];
+    if (!col) return [];
+    const rows = db.prepare(`SELECT ${col} AS v, COUNT(*) AS n, MAX(updated_at) AS t FROM assets WHERE ${col} IS NOT NULL AND TRIM(${col}) != '' GROUP BY ${col}`).all();
+    const counts = new Map(); // compact key -> { value, count, last }
+    for (const r of rows) {
+      const parts = (field === 'storage' || field === 'monitors') ? String(r.v).split(' / ') : [String(r.v)];
+      for (let p of parts) {
+        p = p.replace(/\s+/g, ' ').trim();
+        if (!p || /^(n\/?a|-|0|default display|unknown)$/i.test(p) || /usb device|flash drive/i.test(p)) continue;
+        const key = compactText(p);
+        const cur = counts.get(key) || { value: p, count: 0, last: '' };
+        cur.count += r.n;
+        if (String(r.t) > cur.last) cur.last = String(r.t);
+        counts.set(key, cur);
+      }
+    }
+    const q = String(query || '').trim();
+    let list = [...counts.values()];
+    if (q) {
+      list = list.map(x => ({ ...x, score: modelMatchScore(q, x.value) })).filter(x => x.score >= 0.4);
+      list.sort((a, b) => b.score - a.score || b.count - a.count);
+    } else {
+      list.sort((a, b) => b.count - a.count || b.last.localeCompare(a.last));
+    }
+    return list.slice(0, limit).map(x => ({ value: x.value, count: x.count }));
+  },
+
   // Rename every asset of the given models to one name (manual merge tool)
   mergeModels(fromNames, toName) {
     const to = String(toName || '').trim();

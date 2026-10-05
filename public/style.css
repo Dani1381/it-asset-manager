@@ -2222,3 +2222,6 @@ body.light-mode .card-price { color: #a16207; }
 .disk-row-del { flex: 0 0 auto; border: 1px solid var(--border-color); background: var(--bg-input); color: #f87171; border-radius: 8px; width: 2.1rem; height: 2.1rem; cursor: pointer; font-size: 0.85rem; }
 .disk-row-del:hover { border-color: #f87171; }
 .disk-add-btn { align-self: flex-start; }
+/* field suggestions: inside a disk row the box shares the row with the remove button */
+.disk-row .field-ac-wrap { flex: 1 1 auto; min-width: 0; }
+.field-ac-wrap .model-ac-name { direction: ltr; }

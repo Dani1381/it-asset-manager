@@ -1439,6 +1439,13 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { input: name, name: queries.normalizeModelName(name) });
     }
 
+    // GET /api/suggest?field=ram|cpu|gpu|storage|monitors|location|department|user&q=  (as-you-type, from stored values)
+    if (method === 'GET' && pathname === '/api/suggest') {
+      const field = parsedUrl.searchParams.get('field') || '';
+      const q = parsedUrl.searchParams.get('q') || '';
+      return sendJson(res, 200, { results: queries.suggestFieldValues(field, q, 8) });
+    }
+
     // GET /api/models/merge-suggestions — names that look like the same product
     if (method === 'GET' && pathname === '/api/models/merge-suggestions') {
       return sendJson(res, 200, { groups: queries.modelMergeSuggestions() });
