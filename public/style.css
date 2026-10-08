@@ -2225,3 +2225,10 @@ body.light-mode .card-price { color: #a16207; }
 /* field suggestions: inside a disk row the box shares the row with the remove button */
 .disk-row .field-ac-wrap { flex: 1 1 auto; min-width: 0; }
 .field-ac-wrap .model-ac-name { direction: ltr; }
+
+/* ---- Server drive nearly full ---- */
+.server-disk-warning { margin: 0.8rem auto 0; max-width: 1400px; width: calc(100% - 2rem); padding: 0.7rem 1rem; border-radius: 12px; font-size: 0.88rem; line-height: 1.8; }
+.server-disk-warning.is-low { background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(251, 191, 36, 0.5); color: #fde68a; }
+.server-disk-warning.is-critical { background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(248, 113, 113, 0.6); color: #fecaca; }
+body.light-mode .server-disk-warning.is-low { color: #92400e; }
+body.light-mode .server-disk-warning.is-critical { color: #991b1b; }

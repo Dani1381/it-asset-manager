@@ -1149,6 +1149,18 @@ function applyComponentToOther(other, component, direction, part) {
   return patch;
 }
 
+// Free space on the drive that holds the database and photos (a full disk stops saves)
+function diskSpace() {
+  try {
+    const s = fs.statfsSync(__dirname);
+    const free = s.bavail * s.bsize, total = s.blocks * s.bsize;
+    const freeGb = Math.round(free / 1073741824 * 10) / 10;
+    return { free_gb: freeGb, total_gb: Math.round(total / 1073741824), level: freeGb < 1 ? 'critical' : freeGb < 3 ? 'low' : 'ok' };
+  } catch (e) {
+    return null;
+  }
+}
+
 // Minimal ZIP writer (stored, no compression) — keeps the project dependency-free
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -1336,7 +1348,7 @@ const server = http.createServer(async (req, res) => {
     // GET /api/stats
     if (method === 'GET' && pathname === '/api/stats') {
       const stats = queries.getStats();
-      return sendJson(res, 200, stats);
+      return sendJson(res, 200, { ...stats, disk: diskSpace() });
     }
 
     // GET /api/logs (System Live Logs for debugging)
@@ -1824,6 +1836,25 @@ const server = http.createServer(async (req, res) => {
       const asset = queries.getAssetById(id);
       if (!asset) return sendJson(res, 404, { error: 'Asset not found' });
       return sendJson(res, 200, asset);
+    }
+
+    // POST /api/assets/bulk { count, ...asset fields } — N identical items without a property tag
+    // (keyboards, mice, chairs...): each gets its own internal NT- code so it can be tracked later
+    if (method === 'POST' && pathname === '/api/assets/bulk') {
+      const data = await parseRequestBody(req);
+      const count = parseInt(data.count, 10);
+      if (!Number.isInteger(count) || count < 1 || count > 500) return sendJson(res, 400, { error: 'تعداد باید بین ۱ تا ۵۰۰ باشد.' });
+      if (!String(data.manufacturer_model || '').trim()) return sendJson(res, 400, { error: 'مدل / نام کالا را وارد کنید.' });
+      const { count: _c, property_id: _p, photos: _ph, ...fields } = data;
+      const ids = [];
+      for (let i = 0; i < count; i++) {
+        const newId = queries.createAsset({ ...fields, no_tag: true, is_automated: 0 });
+        ids.push(newId);
+      }
+      const first = queries.getAssetById(ids[0]);
+      const last = queries.getAssetById(ids[ids.length - 1]);
+      queries.addLog('SUCCESS', 'BULK_ADD', `${count} عدد «${first.manufacturer_model}» ثبت شد`, `${first.property_id} تا ${last.property_id}`, req.socket?.remoteAddress || '');
+      return sendJson(res, 201, { success: true, count, ids, first: first.property_id, last: last.property_id, model: first.manufacturer_model, category: first.category, status: first.status });
     }
 
     // POST /api/assets (Manual Asset Creation)

@@ -190,6 +190,23 @@ function debounce(fn, wait) {
 }
 
 // Load Dashboard Statistics
+// Warning banner when the server's drive is nearly full (saving data and photos would start failing)
+function showServerDiskWarning(disk) {
+  let bar = document.getElementById('server-disk-warning');
+  if (!disk || disk.level === 'ok' || !isAdmin()) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'server-disk-warning';
+    const main = document.querySelector('main.container');
+    main.parentNode.insertBefore(bar, main);
+  }
+  const fa = n => Number(n).toLocaleString('fa-IR');
+  bar.className = `server-disk-warning is-${disk.level}`;
+  bar.innerHTML = disk.level === 'critical'
+    ? `🔴 فضای درایو سرور تقریباً تمام شده: فقط <strong>${fa(disk.free_gb)} گیگ</strong> از ${fa(disk.total_gb)} گیگ خالی است. ذخیره دستگاه‌ها و عکس‌ها ممکن است شکست بخورد — همین حالا پشتیبان بگیرید (ابزارها ← پشتیبان دیتابیس) و فضا آزاد کنید.`
+    : `🟠 فضای درایو سرور کم است: <strong>${fa(disk.free_gb)} گیگ</strong> از ${fa(disk.total_gb)} گیگ خالی. پیش از پر شدن، کمی فضا آزاد کنید.`;
+}
+
 async function loadStats() {
   try {
     const res = await fetch('/api/stats');
@@ -203,6 +220,7 @@ async function loadStats() {
     setElementText('stat-storage', stats.inStorage || 0);
     setElementText('stat-pending-photos', stats.pendingPhotos || 0);
     setElementText('stat-disk-alerts', stats.diskAlerts || 0);
+    showServerDiskWarning(stats.disk);
     const diskCard = document.getElementById('stat-disk-card');
     if (diskCard) diskCard.classList.toggle('has-alerts', (stats.diskAlerts || 0) > 0);
   } catch (err) {

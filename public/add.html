@@ -184,6 +184,10 @@
                 <span>🚫 این کالا شماره اموال ندارد</span>
               </label>
               <div class="no-tag-hint" id="no-tag-hint" hidden>یک کد داخلی (مثل NT-0001) خودکار داده می‌شود. هر وقت برچسب اموال زدید، از صفحه ویرایش شماره واقعی را وارد کنید.</div>
+              <div class="bulk-qty" id="bulk-qty-box" hidden>
+                <label class="form-label">🔢 تعداد (برای ثبت چند عدد یکسان، مثل کیبورد و ماوس)</label>
+                <input type="number" id="bulk-qty" class="form-control" min="1" max="500" value="1" dir="ltr" style="max-width: 140px;">
+              </div>
             </div>
 
             <div class="form-group">
@@ -362,6 +366,9 @@
       if (on) input.value = '';
       input.placeholder = on ? 'بدون شماره اموال (کد داخلی خودکار)' : (window.__nextPropId || 'AST-0001');
       document.getElementById('no-tag-hint').hidden = !on;
+      // several identical untagged items at once (keyboards, mice...)
+      document.getElementById('bulk-qty-box').hidden = !on;
+      if (!on) document.getElementById('bulk-qty').value = 1;
     }
   </script>
   <script>
@@ -1021,6 +1028,29 @@
         notes: document.getElementById('notes').value.trim(),
         is_automated: 0
       };
+
+      // Several identical untagged items: one request creates them all, the photo goes to every one
+      const qty = payload.no_tag ? parseInt(document.getElementById('bulk-qty').value, 10) || 1 : 1;
+      if (qty > 1) {
+        try {
+          if (!confirm(`${qty} عدد «${payload.manufacturer_model}» بدون شماره اموال ثبت شود؟`)) { btn.textContent = '💾 ثبت نهایی دستگاه'; btn.disabled = false; return; }
+          const res = await fetch('/api/assets/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, count: qty }) });
+          const d = await res.json();
+          if (!res.ok) throw new Error(d.error || 'خطا در ثبت گروهی');
+          const photo = pendingPhotos.find(p => !p.isExisting && p.base64);
+          if (photo) {
+            await fetch('/api/photos/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: photo.base64, asset_ids: d.ids, set_primary: true, original_name: photo.original_name }) });
+          }
+          alert(`✅ ${d.count} عدد «${d.model}» ثبت شد\nکدهای داخلی: ${d.first} تا ${d.last}` + (photo ? '\nعکس برای همه ثبت شد.' : ''));
+          window.location.href = '/';
+          return;
+        } catch (e) {
+          alert('خطا: ' + e.message);
+          btn.textContent = '💾 ثبت نهایی دستگاه';
+          btn.disabled = false;
+          return;
+        }
+      }
 
       try {
         const res = await fetch('/api/assets', {
