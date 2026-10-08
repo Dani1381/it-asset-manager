@@ -1513,10 +1513,11 @@ const queries = {
   approvePendingScan(pendingId, customPropertyId, customCategory, customStatus = null, noTag = false) {
     const item = db.prepare('SELECT * FROM pending_scans WHERE id = ?').get(pendingId);
     if (!item) return null;
-    // Devices scanned with the USB kit are bench / storage machines
-    if (!customStatus) customStatus = item.source === 'usb-kit' ? 'in_storage' : 'active';
-    // With the USB kit the operator types the property number in the "name" prompt; it is not a person
-    if (item.source === 'usb-kit' && /^\d{3,6}$/.test(String(item.user_name || '').trim())) item.user_name = null;
+    // With older USB kits the operator typed the property number in the "name" prompt; it is not a person
+    const typed = String(item.user_name || '').trim();
+    if (item.source === 'usb-kit' && (/^\d{3,6}$/.test(typed) || /^(nadaare|nadare|ندارد|no|none|-)$/i.test(typed))) item.user_name = null;
+    // Somebody uses it -> in use. A USB-kit scan without a person is a bench / storage machine.
+    if (!customStatus) customStatus = (item.source === 'usb-kit' && !item.user_name) ? 'in_storage' : 'active';
 
     const propertyId = noTag ? getNextNoTagId()
       : (customPropertyId && customPropertyId.trim()) ? customPropertyId.trim() : getNextPropertyId();
