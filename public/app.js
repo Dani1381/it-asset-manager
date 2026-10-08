@@ -466,7 +466,7 @@ function renderAssets(assets) {
     return;
   }
 
-  container.innerHTML = assets.map(asset => {
+  const cardHtml = asset => {
     const hasPhoto = asset.primary_photo;
     const photoUrl = hasPhoto ? `/uploads/${encodeURIComponent(asset.primary_photo)}` : null;
     // Photos taken with a phone fill the card; catalog images are shown whole
@@ -555,7 +555,65 @@ function renderAssets(assets) {
         </div>
       </div>
     `;
-  }).join('');
+  };
+
+  // Identical untagged items (50 keyboards, 37 mice...) are one group card instead of dozens of cards
+  // computers are never grouped: each one has its own RAM / disks / user
+  const groupKey = a => a.no_tag && !['pc', 'laptop', 'server'].includes(deviceFamily(a))
+    ? `${a.category}|${(a.manufacturer_model || '').trim().toLowerCase()}|${a.status}` : null;
+  const groups = new Map();
+  for (const a of assets) {
+    const k = groupKey(a);
+    if (k) (groups.get(k) || groups.set(k, []).get(k)).push(a);
+  }
+  // groups sit together at the top ("all keyboards and mice in one place"), other devices follow as before
+  const shown = new Set();
+  const groupParts = [];
+  const parts = [];
+  for (const a of assets) {
+    const k = groupKey(a);
+    const list = k ? groups.get(k) : null;
+    if (!list || list.length < GROUP_MIN) { parts.push(cardHtml(a)); continue; }
+    if (shown.has(k)) continue;
+    shown.add(k);
+    const open = expandedGroups.has(k);
+    groupParts.push(groupCardHtml(k, list, open));
+    if (open) groupParts.push(...list.map(cardHtml));
+  }
+  container.innerHTML = groupParts.join('') + parts.join('');
+}
+
+const GROUP_MIN = 3;
+const expandedGroups = new Set();
+
+function toggleAssetGroup(key) {
+  expandedGroups.has(key) ? expandedGroups.delete(key) : expandedGroups.add(key);
+  filterAssets();
+}
+
+function groupCardHtml(key, list, open) {
+  const a = list[0];
+  const photo = list.find(x => x.primary_photo);
+  const statusText = getTranslation(`status_${a.status || 'active'}`) || a.status;
+  const codes = list.map(x => x.property_id).sort();
+  const health = list.reduce((m, x) => (m[x.health || 'healthy'] = (m[x.health || 'healthy'] || 0) + 1, m), {});
+  const healthLine = Object.entries(health).map(([h, n]) => `${healthLabel(h)} ${n}`).join(' · ');
+  return `
+    <div class="asset-card asset-group-card${open ? ' is-open' : ''}" onclick='toggleAssetGroup(${JSON.stringify(key).replace(/'/g, '&#39;')})' role="button" tabindex="0">
+      <div class="asset-header">
+        ${photo ? `<img src="/uploads/${encodeURIComponent(photo.primary_photo)}" alt="" loading="lazy" class="is-stock">`
+                : `<div class="no-photo"><span class="no-photo-icon">${categoryIcon(a.category)}</span></div>`}
+        <div class="group-count">× ${list.length.toLocaleString('fa-IR')}</div>
+        <div class="asset-status-badge badge-${a.status || 'active'}"><span class="status-dot"></span><span>${statusText}</span></div>
+      </div>
+      <div class="asset-body">
+        <div class="asset-title">${escapeHtml(a.manufacturer_model || 'Device')}</div>
+        <div class="asset-subtitle">${categoryIcon(a.category)} <span>${escapeHtml(categoryLabel(a.category))}</span> · بدون شماره اموال</div>
+        <div class="group-meta">🏷️ ${escapeHtml(codes[0])} تا ${escapeHtml(codes[codes.length - 1])}</div>
+        <div class="group-meta">${healthLine}</div>
+        <div class="group-toggle">${open ? '▲ بستن گروه' : `▼ نمایش ${list.length.toLocaleString('fa-IR')} قلم جداگانه`}</div>
+      </div>
+    </div>`;
 }
 
 // Quick Camera Upload for an Asset

@@ -2250,3 +2250,14 @@ body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
 .finder-miss { font-size: 0.8rem; color: #fbbf24; margin-top: 0.3rem; }
 .finder-best { font-weight: 800; color: #34d399; margin-bottom: -0.2rem; }
 .finder-near-title { margin: 1.3rem 0 0.6rem; font-size: 1rem; }
+
+/* ---- Group card: many identical untagged items (keyboards, mice...) ---- */
+.asset-group-card { cursor: pointer; border-style: dashed; border-width: 2px; }
+.asset-group-card.is-open { border-color: var(--primary); }
+.asset-group-card .group-count {
+  position: absolute; top: 0.6rem; inset-inline-start: 0.6rem; z-index: 2;
+  background: var(--primary); color: #fff; font-weight: 800; font-size: 1.05rem;
+  padding: 0.15rem 0.7rem; border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.group-meta { font-size: 0.82rem; color: var(--text-dim); margin-top: 0.35rem; }
+.group-toggle { margin-top: 0.75rem; font-size: 0.85rem; font-weight: 700; color: #93c5fd; }
