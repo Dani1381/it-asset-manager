@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>پیدا کردن کیس - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container finder-page">
+    <h2>🔎 پیدا کردن بهترین کیس انبار</h2>
+    <p class="bulk-help">مشخصات لازم را بدهید؛ سیستم‌های انبار که همه را دارند به ترتیب بهترین نشان داده می‌شوند.</p>
+
+    <section class="report-card finder-form">
+      <label>🧠 حداقل رم
+        <select id="f-ram" class="filter-select"><option value="0">مهم نیست</option><option value="4">4 GB</option><option value="8" selected>8 GB</option><option value="12">12 GB</option><option value="16">16 GB</option><option value="32">32 GB</option></select>
+      </label>
+      <label>🖥️ پردازنده حداقل
+        <select id="f-series" class="filter-select"><option value="0">مهم نیست</option><option value="3">Core i3</option><option value="5" selected>Core i5</option><option value="7">Core i7</option></select>
+      </label>
+      <label>📅 نسل پردازنده حداقل
+        <select id="f-gen" class="filter-select"><option value="0">مهم نیست</option><option value="2">نسل 2</option><option value="3">نسل 3</option><option value="4">نسل 4</option><option value="6" selected>نسل 6</option><option value="8">نسل 8</option><option value="10">نسل 10</option><option value="12">نسل 12</option></select>
+      </label>
+      <label>💾 هارد
+        <select id="f-disk" class="filter-select"><option value="any">مهم نیست</option><option value="ssd" selected>حتماً SSD یا NVMe داشته باشد</option><option value="nvme">حتماً NVMe</option></select>
+      </label>
+      <label>📦 حداقل فضای کل
+        <select id="f-space" class="filter-select"><option value="0" selected>مهم نیست</option><option value="120">120 GB</option><option value="240">240 GB</option><option value="500">500 GB</option><option value="1000">1 TB</option></select>
+      </label>
+      <label>🏷️ نوع
+        <select id="f-type" class="filter-select"><option value="all">همه کامپیوترها</option><option value="desktop">فقط کیس</option><option value="All-in-One">فقط آل‌این‌وان</option><option value="Laptop">فقط لپ‌تاپ</option></select>
+      </label>
+      <label>📍 کجا
+        <select id="f-scope" class="filter-select"><option value="in_storage" selected>فقط انبار</option><option value="all">همه (حتی در حال استفاده)</option></select>
+      </label>
+      <label class="bulk-opt"><input type="checkbox" id="f-healthy" checked> خراب‌ها و «نیازمند بررسی» حساب نشوند</label>
+      <button type="button" class="btn btn-primary" onclick="run()">🔎 پیدا کن</button>
+    </section>
+
+    <div id="finder-summary" class="finder-summary"></div>
+    <div id="finder-results" class="finder-results"></div>
+    <div id="finder-near"></div>
+  </main>
+
+  <script>
+    try { if (!JSON.parse(localStorage.getItem('arka_user') || 'null')) location.href = '/login.html'; } catch (e) { location.href = '/login.html'; }
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+    const COMPUTERS = ['PC', 'Single PC', 'All-in-One', 'Laptop'];
+    let assets = [];
+
+    // Everything the comparison needs from the stored text
+    function profile(a) {
+      const c = cpuInfo(a.cpu) || {};
+      const series = (String(c.name || '').match(/\bi([3579])\b/i) || [])[1];
+      const ram = (ramInfo(a.ram, a.cpu) || {});
+      const disks = parseDisks(a.storage_drives);
+      const totalGb = disks.reduce((t, d) => {
+        const m = String(d.size).match(/([\d.]+)\s*(GB|TB)/i);
+        return t + (m ? Number(m[1]) * (m[2].toUpperCase() === 'TB' ? 1024 : 1) : 0);
+      }, 0);
+      return {
+        series: series ? Number(series) : 0,
+        gen: c.gen || 0,
+        cpuName: c.name || '',
+        ramGb: parseFloat(ram.gb) || 0,
+        hasSsd: disks.some(d => d.kind === 'SSD' || d.kind === 'NVMe'),
+        hasNvme: disks.some(d => d.kind === 'NVMe'),
+        totalGb: Math.round(totalGb)
+      };
+    }
+
+    // failed requirements as readable text (empty list = matches)
+    function check(a, p, req) {
+      const miss = [];
+      if (req.ram && p.ramGb < req.ram) miss.push(`رم ${p.ramGb || '?'} گیگ (لازم: ${req.ram})`);
+      if (req.series && p.series < req.series) miss.push(`پردازنده ${p.cpuName || 'نامشخص'} (لازم: i${req.series} به بالا)`);
+      if (req.gen && p.gen < req.gen) miss.push(`نسل ${p.gen || '?'} (لازم: ${req.gen} به بالا)`);
+      if (req.disk === 'ssd' && !p.hasSsd) miss.push('SSD ندارد');
+      if (req.disk === 'nvme' && !p.hasNvme) miss.push('NVMe ندارد');
+      if (req.space && p.totalGb < req.space) miss.push(`فضای کل ${p.totalGb} گیگ (لازم: ${req.space})`);
+      return miss;
+    }
+
+    // higher = better machine: CPU series and generation first, then RAM, SSD, space; healthy over "first test only"
+    function score(a, p) {
+      const health = { healthy: 3, initial_ok: 2, minor_issue: 0, untested: 0, needs_check: -3, broken: -10 }[a.health || 'healthy'] ?? 0;
+      return p.series * 20 + p.gen * 6 + Math.min(p.ramGb, 64) * 1.5 + (p.hasNvme ? 12 : p.hasSsd ? 8 : 0) + Math.min(p.totalGb, 2000) / 100 + health;
+    }
+
+    function card(a, p, miss) {
+      return `<a class="finder-card${miss && miss.length ? ' is-near' : ''}" href="/asset.html?id=${a.id}">
+        <div class="finder-head">
+          <strong>${esc(a.property_id)}</strong> · ${esc(a.manufacturer_model || '-')}
+          <span class="finder-cat">${categoryIcon(a.category)} ${esc(categoryLabel(a.category))}</span>
+        </div>
+        <div class="finder-chips">${cpuChipHtml(a.cpu)} ${ramChipHtml(a.ram, a.cpu)} ${diskChipsHtml(a.storage_drives)}</div>
+        <div class="finder-meta">${healthLabel(a.health || 'healthy')}${a.location ? ' · 📍 ' + esc(a.location) : ''}${a.user_name ? ' · 👤 ' + esc(a.user_name) : ''}</div>
+        ${miss && miss.length ? `<div class="finder-miss">⚠️ کم دارد: ${miss.map(esc).join('، ')}</div>` : ''}
+      </a>`;
+    }
+
+    function run() {
+      const req = {
+        ram: Number(document.getElementById('f-ram').value),
+        series: Number(document.getElementById('f-series').value),
+        gen: Number(document.getElementById('f-gen').value),
+        disk: document.getElementById('f-disk').value,
+        space: Number(document.getElementById('f-space').value)
+      };
+      const type = document.getElementById('f-type').value;
+      const scope = document.getElementById('f-scope').value;
+      const healthyOnly = document.getElementById('f-healthy').checked;
+      const pool = assets.filter(a =>
+        COMPUTERS.includes(a.category) &&
+        (type === 'all' || (type === 'desktop' ? ['PC', 'Single PC'].includes(a.category) : a.category === type)) &&
+        (scope === 'all' || a.status === scope) &&
+        (!healthyOnly || !['broken', 'needs_check'].includes(a.health)));
+
+      const rows = pool.map(a => { const p = profile(a); return { a, p, miss: check(a, p, req), s: score(a, p) }; });
+      const ok = rows.filter(r => !r.miss.length).sort((x, y) => y.s - x.s);
+      const near = rows.filter(r => r.miss.length === 1).sort((x, y) => y.s - x.s).slice(0, 8);
+
+      document.getElementById('finder-summary').innerHTML = ok.length
+        ? `✅ <strong>${ok.length}</strong> سیستم همه شرایط را دارد (از ${pool.length} سیستم بررسی‌شده). اولی بهترین است:`
+        : `❌ هیچ سیستمی همه شرایط را ندارد (${pool.length} سیستم بررسی شد).${near.length ? ' نزدیک‌ترین‌ها پایین آمده‌اند.' : ''}`;
+      document.getElementById('finder-results').innerHTML = ok.map((r, i) => (i === 0 ? '<div class="finder-best">🏆 بهترین گزینه</div>' : '') + card(r.a, r.p)).join('');
+      document.getElementById('finder-near').innerHTML = near.length
+        ? `<h3 class="finder-near-title">🟡 تقریباً مناسب (فقط یک شرط را ندارند)</h3><div class="finder-results">${near.map(r => card(r.a, r.p, r.miss)).join('')}</div>` : '';
+    }
+
+    (async () => {
+      assets = await (await fetch('/api/assets?limit=100000')).json();
+      run();
+      document.querySelectorAll('.finder-form select, .finder-form input').forEach(el => el.addEventListener('change', run));
+    })();
+  </script>
+</body>
+</html>

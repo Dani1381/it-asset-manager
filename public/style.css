@@ -2232,3 +2232,21 @@ body.light-mode .card-price { color: #a16207; }
 .server-disk-warning.is-critical { background: rgba(239, 68, 68, 0.16); border: 1px solid rgba(248, 113, 113, 0.6); color: #fecaca; }
 body.light-mode .server-disk-warning.is-low { color: #92400e; }
 body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
+
+/* ---- Best system finder ---- */
+.finder-page h2 { margin: 1rem 0 0.3rem; }
+.finder-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.6rem 0.9rem; align-items: end; margin-bottom: 1rem; }
+.finder-form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.84rem; font-weight: 600; }
+.finder-form .bulk-opt { flex-direction: row; }
+.finder-summary { font-size: 0.95rem; margin: 0.5rem 0 0.7rem; }
+.finder-results { display: grid; gap: 0.6rem; }
+.finder-card { display: block; text-decoration: none; color: var(--text-main); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.7rem 0.85rem; }
+.finder-card:hover { border-color: var(--primary); }
+.finder-card.is-near { border-style: dashed; }
+.finder-head { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.95rem; }
+.finder-cat { font-size: 0.78rem; color: var(--text-dim); margin-inline-start: auto; }
+.finder-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.45rem 0 0.3rem; }
+.finder-meta { font-size: 0.8rem; color: var(--text-dim); }
+.finder-miss { font-size: 0.8rem; color: #fbbf24; margin-top: 0.3rem; }
+.finder-best { font-weight: 800; color: #34d399; margin-bottom: -0.2rem; }
+.finder-near-title { margin: 1.3rem 0 0.6rem; font-size: 1rem; }
