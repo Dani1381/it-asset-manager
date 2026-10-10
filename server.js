@@ -1220,9 +1220,8 @@ function applyPartMove(p, note, sessionUser, req) {
       other_asset_id: src ? src.id : null, other_property_id: src ? src.property_id : null, note, created_by: who });
   }
   if (src && p.standalone && dst) {
-    // the standalone part now lives inside the target: in use, located there
-    const stamp = new Date().toISOString().slice(0, 10);
-    queries.updateAsset(src.id, { status: 'active', location: `نصب‌شده روی ${dst.property_id}`, notes: [src.notes, `نصب روی ${dst.property_id} (${stamp})`].filter(Boolean).join('\n') });
+    // the standalone part is now inside the target: it no longer exists as its own item (the target's parts history keeps its code)
+    queries.deleteAsset(src.id);
   }
   const labels = { ram: 'رم', storage: 'هارد', cpu: 'پردازنده', gpu: 'گرافیک' };
   const fromTxt = src ? src.property_id : (p.fromKind === 'new' ? 'قطعه نو' : 'انبار قطعات');

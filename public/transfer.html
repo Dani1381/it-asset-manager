@@ -114,7 +114,7 @@
           </div>
           <div class="transfer-preview">
             ${p.error ? `⚠️ ${esc(p.error)}` : p.part
-              ? `${COMP[m.component]} <strong dir="ltr">${esc(p.part)}</strong>: ${endLabel(p.fromKind, p.from)} ⬅️ از · به ➡️ ${endLabel(p.toKind, p.to)}${p.standalone ? ' <span class="transfer-tag">قطعه جدا — کارتش «نصب‌شده روی مقصد» می‌شود</span>' : ''}`
+              ? `${COMP[m.component]} <strong dir="ltr">${esc(p.part)}</strong>: ${endLabel(p.fromKind, p.from)} ⬅️ از · به ➡️ ${endLabel(p.toKind, p.to)}${p.standalone ? ' <span class="transfer-tag">قطعه جدا — بعد از نصب، کارت جدایش حذف می‌شود</span>' : ''}`
               : '…'}
           </div>
           <input class="form-control" placeholder="توضیح (اختیاری)" value="${esc(m.note)}" onchange="moves[${i}].note = this.value">
