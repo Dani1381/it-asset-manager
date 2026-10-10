@@ -317,6 +317,7 @@
       taking = { a, component, entry };
       const ramBox = document.getElementById('take-ram-box');
       ramBox.hidden = component !== 'ram';
+      ramBox.style.display = component === 'ram' ? '' : 'none';
       if (component === 'ram') document.getElementById('take-ram-gb').value = Math.round(parseFloat((ramInfo(a.ram, a.cpu) || {}).gb) / 2) || '';
       document.getElementById('take-what').innerHTML = component === 'ram'
         ? `از سیستم <strong>${esc(a.property_id)}</strong> (رم فعلی: ${esc(a.ram || '-')})`
@@ -330,7 +331,8 @@
     }
     function closeTake() { document.getElementById('take-modal').classList.remove('active'); taking = null; }
     function takeDestChanged() {
-      document.getElementById('take-target-box').hidden = document.querySelector('input[name="take-dest"]:checked').value !== 'moved_to';
+      const box = document.getElementById('take-target-box');
+      box.style.display = document.querySelector('input[name="take-dest"]:checked').value === 'moved_to' ? '' : 'none';
     }
 
     async function confirmTake() {
