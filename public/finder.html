@@ -21,6 +21,44 @@
   </header>
 
   <main class="container finder-page">
+    <div class="finder-tabs">
+      <button type="button" class="finder-tab active" data-mode="pc" onclick="setMode('pc')">🔎 پیدا کردن بهترین کیس</button>
+      <button type="button" class="finder-tab" data-mode="part" onclick="setMode('part')">🔧 قطعه‌یاب (برداشتن هارد / رم)</button>
+    </div>
+
+    <!-- ===== Part finder: a healthy disk / RAM to take out of a machine in storage ===== -->
+    <div id="mode-part" hidden>
+      <h2>🔧 قطعه‌یاب</h2>
+      <p class="bulk-help">قطعه‌ای را که لازم دارید انتخاب کنید؛ هاردهای سیستم‌های انبار با نتیجه سلامت (SMART) نشان داده می‌شوند، سالم‌ترین اول. با «برداشتن»، قطعه از آن سیستم کم و به مقصد (دستگاه دیگر یا انبار قطعات) اضافه می‌شود و در تاریخچه قطعات هر دو ثبت می‌شود.</p>
+      <section class="report-card finder-form">
+        <label>🧩 قطعه
+          <select id="p-kind" class="filter-select">
+            <option value="HDD" selected>💿 هارد HDD</option>
+            <option value="SSD">💠 SSD (SATA)</option>
+            <option value="NVMe">⚡ NVMe</option>
+            <option value="anySSD">💠⚡ هر نوع SSD (SATA یا NVMe)</option>
+            <option value="RAM">🧠 رم</option>
+          </select>
+        </label>
+        <label>📦 حداقل ظرفیت
+          <select id="p-size" class="filter-select"><option value="0" selected>مهم نیست</option><option value="120">120 GB</option><option value="240">240 GB</option><option value="460">500 GB</option><option value="900">1 TB</option></select>
+        </label>
+        <label>🩺 سلامت (SMART)
+          <select id="p-smart" class="filter-select">
+            <option value="ok" selected>فقط سالم</option>
+            <option value="ok-unknown">سالم + بدون داده / نامشخص</option>
+            <option value="all">همه (حتی هشدار)</option>
+          </select>
+        </label>
+        <label>📍 از کجا
+          <select id="p-scope" class="filter-select"><option value="in_storage" selected>فقط سیستم‌های انبار</option><option value="all">همه سیستم‌ها</option></select>
+        </label>
+      </section>
+      <div id="part-summary" class="finder-summary"></div>
+      <div id="part-results" class="finder-results"></div>
+    </div>
+
+    <div id="mode-pc">
     <h2>🔎 پیدا کردن بهترین کیس انبار</h2>
     <p class="bulk-help">مشخصات لازم را بدهید؛ سیستم‌های انبار که همه را دارند به ترتیب بهترین نشان داده می‌شوند.</p>
 
@@ -53,7 +91,37 @@
     <div id="finder-summary" class="finder-summary"></div>
     <div id="finder-results" class="finder-results"></div>
     <div id="finder-near"></div>
+    </div>
   </main>
+
+  <!-- Taking a part out: where does it go? -->
+  <div id="take-modal" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 class="modal-title">🔧 برداشتن قطعه</h3>
+        <button type="button" class="modal-close" onclick="closeTake()">&times;</button>
+      </div>
+      <div id="take-what" class="take-what"></div>
+      <div id="take-ram-box" class="form-group" hidden>
+        <label class="form-label">چند گیگ برداشته می‌شود؟</label>
+        <input type="number" id="take-ram-gb" class="form-control" min="1" step="1" dir="ltr" style="max-width: 140px;">
+      </div>
+      <div class="parts-actions" style="margin: 0.6rem 0;">
+        <label class="parts-action"><input type="radio" name="take-dest" value="moved_to" checked onchange="takeDestChanged()"> 🔁 می‌رود روی دستگاه دیگر</label>
+        <label class="parts-action"><input type="radio" name="take-dest" value="spare" onchange="takeDestChanged()"> 📦 می‌رود انبار قطعات</label>
+      </div>
+      <div id="take-target-box" class="form-group">
+        <label class="form-label">شماره اموال دستگاه مقصد</label>
+        <input type="text" id="take-target" class="form-control" list="take-ids" placeholder="مثلاً 1102" dir="ltr">
+        <datalist id="take-ids"></datalist>
+      </div>
+      <input type="text" id="take-note" class="form-control" placeholder="توضیح (اختیاری)">
+      <div class="wizard-nav-btns" style="margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeTake()">انصراف</button>
+        <button type="button" class="btn btn-success" id="take-btn" onclick="confirmTake()">✅ برداشته شد، ثبت کن</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     try { if (!JSON.parse(localStorage.getItem('arka_user') || 'null')) location.href = '/login.html'; } catch (e) { location.href = '/login.html'; }
@@ -141,9 +209,170 @@
         ? `<h3 class="finder-near-title">🟡 تقریباً مناسب (فقط یک شرط را ندارند)</h3><div class="finder-results">${near.map(r => card(r.a, r.p, r.miss)).join('')}</div>` : '';
     }
 
+    // ===== Part finder =====
+    function setMode(m) {
+      document.querySelectorAll('.finder-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+      document.getElementById('mode-pc').hidden = m !== 'pc';
+      document.getElementById('mode-part').hidden = m !== 'part';
+      try { localStorage.setItem('finder_mode', m); } catch (e) {}
+      if (m === 'part') runParts();
+    }
+
+    function smartDisks(a) {
+      try { return (JSON.parse(a.disk_health || 'null') || {}).disks || []; } catch (e) { return []; }
+    }
+    const sizeGb = s => { const m = String(s || '').match(/([\d.]+)\s*(GB|TB)/i); return m ? Number(m[1]) * (m[2].toUpperCase() === 'TB' ? 1024 : 1) : 0; };
+    const LEVEL = { ok: ['🟢', 'سالم', 3], warning: ['🟡', 'هشدار', 1], critical: ['🔴', 'خراب', 0], unknown: ['⚪', 'بدون داده SMART', 2] };
+
+    // one row per disk entry of each machine, with its SMART record when one matches the model
+    function diskRows(pool) {
+      const rows = [];
+      for (const a of pool) {
+        const smart = smartDisks(a);
+        const entries = String(a.storage_drives || '').split(' / ').map(s => s.trim()).filter(Boolean);
+        const parsed = parseDisks(a.storage_drives);
+        const usable = entries.filter(s => !/usb device|flash drive/i.test(s) && !/^\d?$/.test(s));
+        usable.forEach((entry, i) => {
+          const d = parsed[i] || { model: entry, size: '', kind: '' };
+          const norm = x => String(x || '').toLowerCase().replace(/\s+/g, '');
+          const s = smart.find(x => x.model && norm(entry).includes(norm(x.model)));
+          const kind = s && s.type ? (s.bus === 'NVMe' || /nvme/i.test(s.type) ? 'NVMe' : s.type) : d.kind;
+          rows.push({ a, entry, d, s, kind, level: s ? (s.level || 'unknown') : 'unknown', gb: sizeGb(entry) || (s && s.size_gb) || 0 });
+        });
+      }
+      return rows;
+    }
+
+    function runParts() {
+      const kind = document.getElementById('p-kind').value;
+      const minGb = Number(document.getElementById('p-size').value);
+      const smartMode = document.getElementById('p-smart').value;
+      const scope = document.getElementById('p-scope').value;
+      const pool = assets.filter(a => COMPUTERS.includes(a.category) && (scope === 'all' || a.status === scope));
+      const out = document.getElementById('part-results');
+      const sum = document.getElementById('part-summary');
+
+      if (kind === 'RAM') {
+        const rows = pool.map(a => ({ a, r: ramInfo(a.ram, a.cpu) || {} })).filter(x => parseFloat(x.r.gb) > 0)
+          .sort((x, y) => (parseFloat(y.r.gb) - parseFloat(x.r.gb)) || String(y.r.type || '').localeCompare(String(x.r.type || '')));
+        sum.innerHTML = rows.length ? `🧠 <strong>${rows.length}</strong> سیستم رم دارند (بیشترین اول):` : '❌ سیستمی با رم ثبت‌شده پیدا نشد.';
+        out.innerHTML = rows.map(x => partCard(x.a, `${ramChipHtml(x.a.ram, x.a.cpu)}`, '', `openTake(${x.a.id}, 'ram')`)).join('');
+        return;
+      }
+
+      const all = diskRows(pool);
+      const want = all.filter(r => (kind === 'anySSD' ? ['SSD', 'NVMe'].includes(r.kind) : r.kind === kind) && r.gb >= minGb);
+      const shown = want.filter(r => smartMode === 'all' || r.level === 'ok' || (smartMode === 'ok-unknown' && r.level === 'unknown'));
+      shown.sort((x, y) => (LEVEL[y.level]?.[2] ?? 0) - (LEVEL[x.level]?.[2] ?? 0)
+        || ((y.s?.health_percent ?? 100) - (x.s?.health_percent ?? 100))
+        || ((x.s?.power_on_hours ?? 1e9) - (y.s?.power_on_hours ?? 1e9))
+        || y.gb - x.gb);
+      const cnt = l => want.filter(r => r.level === l).length;
+      sum.innerHTML = `${shown.length ? '✅' : '❌'} <strong>${shown.length}</strong> مورد نمایش داده شد — از ${want.length} مورد: 🟢 ${cnt('ok')} سالم · 🟡 ${cnt('warning')} هشدار · 🔴 ${cnt('critical')} خراب · ⚪ ${cnt('unknown')} بدون داده.`
+        + (shown.length ? ' اولی بهترین گزینه است (سالم، کم‌کارکردتر).' : '');
+      out.innerHTML = shown.map((r, i) => {
+        const [ic, txt] = LEVEL[r.level] || LEVEL.unknown;
+        const s = r.s || {};
+        const facts = [
+          `<span class="smart-badge lv-${esc(r.level)}">${ic} ${txt}</span>`,
+          s.health_percent != null ? `❤️ ${s.health_percent}%` : '',
+          s.power_on_hours != null ? `⏱️ ${Number(s.power_on_hours).toLocaleString('fa-IR')} ساعت کارکرد (≈${Math.round(s.power_on_hours / 24 / 365 * 10) / 10} سال)` : '',
+          s.temperature_c != null ? `🌡️ ${s.temperature_c}°C` : '',
+          (s.reasons || []).length ? `⚠️ ${s.reasons.map(esc).join('، ')}` : ''
+        ].filter(Boolean).join(' · ');
+        return (i === 0 ? '<div class="finder-best">🏆 بهترین گزینه</div>' : '')
+          + partCard(r.a, `${diskChipsHtml(r.entry)} <span class="part-model" dir="ltr">${esc(r.d.model)}</span>`, facts, `openTake(${r.a.id}, 'storage', ${JSON.stringify(r.entry).replace(/"/g, '&quot;')})`);
+      }).join('');
+    }
+
+    function partCard(a, partHtml, facts, takeJs) {
+      return `<div class="finder-card part-card">
+        <div class="finder-head">
+          <a href="/asset.html?id=${a.id}"><strong>${esc(a.property_id)}</strong> · ${esc(a.manufacturer_model || '-')}</a>
+          <span class="finder-cat">${categoryIcon(a.category)} ${esc(categoryLabel(a.category))}</span>
+        </div>
+        <div class="finder-chips">${partHtml}</div>
+        ${facts ? `<div class="finder-meta">${facts}</div>` : ''}
+        <div class="finder-meta">${a.location ? '📍 ' + esc(a.location) + ' · ' : ''}همه هاردهای این سیستم: ${diskChipsHtml(a.storage_drives) || '-'}</div>
+        <button type="button" class="btn btn-warning btn-sm part-take" onclick="${takeJs}">🔧 برداشتن</button>
+      </div>`;
+    }
+
+    let taking = null;
+    function openTake(id, component, entry) {
+      const a = assets.find(x => x.id === id);
+      if (!a) return;
+      taking = { a, component, entry };
+      const ramBox = document.getElementById('take-ram-box');
+      ramBox.hidden = component !== 'ram';
+      if (component === 'ram') document.getElementById('take-ram-gb').value = Math.round(parseFloat((ramInfo(a.ram, a.cpu) || {}).gb) / 2) || '';
+      document.getElementById('take-what').innerHTML = component === 'ram'
+        ? `از سیستم <strong>${esc(a.property_id)}</strong> (رم فعلی: ${esc(a.ram || '-')})`
+        : `هارد <strong dir="ltr">${esc(entry)}</strong><br>از سیستم <strong>${esc(a.property_id)}</strong>`;
+      document.getElementById('take-ids').innerHTML = assets.filter(x => COMPUTERS.includes(x.category) && x.id !== id)
+        .map(x => `<option value="${esc(x.property_id)}">${esc(x.manufacturer_model || '')}${x.user_name ? ' — ' + esc(x.user_name) : ''}</option>`).join('');
+      document.getElementById('take-target').value = '';
+      document.getElementById('take-note').value = '';
+      document.getElementById('take-btn').disabled = false;
+      document.getElementById('take-modal').classList.add('active');
+    }
+    function closeTake() { document.getElementById('take-modal').classList.remove('active'); taking = null; }
+    function takeDestChanged() {
+      document.getElementById('take-target-box').hidden = document.querySelector('input[name="take-dest"]:checked').value !== 'moved_to';
+    }
+
+    async function confirmTake() {
+      if (!taking) return;
+      const { a, component, entry } = taking;
+      const action = document.querySelector('input[name="take-dest"]:checked').value;
+      const target = document.getElementById('take-target').value.trim();
+      if (action === 'moved_to' && !target) { alert('شماره اموال دستگاه مقصد را وارد کنید.'); return; }
+      if (action === 'moved_to' && !assets.some(x => String(x.property_id) === target)) { alert(`دستگاهی با شماره اموال «${target}» پیدا نشد.`); return; }
+      let patch, part;
+      if (component === 'storage') {
+        const list = String(a.storage_drives || '').split(' / ').map(s => s.trim()).filter(Boolean);
+        const idx = list.indexOf(entry);
+        if (idx < 0) { alert('این هارد دیگر روی این سیستم ثبت نیست؛ صفحه را تازه کنید.'); return; }
+        list.splice(idx, 1);
+        patch = { storage_drives: list.join(' / ') };
+        part = entry;
+      } else {
+        const gb = Number(document.getElementById('take-ram-gb').value);
+        const r = ramInfo(a.ram, a.cpu) || {};
+        const cur = parseFloat(r.gb) || 0;
+        if (!(gb > 0) || gb > cur) { alert(`مقدار رم نامعتبر است (فعلی: ${cur} گیگ).`); return; }
+        const type = (String(a.ram || '').match(/DDR\d/i) || [''])[0].toUpperCase();
+        const left = Math.round((cur - gb) * 10) / 10;
+        patch = { ram: left ? `${left} GB${type ? ' ' + type : ''}` : '' };
+        part = `${gb} GB${type ? ' ' + type : ''}`;
+      }
+      const btn = document.getElementById('take-btn');
+      btn.disabled = true;
+      try {
+        let res = await fetch(`/api/assets/${a.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ذخیره');
+        res = await fetch(`/api/assets/${a.id}/component-change`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ component, direction: 'removed', part, old_value: component === 'ram' ? a.ram : a.storage_drives, new_value: Object.values(patch)[0], action, other_property_id: action === 'moved_to' ? target : '', note: document.getElementById('take-note').value.trim() })
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'خطا در ثبت تاریخچه');
+        closeTake();
+        assets = await (await fetch('/api/assets?limit=100000')).json();
+        runParts();
+        alert(`✅ ثبت شد: «${part}» از ${a.property_id} ${action === 'moved_to' ? 'به ' + target : 'به انبار قطعات'} رفت.`);
+      } catch (e) {
+        alert('❌ ' + e.message);
+        btn.disabled = false;
+      }
+    }
+
     (async () => {
       assets = await (await fetch('/api/assets?limit=100000')).json();
       run();
+      document.querySelectorAll('#mode-part select').forEach(el => el.addEventListener('change', runParts));
+      let m = 'pc';
+      try { m = new URLSearchParams(location.search).get('mode') || localStorage.getItem('finder_mode') || 'pc'; } catch (e) {}
+      if (m === 'part') setMode('part');
       document.querySelectorAll('.finder-form select, .finder-form input').forEach(el => el.addEventListener('change', run));
     })();
   </script>
