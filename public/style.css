@@ -2312,3 +2312,4 @@ body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
 .h-empty { opacity: 0.6; }
 .h-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
 .h-reverted { font-size: 0.8rem; color: #a855f7; }
+.transfer-ai summary { cursor: pointer; font-weight: 700; }

@@ -21,11 +21,23 @@
   </header>
 
   <main class="container finder-page">
-    <h2>🔁 دستیار انتقال قطعه</h2>
-    <p class="bulk-help">کاری که کردید را معمولی بنویسید؛ دستیار می‌فهمد چه قطعه‌ای از کجا به کجا رفته، قبل از ثبت به شما نشان می‌دهد، و بعد از تأیید روی هر دو دستگاه و در تاریخچه قطعات ثبت می‌کند.</p>
+    <h2>🔁 انتقال قطعه</h2>
+    <p class="bulk-help">مشخص کنید چه قطعه‌ای از کجا به کجا رفته؛ بعد از ثبت، روی هر دو دستگاه و در تاریخچه قطعات ثبت می‌شود. «انبار» یعنی انبار قطعات.</p>
+    <div id="ctx-box" class="transfer-ctx" hidden></div>
 
-    <section class="report-card">
-      <div id="ctx-box" class="transfer-ctx" hidden></div>
+    <div id="moves"></div>
+    <div class="wizard-nav-btns" style="margin-top: 0.8rem;">
+      <button type="button" class="btn btn-secondary" onclick="addManual()">➕ ردیف دیگر</button>
+      <span id="actions" hidden>
+        <button type="button" class="btn btn-secondary" onclick="clearAll()">پاک کردن</button>
+        <button type="button" class="btn btn-success" id="apply-btn" onclick="applyAll()">✅ ثبت کن</button>
+      </span>
+    </div>
+    <div id="result"></div>
+
+    <details class="report-card transfer-ai" style="margin-top: 1.5rem;">
+      <summary>🤖 یا با متن بنویسید (دستیار هوشمند)</summary>
+      <p class="bulk-help">کاری که کردید را معمولی بنویسید؛ ردیف‌های بالا خودکار پر می‌شوند و قبل از ثبت می‌بینید.</p>
       <textarea id="t-text" class="form-control" rows="3" placeholder="مثلاً: ۲ گیگ رم از 1058 برداشتم انداختم تو 1102، هاردش هم انداختم تو 1200"></textarea>
       <div class="transfer-examples">
         نمونه‌ها:
@@ -34,17 +46,9 @@
         <button type="button" class="chip-btn" onclick="example(this)">NT-0029 را انداختم روی 1102</button>
       </div>
       <div class="wizard-nav-btns" style="margin-top: 0.8rem;">
-        <button type="button" class="btn btn-secondary" onclick="addManual()">➕ ردیف دستی</button>
         <button type="button" class="btn btn-primary" id="parse-btn" onclick="parse()">🤖 بفهم چه کردم</button>
       </div>
-    </section>
-
-    <div id="moves"></div>
-    <div id="actions" class="wizard-nav-btns" style="margin-top: 1rem;" hidden>
-      <button type="button" class="btn btn-secondary" onclick="clearAll()">پاک کردن</button>
-      <button type="button" class="btn btn-success" id="apply-btn" onclick="applyAll()">✅ درست است، ثبت کن</button>
-    </div>
-    <div id="result"></div>
+    </details>
   </main>
 
   <datalist id="ids"></datalist>
@@ -74,6 +78,7 @@
       try {
         const data = await api('/api/parts/parse', { text, context });
         moves = data.moves.map(fromPreview);
+        if (moves.length) window.scrollTo({ top: 0, behavior: 'smooth' });
         if (!moves.length) alert('چیزی نفهمیدم؛ قطعه (رم/هارد) و شماره اموال‌ها را بنویسید یا ردیف دستی اضافه کنید.');
         render();
       } catch (e) { alert('❌ ' + e.message); }
@@ -129,6 +134,7 @@
     }
     async function refresh(i) {
       const m = moves[i];
+      if (!String(m.from || '').trim() || !String(m.to || '').trim()) { m.preview = { error: 'مبدأ و مقصد را وارد کنید (شماره اموال یا «spare» برای انبار)' }; render(); return; }
       try {
         const data = await api('/api/parts/transfer', { dry_run: true, moves: [m] });
         m.preview = data.moves[0];
@@ -153,6 +159,7 @@
       btn.disabled = false;
     }
 
+    addManual();
     (async () => {
       try {
         const assets = await (await fetch('/api/assets?limit=100000')).json();
@@ -164,10 +171,7 @@
           const box = document.getElementById('ctx-box');
           box.hidden = false;
           box.innerHTML = `📍 دستگاه فعلی: <strong>${esc(context)}</strong> ${esc(a ? a.manufacturer_model || '' : '')} — «اینجا» یعنی این دستگاه.`;
-          if (a && a.category === 'Storage') {
-            document.getElementById('t-text').value = `${context} را انداختم روی `;
-            document.getElementById('t-text').focus();
-          }
+
         }
       } catch (e) {}
     })();
