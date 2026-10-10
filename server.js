@@ -1133,6 +1133,127 @@ function storageMinus(current, parts) {
   return diskList(current).filter(d => !drop.has(diskKey(d))).join(' / ');
 }
 
+// ===== Part transfer (free text / form): a device or a standalone part -> another device or the spare store =====
+const COMPUTER_CATS = ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'];
+function resolvePartEnd(v) {
+  const t = String(v ?? '').trim();
+  if (!t || /^(spare|انبار|انبار قطعات)$/i.test(t)) return { kind: 'spare' };
+  if (/^(new|نو)$/i.test(t)) return { kind: 'new' };
+  const a = queries.getAssetByPropertyId(t) || queries.getAssetByPropertyId(t.toUpperCase());
+  return a ? { kind: 'asset', asset: a } : { kind: 'missing', id: t };
+}
+function previewPartMove(m) {
+  const component = ['ram', 'storage', 'cpu', 'gpu'].includes(m.component) ? m.component : 'storage';
+  const from = resolvePartEnd(m.from), to = resolvePartEnd(m.to);
+  const p = { component, gb: Number(m.gb) || null, part: '', from: null, to: null, fromKind: from.kind, toKind: to.kind, standalone: false, options: [] };
+  const brief = a => ({ id: a.id, property_id: a.property_id, model: a.manufacturer_model || '', category: a.category });
+  if (from.kind === 'missing') return { ...p, error: `دستگاه مبدأ «${from.id}» پیدا نشد` };
+  if (to.kind === 'missing') return { ...p, error: `دستگاه مقصد «${to.id}» پیدا نشد` };
+  if (from.kind !== 'asset' && to.kind !== 'asset') return { ...p, error: 'مبدأ یا مقصد باید یک دستگاه باشد' };
+  if (from.kind === 'asset' && to.kind === 'asset' && from.asset.id === to.asset.id) return { ...p, error: 'مبدأ و مقصد یکی است' };
+  if (from.kind === 'asset') p.from = brief(from.asset);
+  if (to.kind === 'asset') p.to = brief(to.asset);
+  const src = from.kind === 'asset' ? from.asset : null;
+
+  // a standalone drive / RAM stick registered as its own asset (e.g. NT-0029)
+  if (src && !COMPUTER_CATS.includes(src.category)) {
+    p.standalone = true;
+    if (to.kind !== 'asset') return { ...p, error: 'قطعه جدا باید روی یک دستگاه نصب شود' };
+    if (component === 'ram') {
+      p.gb = p.gb || ramGb(src.ram || src.manufacturer_model) || null;
+      if (!p.gb) return { ...p, error: 'مقدار رم (گیگ) را بنویسید' };
+      const type = ramType(src.ram || src.manufacturer_model);
+      p.part = `${p.gb} GB${type ? ' ' + type : ''}`;
+    } else if (component === 'storage') {
+      const size = (String(src.storage_drives || src.manufacturer_model || '').match(/(\d+(?:\.\d+)?)\s*(GB|TB)/i) || [])[0]
+      p.part = (src.manufacturer_model || 'Disk') + (size ? ` (${size.replace(/\s+/g, '')})` : '');
+    } else p.part = src.manufacturer_model || '';
+    return p;
+  }
+
+  if (component === 'storage') {
+    if (src) {
+      const list = diskList(src.storage_drives).filter(x => !/usb device|flash drive/i.test(x));
+      p.options = list;
+      const want = String(m.part || '').toLowerCase().replace(/\s+/g, '');
+      const hit = want ? list.filter(x => x.toLowerCase().replace(/\s+/g, '').includes(want)) : [];
+      if (hit.length === 1) p.part = hit[0];
+      else if (list.length === 1) p.part = list[0];
+      else if (!list.length) return { ...p, error: `روی ${src.property_id} هاردی ثبت نشده` };
+      else return { ...p, error: `${src.property_id} چند هارد دارد؛ یکی را انتخاب کنید` };
+    } else {
+      p.part = String(m.part || '').trim();
+      if (!p.part) return { ...p, error: 'مدل/ظرفیت هارد را بنویسید' };
+    }
+  } else if (component === 'ram') {
+    const have = src ? ramGb(src.ram) : 0;
+    if (!p.gb && src) p.gb = have || null;
+    if (!p.gb) return { ...p, error: 'مقدار رم (گیگ) را بنویسید' };
+    if (src && p.gb > have) return { ...p, error: `${src.property_id} فقط ${have} گیگ رم دارد` };
+    const type = ramType(src ? src.ram : m.part) || ramType(to.kind === 'asset' ? to.asset.ram : '');
+    p.part = `${p.gb} GB${type ? ' ' + type : ''}`;
+  } else {
+    p.part = src ? (src[COMPONENT_FIELDS[component]] || '') : String(m.part || '').trim();
+    if (!p.part) return { ...p, error: 'قطعه روی مبدأ ثبت نشده' };
+  }
+  return p;
+}
+function applyPartMove(p, note, sessionUser, req) {
+  const who = sessionUser ? sessionUser.username : null;
+  const field = COMPONENT_FIELDS[p.component];
+  const src = p.from ? queries.getAssetById(p.from.id) : null;
+  const dst = p.to ? queries.getAssetById(p.to.id) : null;
+  if (src && !p.standalone) {
+    const old = src[field] || '';
+    const val = p.component === 'ram' ? ramPlus(old, -p.gb, old) : p.component === 'storage' ? storageMinus(old, p.part) : '';
+    queries.updateAsset(src.id, { [field]: val });
+    queries.addComponentMove({ asset_id: src.id, property_id: src.property_id, component: p.component, direction: 'removed', part: p.part,
+      old_value: old.slice(0, 300), new_value: val.slice(0, 300), action: dst ? 'moved_to' : 'spare',
+      other_asset_id: dst ? dst.id : null, other_property_id: dst ? dst.property_id : null, note, created_by: who });
+  }
+  if (dst) {
+    const old = dst[field] || '';
+    const val = p.component === 'ram' ? ramPlus(old, p.gb, p.part) : p.component === 'storage' ? storagePlus(old, p.part) : p.part;
+    queries.updateAsset(dst.id, { [field]: val });
+    queries.addComponentMove({ asset_id: dst.id, property_id: dst.property_id, component: p.component, direction: 'added', part: p.part,
+      old_value: old.slice(0, 300), new_value: val.slice(0, 300), action: src ? 'from_device' : 'new_part',
+      other_asset_id: src ? src.id : null, other_property_id: src ? src.property_id : null, note, created_by: who });
+  }
+  if (src && p.standalone && dst) {
+    // the standalone part now lives inside the target: in use, located there
+    const stamp = new Date().toISOString().slice(0, 10);
+    queries.updateAsset(src.id, { status: 'active', location: `نصب‌شده روی ${dst.property_id}`, notes: [src.notes, `نصب روی ${dst.property_id} (${stamp})`].filter(Boolean).join('\n') });
+  }
+  const labels = { ram: 'رم', storage: 'هارد', cpu: 'پردازنده', gpu: 'گرافیک' };
+  const fromTxt = src ? src.property_id : (p.fromKind === 'new' ? 'قطعه نو' : 'انبار قطعات');
+  queries.addLog('INFO', 'COMPONENT', `انتقال ${labels[p.component]} «${p.part}»: ${fromTxt} → ${dst ? dst.property_id : 'انبار قطعات'}`, note, req.socket?.remoteAddress || '');
+  return { ...p, done: true };
+}
+// fallback when the AI is unavailable: "2 گیگ رم از 1058 به 1102" / "هاردش رو انداختم تو 1200"
+function simplePartParse(text, context) {
+  const digits = s => s.replace(/[۰-۹]/g, c => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).replace(/[٠-٩]/g, c => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
+  const moves = [];
+  let lastFrom = '';
+  const parts = digits(text).split(/[.،,\n؛]|\s+و\s+(?=\S*\s*(?:\d+\s*گیگ|رم|هارد|ram|hdd|ssd))/i);
+  for (const sentence of parts) {
+    const comp = /رم|ram/i.test(sentence) ? 'ram' : /هارد|ssd|hdd|disk|دیسک/i.test(sentence) ? 'storage'
+      : /cpu|پردازنده/i.test(sentence) ? 'cpu' : /گرافیک|gpu|vga/i.test(sentence) ? 'gpu'
+      : /NT-\d+/i.test(sentence) ? 'storage' : null; // a standalone part named only by its code
+    if (!comp) continue;
+    const ids = sentence.match(/NT-\d+|\b\d{3,6}\b/gi) || [];
+    const gb = (sentence.match(/(\d+(?:\.\d+)?)\s*(?:گیگ|gb)/i) || [])[1];
+    const cleanIds = ids.filter(x => x !== gb);
+    const toSpare = /انبار/.test(sentence);
+    let from, to;
+    if (toSpare) { from = cleanIds[0] || lastFrom || context; to = 'spare'; }
+    else if (cleanIds.length >= 2) { from = cleanIds[0]; to = cleanIds[1]; }
+    else { from = lastFrom || context; to = cleanIds[0] || context; }
+    if (from && from !== 'spare') lastFrom = from;
+    moves.push({ component: comp, from, to, gb: gb ? Number(gb) : null, part: '' });
+  }
+  return moves;
+}
+
 // Apply the other side of a move: add the part to the target device, or take it from the source device
 function applyComponentToOther(other, component, direction, part) {
   const field = COMPONENT_FIELDS[component];
@@ -1785,6 +1906,36 @@ const server = http.createServer(async (req, res) => {
 
       const assets = queries.getAllAssets({ search, category, status, limit, offset });
       return sendJson(res, 200, assets);
+    }
+
+    // POST /api/parts/parse { text, context } — free text "I moved 2GB RAM from 1058 to 1102 and its HDD to 1200" -> list of moves
+    if (method === 'POST' && pathname === '/api/parts/parse') {
+      const d = await parseRequestBody(req);
+      const text = String(d.text || '').slice(0, 2000).trim();
+      if (!text) return sendJson(res, 400, { error: 'متن خالی است' });
+      const context = String(d.context || '').trim();
+      let moves = null;
+      try {
+        const out = await call9Router(`You turn a Persian/English note from an IT technician about moving computer parts into JSON.
+Return ONLY: {"moves":[{"component":"ram|storage|cpu|gpu","from":"<property id, or 'spare' (spare-parts store), or 'new'>","to":"<property id or 'spare'>","gb":<number or null; RAM amount>,"part":"<disk model/size words if mentioned, else empty>"}]}
+Rules: property ids look like 1058, 1102 or NT-0029. "انبار" / "انبار قطعات" = spare. A pronoun like "هاردشم" / "its disk" refers to the last mentioned source device. "اینجا" / "this one" without a number means the current device: ${context || 'none'}.
+Note: ${text}`, null, { timeoutMs: 45000, maxTokens: 600 });
+        if (Array.isArray(out && out.moves) && out.moves.length) moves = out.moves;
+      } catch (e) { /* fall back to the simple parser */ }
+      if (!moves) moves = simplePartParse(text, context);
+      return sendJson(res, 200, { moves: moves.map(m => ({ ...m, ...previewPartMove(m) })) });
+    }
+
+    // POST /api/parts/transfer { moves:[{component, from, to, gb, part, note}], dry_run }
+    if (method === 'POST' && pathname === '/api/parts/transfer') {
+      const d = await parseRequestBody(req);
+      const moves = Array.isArray(d.moves) ? d.moves.slice(0, 20) : [];
+      if (!moves.length) return sendJson(res, 400, { error: 'انتقالی مشخص نشده' });
+      const previews = moves.map(m => previewPartMove(m));
+      const bad = previews.find(p => p.error);
+      if (d.dry_run || bad) return sendJson(res, d.dry_run ? 200 : 400, { moves: previews, error: bad ? bad.error : undefined });
+      const done = previews.map((p, i) => applyPartMove(p, String(moves[i].note || '').slice(0, 300), sessionUser, req));
+      return sendJson(res, 200, { success: true, moves: done });
     }
 
     // POST /api/assets/:id/component-change — what happened to a part changed in the edit form

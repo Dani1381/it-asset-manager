@@ -55,6 +55,9 @@
           <button onclick="window.print()" class="btn btn-secondary btn-sm">
             🏷️ <span data-i18n="btn_print_sticker">چاپ برچسب اموال</span>
           </button>
+          <button id="transfer-btn" onclick="location.href='/transfer.html?from=' + encodeURIComponent(currentAsset ? currentAsset.property_id : '')" class="btn btn-warning btn-sm viewer-hide" style="display: none;">
+            🔁 <span id="transfer-btn-text">انتقال قطعه</span>
+          </button>
           <button onclick="openEditModal()" class="btn btn-secondary btn-sm viewer-hide">
             ✏️ <span data-i18n="btn_edit">ویرایش</span>
           </button>
@@ -418,6 +421,12 @@
     }
 
     function renderAssetDetails(a) {
+      const tb = document.getElementById('transfer-btn');
+      if (tb) {
+        const isPart = a.category === 'Storage';
+        tb.style.display = (isPart || ['PC', 'Single PC', 'All-in-One', 'Laptop', 'Server'].includes(a.category)) ? "" : "none";
+        document.getElementById('transfer-btn-text').textContent = isPart ? 'نصب روی دستگاه' : 'انتقال قطعه (رم / هارد)';
+      }
       document.getElementById('loading').style.display = 'none';
       document.getElementById('asset-content').style.display = 'block';
 

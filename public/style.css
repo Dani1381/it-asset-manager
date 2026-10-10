@@ -2276,3 +2276,19 @@ body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
 .smart-badge.lv-critical { background: rgba(239,68,68,0.18); color: #dc2626; }
 .take-what { margin: 0.4rem 0 0.6rem; line-height: 1.9; word-break: break-word; }
 .finder-form label[hidden] { display: none !important; }
+
+/* Part transfer assistant */
+.transfer-ctx { margin-bottom: 0.6rem; padding: 0.4rem 0.7rem; border-radius: 8px; background: rgba(59,130,246,0.12); }
+.transfer-examples { margin-top: 0.5rem; font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; opacity: 0.9; }
+.chip-btn { border: 1px solid var(--border-color); background: transparent; color: var(--text-main); border-radius: 999px; padding: 0.15rem 0.6rem; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.transfer-row { margin-top: 0.7rem; border-inline-start: 4px solid var(--border-color); }
+.transfer-row.is-ok { border-inline-start-color: #22c55e; }
+.transfer-row.has-error { border-inline-start-color: #ef4444; }
+.transfer-line { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.transfer-line label { display: flex; align-items: center; gap: 0.3rem; }
+.transfer-line .t-id { width: 120px; direction: ltr; }
+.transfer-line .t-gb { width: 80px; direction: ltr; }
+.transfer-num { font-weight: 700; opacity: 0.6; }
+.transfer-preview { margin: 0.5rem 0; line-height: 1.9; word-break: break-word; }
+.transfer-tag { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: rgba(234,179,8,0.2); }
+.transfer-done a { color: inherit; font-weight: 700; }
