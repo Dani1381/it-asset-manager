@@ -43,7 +43,7 @@
         <label>📦 حداقل ظرفیت
           <select id="p-size" class="filter-select"><option value="0" selected>مهم نیست</option><option value="120">120 GB</option><option value="240">240 GB</option><option value="460">500 GB</option><option value="900">1 TB</option></select>
         </label>
-        <label>🩺 سلامت (SMART)
+        <label id="p-smart-box">🩺 سلامت (SMART)
           <select id="p-smart" class="filter-select">
             <option value="ok" selected>فقط سالم</option>
             <option value="ok-unknown">سالم + بدون داده / نامشخص</option>
@@ -243,6 +243,18 @@
       return rows;
     }
 
+    // size choices and the SMART filter depend on the part type: RAM sizes in GB, no SMART for RAM
+    const SIZE_OPTS = {
+      disk: [[0, 'مهم نیست'], [120, '120 GB'], [240, '240 GB'], [460, '500 GB'], [900, '1 TB']],
+      RAM: [[0, 'مهم نیست'], [2, '2 GB'], [4, '4 GB'], [8, '8 GB'], [16, '16 GB'], [32, '32 GB']]
+    };
+    function partKindChanged() {
+      const isRam = document.getElementById('p-kind').value === 'RAM';
+      document.getElementById('p-size').innerHTML = SIZE_OPTS[isRam ? 'RAM' : 'disk'].map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+      document.getElementById('p-smart-box').hidden = isRam;
+      runParts();
+    }
+
     function runParts() {
       const kind = document.getElementById('p-kind').value;
       const minGb = Number(document.getElementById('p-size').value);
@@ -253,7 +265,7 @@
       const sum = document.getElementById('part-summary');
 
       if (kind === 'RAM') {
-        const rows = pool.map(a => ({ a, r: ramInfo(a.ram, a.cpu) || {} })).filter(x => parseFloat(x.r.gb) > 0)
+        const rows = pool.map(a => ({ a, r: ramInfo(a.ram, a.cpu) || {} })).filter(x => parseFloat(x.r.gb) > 0 && parseFloat(x.r.gb) >= minGb)
           .sort((x, y) => (parseFloat(y.r.gb) - parseFloat(x.r.gb)) || String(y.r.type || '').localeCompare(String(x.r.type || '')));
         sum.innerHTML = rows.length ? `🧠 <strong>${rows.length}</strong> سیستم رم دارند (بیشترین اول):` : '❌ سیستمی با رم ثبت‌شده پیدا نشد.';
         out.innerHTML = rows.map(x => partCard(x.a, `${ramChipHtml(x.a.ram, x.a.cpu)}`, '', `openTake(${x.a.id}, 'ram')`)).join('');
@@ -369,7 +381,8 @@
     (async () => {
       assets = await (await fetch('/api/assets?limit=100000')).json();
       run();
-      document.querySelectorAll('#mode-part select').forEach(el => el.addEventListener('change', runParts));
+      document.getElementById('p-kind').addEventListener('change', partKindChanged);
+      document.querySelectorAll('#mode-part select:not(#p-kind)').forEach(el => el.addEventListener('change', runParts));
       let m = 'pc';
       try { m = new URLSearchParams(location.search).get('mode') || localStorage.getItem('finder_mode') || 'pc'; } catch (e) {}
       if (m === 'part') setMode('part');
