@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تاریخچه تغییرات - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container finder-page">
+    <h2>📜 تاریخچه تغییرات</h2>
+    <p class="bulk-help">هر افزودن، ویرایش و حذف دستگاه اینجا ثبت می‌شود. با «↩️ برگردان» همان تغییر برعکس می‌شود: حذف‌شده‌ها با عکس و تاریخچه قطعاتشان برمی‌گردند. خود برگرداندن هم ثبت می‌شود و می‌شود دوباره برگرداندش.</p>
+    <section class="report-card finder-form">
+      <label>🔎 جستجو (شماره اموال، مدل، کاربر...)
+        <input type="search" id="h-q" class="form-control" placeholder="مثلاً 1102" dir="auto">
+      </label>
+      <label>نوع
+        <select id="h-type" class="filter-select">
+          <option value="">همه</option>
+          <option value="updated">✏️ ویرایش</option>
+          <option value="deleted">🗑️ حذف</option>
+          <option value="created">➕ افزودن</option>
+          <option value="restored">♻️ برگردانده‌شده</option>
+        </select>
+      </label>
+    </section>
+    <div id="h-ctx" class="transfer-ctx" hidden></div>
+    <div id="h-list"></div>
+  </main>
+
+  <script>
+    try { if (!JSON.parse(localStorage.getItem('arka_user') || 'null')) location.href = '/login.html'; } catch (e) { location.href = '/login.html'; }
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+    const assetId = Number(new URLSearchParams(location.search).get('asset')) || null;
+    const FIELD = {
+      property_id: 'شماره اموال', category: 'دسته', status: 'وضعیت', user_name: 'کاربر', computer_name: 'نام کامپیوتر',
+      manufacturer_model: 'مدل', serial_number: 'سریال', os_version: 'سیستم‌عامل', ip_address: 'IP', cpu: 'پردازنده', ram: 'رم',
+      storage_drives: 'هاردها', gpu: 'گرافیک', monitors: 'مانیتورها', location: 'محل', department: 'واحد', notes: 'توضیحات',
+      health: 'سلامت', price: 'قیمت', no_tag: 'بدون برچسب', disk_health: 'سلامت دیسک (SMART)', purchase_date: 'تاریخ خرید'
+    };
+    const ACT = { created: ['➕', 'افزوده شد'], updated: ['✏️', 'ویرایش شد'], deleted: ['🗑️', 'حذف شد'], restored: ['♻️', 'برگردانده شد'] };
+    const STATUS = { active: 'فعال', in_storage: 'در انبار', repair: 'تعمیر', retired: 'اسقاط' };
+    const isAdmin = (() => { try { const u = JSON.parse(localStorage.getItem('arka_user') || 'null'); return !u || u.role === 'admin' || u.is_admin; } catch (e) { return true; } })();
+    let rows = [];
+
+    const short = (k, v) => {
+      if (v === null || v === undefined || v === '') return '<em class="h-empty">خالی</em>';
+      if (k === 'status') return esc(STATUS[v] || v);
+      if (k === 'health' && typeof healthLabel === 'function') return healthLabel(v);
+      if (k === 'disk_health') return '(داده SMART)';
+      const s = String(v);
+      return esc(s.length > 160 ? s.slice(0, 160) + '…' : s);
+    };
+    const when = iso => { try { return new Date(iso).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return iso; } };
+
+    function itemHtml(h) {
+      const before = h.before_json ? JSON.parse(h.before_json) : null;
+      const after = h.after_json ? JSON.parse(h.after_json) : null;
+      const snap = after || before || {};
+      const [ic, txt] = ACT[h.action] || ['•', h.action];
+      let body = '';
+      if (h.action === 'updated') {
+        body = `<table class="h-diff">${String(h.changed_fields || '').split(',').filter(Boolean).map(f =>
+          `<tr><th>${esc(FIELD[f] || f)}</th><td class="h-old">${short(f, before[f])}</td><td class="h-arrow">←</td><td class="h-new">${short(f, after[f])}</td></tr>`).join('')}</table>`;
+      } else {
+        body = `<div class="finder-meta">${esc(categoryLabel(snap.category || ''))} · ${esc(snap.manufacturer_model || '-')}${snap.user_name ? ' · 👤 ' + esc(snap.user_name) : ''}${snap.storage_drives ? ' · 💿 ' + esc(snap.storage_drives) : ''}</div>`;
+      }
+      const canRevert = isAdmin && !h.reverted_at && h.action !== 'restored';
+      const link = h.action === 'deleted' && !h.reverted_at ? `<strong>${esc(h.property_id)}</strong>` : `<a href="/asset.html?id=${h.asset_id}"><strong>${esc(h.property_id)}</strong></a>`;
+      return `<div class="report-card h-item act-${esc(h.action)}${h.reverted_at ? ' is-reverted' : ''}">
+        <div class="h-head">
+          <span>${ic} ${link} ${txt}</span>
+          <span class="h-when">${when(h.created_at)}${h.created_by ? ' · 👤 ' + esc(h.created_by) : ''}</span>
+        </div>
+        ${body}
+        <div class="h-foot">
+          ${h.reverted_at ? `<span class="h-reverted">↩️ برگردانده شد (${when(h.reverted_at)}${h.reverted_by ? ' · ' + esc(h.reverted_by) : ''})</span>` : ''}
+          ${canRevert ? `<button type="button" class="btn btn-warning btn-sm" onclick="revert(${h.id}, this)">↩️ برگردان</button>` : ''}
+        </div>
+      </div>`;
+    }
+
+    function render() {
+      const type = document.getElementById('h-type').value;
+      const list = rows.filter(h => !type || h.action === type);
+      document.getElementById('h-list').innerHTML = list.length ? list.map(itemHtml).join('') : '<p class="bulk-help">موردی پیدا نشد.</p>';
+    }
+
+    async function load() {
+      const q = document.getElementById('h-q').value.trim();
+      const u = new URLSearchParams({ limit: 300 });
+      if (assetId) u.set('asset_id', assetId);
+      if (q) u.set('q', q);
+      rows = await (await fetch('/api/history?' + u)).json();
+      render();
+    }
+
+    async function revert(id, btn) {
+      const h = rows.find(x => x.id === id);
+      const msg = { updated: 'این ویرایش برعکس شود (مقدارهای قبلی برگردد)؟', deleted: 'این دستگاه با عکس‌ها و تاریخچه قطعاتش برگردد؟', created: 'این دستگاه افزوده‌شده حذف شود؟ (بعداً هم از همین صفحه برمی‌گردد)' }[h.action];
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      const res = await fetch(`/api/history/${id}/revert`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert('❌ ' + (data.error || 'خطا')); btn.disabled = false; return; }
+      await load();
+    }
+
+    let timer;
+    document.getElementById('h-q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 300); });
+    document.getElementById('h-type').addEventListener('change', render);
+    if (assetId) {
+      const box = document.getElementById('h-ctx');
+      box.hidden = false;
+      box.innerHTML = `فقط تاریخچه یک دستگاه نمایش داده می‌شود — <a href="/history.html">نمایش همه</a>`;
+    }
+    load();
+  </script>
+</body>
+</html>

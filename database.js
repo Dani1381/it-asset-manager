@@ -1999,6 +1999,148 @@ const queries = {
 // Initialize on require
 initDb();
 
+// ===== Change history with undo: every create / edit / delete of an asset keeps a snapshot =====
+const HISTORY_SKIP_FIELDS = new Set(['updated_at', 'created_at']);
+let historyActor = null;
+let historyMuted = 0;
+function ensureHistoryTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS asset_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id INTEGER NOT NULL,
+      property_id TEXT,
+      action TEXT NOT NULL,
+      changed_fields TEXT,
+      before_json TEXT,
+      after_json TEXT,
+      extra_json TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      reverted_at TEXT,
+      reverted_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_history_asset ON asset_history(asset_id);
+  `);
+}
+function recordHistory(action, asset, before, after, extra) {
+  if (historyMuted) return;
+  const fields = action === 'updated'
+    ? Object.keys(after || {}).filter(k => !HISTORY_SKIP_FIELDS.has(k) && String(before[k] ?? '') !== String(after[k] ?? ''))
+    : [];
+  if (action === 'updated' && !fields.length) return;
+  db.prepare(`INSERT INTO asset_history (asset_id, property_id, action, changed_fields, before_json, after_json, extra_json, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(asset.id, asset.property_id || '', action, fields.join(','),
+    before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, extra ? JSON.stringify(extra) : null,
+    historyActor, new Date().toISOString());
+}
+const TRASH_DIR = path.join(__dirname, 'uploads', '_trash');
+
+{
+  ensureHistoryTable();
+  const rawCreate = queries.createAsset, rawUpdate = queries.updateAsset;
+  const getRow = id => db.prepare('SELECT * FROM assets WHERE id = ?').get(id);
+  queries.setHistoryActor = name => { historyActor = name || null; };
+  queries.createAsset = function (data) {
+    const id = rawCreate.call(this, data);
+    const row = id ? getRow(id) : null;
+    if (row) recordHistory('created', row, null, { ...row });
+    return id;
+  };
+  queries.updateAsset = function (id, data) {
+    const before = getRow(id);
+    const ok = rawUpdate.call(this, id, data);
+    if (ok && before) recordHistory('updated', before, { ...before }, { ...getRow(id) });
+    return ok;
+  };
+  // deleting keeps the row, its photos (files moved to uploads/_trash) and its parts history so it can come back
+  queries.deleteAsset = function (id) {
+    const row = getRow(id);
+    if (!row) return false;
+    const photos = db.prepare('SELECT * FROM asset_photos WHERE asset_id = ?').all(id).map(p => ({ ...p }));
+    const moves = db.prepare('SELECT * FROM component_moves WHERE asset_id = ?').all(id).map(m => ({ ...m }));
+    const seenBy = db.prepare('SELECT id FROM component_moves WHERE other_asset_id = ?').all(id).map(m => m.id);
+    fs.mkdirSync(TRASH_DIR, { recursive: true });
+    for (const p of photos) {
+      const from = path.join(__dirname, 'uploads', p.file_name);
+      try { if (fs.existsSync(from)) fs.renameSync(from, path.join(TRASH_DIR, p.file_name)); } catch (e) { /* ignore */ }
+    }
+    db.prepare('DELETE FROM component_moves WHERE asset_id = ?').run(id);
+    db.prepare('UPDATE component_moves SET other_asset_id = NULL WHERE other_asset_id = ?').run(id);
+    db.prepare('DELETE FROM asset_photos WHERE asset_id = ?').run(id);
+    const result = db.prepare('DELETE FROM assets WHERE id = ?').run(id);
+    if (!result.changes) return false;
+    recordHistory('deleted', row, { ...row }, null, { photos, moves, seenBy });
+    scheduleBackup();
+    return true;
+  };
+
+  queries.getHistory = function ({ assetId, q, limit = 200 } = {}) {
+    const where = [], args = [];
+    if (assetId) { where.push('asset_id = ?'); args.push(assetId); }
+    if (q) { where.push('(property_id LIKE ? OR before_json LIKE ? OR after_json LIKE ?)'); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    return db.prepare(`SELECT * FROM asset_history ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`)
+      .all(...args, Math.min(Number(limit) || 200, 1000)).map(h => ({ ...h }));
+  };
+
+  // undo one history entry; the undo itself is recorded too (so it can be undone again)
+  queries.revertHistory = function (historyId, actor) {
+    const h = db.prepare('SELECT * FROM asset_history WHERE id = ?').get(historyId);
+    if (!h) return { error: 'رکورد تاریخچه پیدا نشد' };
+    if (h.reverted_at) return { error: 'این مورد قبلاً برگردانده شده' };
+    const before = h.before_json ? JSON.parse(h.before_json) : null;
+    const after = h.after_json ? JSON.parse(h.after_json) : null;
+    const extra = h.extra_json ? JSON.parse(h.extra_json) : {};
+    const mark = () => db.prepare('UPDATE asset_history SET reverted_at = ?, reverted_by = ? WHERE id = ?').run(new Date().toISOString(), actor || null, historyId);
+
+    if (h.action === 'updated') {
+      const cur = getRow(h.asset_id);
+      if (!cur) return { error: 'این دستگاه دیگر وجود ندارد؛ اول حذفش را برگردانید' };
+      const fields = String(h.changed_fields || '').split(',').filter(f => f && f in cur);
+      if (!fields.length) return { error: 'چیزی برای برگرداندن نیست' };
+      if (fields.includes('property_id')) {
+        const dup = db.prepare('SELECT id FROM assets WHERE property_id = ? AND id != ?').get(before.property_id, h.asset_id);
+        if (dup) return { error: `شماره اموال «${before.property_id}» الان مال دستگاه دیگری است` };
+      }
+      db.prepare(`UPDATE assets SET ${fields.map(f => `"${f}" = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+        .run(...fields.map(f => before[f] ?? null), new Date().toISOString(), h.asset_id);
+      recordHistory('updated', cur, { ...cur }, { ...getRow(h.asset_id) });
+      mark();
+      scheduleBackup();
+      return { success: true, asset_id: h.asset_id };
+    }
+
+    if (h.action === 'deleted') {
+      if (getRow(h.asset_id)) return { error: 'این دستگاه الان وجود دارد' };
+      if (db.prepare('SELECT id FROM assets WHERE property_id = ?').get(before.property_id)) return { error: `شماره اموال «${before.property_id}» الان مال دستگاه دیگری است` };
+      const cols = Object.keys(before);
+      db.prepare(`INSERT INTO assets (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map(c => before[c] ?? null));
+      for (const p of extra.photos || []) {
+        const c = Object.keys(p);
+        db.prepare(`INSERT OR IGNORE INTO asset_photos (${c.map(x => `"${x}"`).join(', ')}) VALUES (${c.map(() => '?').join(', ')})`).run(...c.map(x => p[x] ?? null));
+        try { const t = path.join(TRASH_DIR, p.file_name); if (fs.existsSync(t)) fs.renameSync(t, path.join(__dirname, 'uploads', p.file_name)); } catch (e) { /* ignore */ }
+      }
+      for (const m of extra.moves || []) {
+        const c = Object.keys(m);
+        db.prepare(`INSERT OR IGNORE INTO component_moves (${c.map(x => `"${x}"`).join(', ')}) VALUES (${c.map(() => '?').join(', ')})`).run(...c.map(x => m[x] ?? null));
+      }
+      for (const mid of extra.seenBy || []) db.prepare('UPDATE component_moves SET other_asset_id = ? WHERE id = ? AND other_asset_id IS NULL').run(h.asset_id, mid);
+      recordHistory('restored', before, null, { ...getRow(h.asset_id) });
+      mark();
+      scheduleBackup();
+      return { success: true, asset_id: h.asset_id };
+    }
+
+    if (h.action === 'created') {
+      if (!getRow(h.asset_id)) return { error: 'این دستگاه قبلاً حذف شده' };
+      queries.deleteAsset(h.asset_id);
+      mark();
+      return { success: true, asset_id: null };
+    }
+    return { error: 'این نوع رکورد قابل برگشت نیست' };
+  };
+}
+
+
 module.exports = {
   normalizeDiskHealth,
   db,

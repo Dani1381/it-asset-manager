@@ -58,6 +58,9 @@
           <button id="transfer-btn" onclick="location.href='/transfer.html?from=' + encodeURIComponent(currentAsset ? currentAsset.property_id : '')" class="btn btn-warning btn-sm viewer-hide" style="display: none;">
             🔁 <span id="transfer-btn-text">انتقال قطعه</span>
           </button>
+          <button onclick="location.href='/history.html?asset=' + assetId" class="btn btn-secondary btn-sm">
+            📜 <span>تاریخچه</span>
+          </button>
           <button onclick="openEditModal()" class="btn btn-secondary btn-sm viewer-hide">
             ✏️ <span data-i18n="btn_edit">ویرایش</span>
           </button>

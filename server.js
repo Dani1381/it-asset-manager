@@ -1412,6 +1412,7 @@ const server = http.createServer(async (req, res) => {
     // AUTHENTICATION GATE
     // -------------------------------------------------------------
     const sessionUser = getSessionUser(req);
+    queries.setHistoryActor(sessionUser ? sessionUser.username : (hasScannerKey(req) ? 'scanner' : null));
 
     if (pathname === '/api/auth-status') {
       return sendJson(res, 200, {
@@ -1458,6 +1459,20 @@ const server = http.createServer(async (req, res) => {
     // -------------------------------------------------------------
     // API ROUTES
     // -------------------------------------------------------------
+
+    // GET /api/history?asset_id=&q=&limit= — change history (create / edit / delete) with undo
+    if (method === 'GET' && pathname === '/api/history') {
+      const sp = parsedUrl.searchParams;
+      return sendJson(res, 200, queries.getHistory({ assetId: Number(sp.get('asset_id')) || null, q: (sp.get('q') || '').trim(), limit: sp.get('limit') }));
+    }
+    // POST /api/history/:id/revert
+    const histRevertMatch = pathname.match(/^\/api\/history\/(\d+)\/revert$/);
+    if (method === 'POST' && histRevertMatch) {
+      const r = queries.revertHistory(parseInt(histRevertMatch[1], 10), sessionUser ? sessionUser.username : null);
+      if (r.error) return sendJson(res, 400, r);
+      queries.addLog('INFO', 'HISTORY', `برگرداندن تغییر #${histRevertMatch[1]}`, '', req.socket?.remoteAddress || '');
+      return sendJson(res, 200, r);
+    }
 
     // GET /api/suggestions (Autocomplete memory for models, CPUs, RAMs, storage, etc.)
     if (method === 'GET' && pathname === '/api/suggestions') {
