@@ -1,5 +1,6 @@
 // server.js - Zero-dependency IT Asset Management HTTP Server
 const http = require('node:http');
+const zlib = require('node:zlib');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -852,13 +853,51 @@ Return STRICT JSON ONLY with NO markdown code fences.
 
 // Send JSON response helper
 function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-  });
-  res.end(JSON.stringify(data));
+  };
+  let body = Buffer.from(JSON.stringify(data));
+  // the asset list is a few hundred KB of repetitive JSON: gzip makes it ~5x smaller over the public link
+  if (body.length > 1024 && acceptsGzip(res.req)) {
+    body = zlib.gzipSync(body, { level: 6 });
+    headers['Content-Encoding'] = 'gzip';
+    headers['Vary'] = 'Accept-Encoding';
+  }
+  headers['Content-Length'] = body.length;
+  res.writeHead(statusCode, headers);
+  res.end(body);
+}
+
+function acceptsGzip(req) {
+  return !!req && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''));
+}
+
+// Static files: ETag + 304 so unchanged files are not downloaded again, gzip for text (kept in memory per version)
+const staticCache = new Map();
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt', '.webmanifest']);
+function sendStatic(req, res, filePath, cacheControl) {
+  const st = fs.statSync(filePath);
+  const etag = `W/"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+  const ext = path.extname(filePath).toLowerCase();
+  const headers = { 'Content-Type': MIME_TYPES[ext] || 'text/plain', 'Cache-Control': cacheControl, 'ETag': etag };
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, headers);
+    return res.end();
+  }
+  if (COMPRESSIBLE.has(ext) && acceptsGzip(req) && st.size > 1024) {
+    let hit = staticCache.get(filePath);
+    if (!hit || hit.etag !== etag) {
+      hit = { etag, gz: zlib.gzipSync(fs.readFileSync(filePath), { level: 9 }) };
+      staticCache.set(filePath, hit);
+    }
+    res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding', 'Content-Length': hit.gz.length });
+    return res.end(hit.gz);
+  }
+  res.writeHead(200, { ...headers, 'Content-Length': st.size });
+  return fs.createReadStream(filePath).pipe(res);
 }
 
 // Send Bale Bot Notification helper
@@ -2864,10 +2903,8 @@ Respond ONLY in JSON format:
         return res.end('Photo not found');
       }
 
-      const ext = path.extname(filePath).toLowerCase();
-      const mime = MIME_TYPES[ext] || 'application/octet-stream';
-      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' });
-      return fs.createReadStream(filePath).pipe(res);
+      // photo files never change under the same name: let the browser keep them
+      return sendStatic(req, res, filePath, 'public, max-age=2592000, immutable');
     }
 
     // Serve Public frontend files
@@ -2880,11 +2917,8 @@ Respond ONLY in JSON format:
     }
 
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      const ext = path.extname(filePath).toLowerCase();
-      const mime = MIME_TYPES[ext] || 'text/plain';
-      // Always revalidate app files so updates show up immediately on phones
-      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
-      return fs.createReadStream(filePath).pipe(res);
+      // Always revalidate app files so updates show up immediately on phones (a 304 makes that nearly free)
+      return sendStatic(req, res, filePath, 'no-cache');
     }
 
     // Fallback to index.html for SPA-like routes
