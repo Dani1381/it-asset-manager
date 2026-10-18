@@ -2142,6 +2142,7 @@ const TRASH_DIR = path.join(__dirname, 'uploads', '_trash');
 
 
 module.exports = {
+  parsePrice,
   normalizeDiskHealth,
   db,
   DB_PATH,

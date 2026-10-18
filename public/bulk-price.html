@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>قیمت‌گذاری جمعی - IT Asset Master</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/session.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/categories.js"></script>
+</head>
+<body class="rtl">
+  <header class="navbar">
+    <a href="/" class="nav-brand">
+      <div class="nav-brand-icon">📦</div>
+      <span data-i18n="app_name">سیستم مدیریت دارایی‌های IT</span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="btn btn-secondary btn-sm">← <span data-i18n="nav_back">بازگشت به لیست</span></a>
+    </div>
+  </header>
+
+  <main class="container finder-page">
+    <h2>💰 قیمت‌گذاری جمعی</h2>
+    <p class="bulk-help">کالاهای هم‌مدل یک ردیف هستند؛ قیمت یک عدد را بنویسید تا روی همه آن‌ها ثبت شود (مثل 2500000، 2.5m یا ۲ میلیون). با ▸ می‌شود تک‌تک را جدا قیمت داد. در آخر «ذخیره» را بزنید. همه تغییرها در تاریخچه ثبت می‌شوند و قابل برگشت‌اند.</p>
+
+    <section class="report-card finder-form">
+      <label>🔎 جستجو
+        <input type="search" id="q" class="form-control" placeholder="مدل، دسته، شماره اموال..." dir="auto">
+      </label>
+      <label>📂 دسته
+        <select id="cat" class="filter-select"><option value="">همه</option></select>
+      </label>
+      <label>💰 نمایش
+        <select id="show" class="filter-select">
+          <option value="missing" selected>فقط بدون قیمت</option>
+          <option value="all">همه</option>
+          <option value="mixed">قیمت‌های متفاوت در یک مدل</option>
+        </select>
+      </label>
+    </section>
+
+    <div id="summary" class="finder-summary"></div>
+    <div id="groups"></div>
+
+    <div class="bp-bar">
+      <span id="dirty-info">تغییری ثبت نشده</span>
+      <button type="button" class="btn btn-success" id="save-btn" onclick="save()" disabled>💾 ذخیره</button>
+    </div>
+  </main>
+
+  <script>
+    try { if (!JSON.parse(localStorage.getItem('arka_user') || 'null')) location.href = '/login.html'; } catch (e) { location.href = '/login.html'; }
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+    let assets = [], groups = [];
+    const edits = new Map(); // asset id -> new price text ('' clears)
+    const open = new Set();
+
+    const fa = s => String(s).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+    // same rules as the server: 2.5m / 2 میلیون / 800k / 2,500,000
+    function parsePrice(v) {
+      let s = fa(v).replace(/[,٬،\s]|تومان|toman/gi, '').trim();
+      if (!s) return null;
+      let mult = 1;
+      if (/(m|میلیون)$/i.test(s)) { mult = 1e6; s = s.replace(/(m|میلیون)$/i, ''); }
+      else if (/(k|هزار)$/i.test(s)) { mult = 1e3; s = s.replace(/(k|هزار)$/i, ''); }
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * mult) : NaN;
+    }
+    const priceOf = a => edits.has(a.id) ? parsePrice(edits.get(a.id)) : (a.price || null);
+
+    function build() {
+      const map = new Map();
+      for (const a of assets) {
+        const key = `${a.category}||${(a.manufacturer_model || '').trim().toLowerCase()}`;
+        if (!map.has(key)) map.set(key, { key, category: a.category, model: (a.manufacturer_model || '').trim() || '(بدون مدل)', items: [] });
+        map.get(key).items.push(a);
+      }
+      groups = [...map.values()].sort((x, y) => y.items.length - x.items.length || x.model.localeCompare(y.model));
+    }
+
+    function groupPrices(g) { return [...new Set(g.items.map(priceOf).filter(p => p))]; }
+
+    function render() {
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      const cat = document.getElementById('cat').value;
+      const show = document.getElementById('show').value;
+      const list = groups.filter(g => {
+        if (cat && g.category !== cat) return false;
+        if (q && !(g.model.toLowerCase().includes(q) || categoryLabel(g.category).includes(q) || g.items.some(a => String(a.property_id).toLowerCase().includes(q)))) return false;
+        const prices = groupPrices(g);
+        if (show === 'missing') return g.items.some(a => !priceOf(a)) || g.items.some(a => edits.has(a.id));
+        if (show === 'mixed') return prices.length > 1;
+        return true;
+      });
+      const total = assets.reduce((t, a) => t + (priceOf(a) || 0), 0);
+      const priced = assets.filter(a => priceOf(a)).length;
+      document.getElementById('summary').innerHTML = `📦 ${list.length} مدل نمایش داده شد · ${priced} از ${assets.length} کالا قیمت دارند · ارزش کل: <strong>${formatPrice(total, true) || '۰'}</strong>`;
+
+      document.getElementById('groups').innerHTML = list.map(g => {
+        const prices = groupPrices(g);
+        const missing = g.items.filter(a => !priceOf(a)).length;
+        const groupVal = prices.length === 1 && !missing ? prices[0].toLocaleString('en-US') : '';
+        const sum = g.items.reduce((t, a) => t + (priceOf(a) || 0), 0);
+        const isOpen = open.has(g.key);
+        return `<div class="report-card bp-group${g.items.some(a => edits.has(a.id)) ? ' is-dirty' : ''}">
+          <div class="bp-row">
+            <button type="button" class="bp-toggle" onclick="toggle('${esc(g.key).replace(/'/g, '&#039;')}')">${isOpen ? '▾' : '▸'}</button>
+            <div class="bp-name">
+              <strong>${esc(g.model)}</strong>
+              <small>${categoryIcon(g.category)} ${esc(categoryLabel(g.category))} · ${g.items.length.toLocaleString('fa-IR')} عدد${missing ? ` · <span class="bp-missing">${missing.toLocaleString('fa-IR')} بدون قیمت</span>` : ''}${prices.length > 1 ? ' · <span class="bp-missing">قیمت‌های متفاوت</span>' : ''}${sum ? ' · جمع ' + esc(formatPrice(sum, true)) : ''}</small>
+            </div>
+            <input class="form-control bp-input" dir="ltr" inputmode="decimal" placeholder="${prices.length > 1 ? 'چند قیمت' : 'قیمت هر عدد'}" value="${esc(groupVal)}"
+              onchange="setGroup('${esc(g.key).replace(/'/g, '&#039;')}', this.value)">
+          </div>
+          ${isOpen ? `<div class="bp-items">${g.items.map(a => `
+            <div class="bp-item">
+              <a href="/asset.html?id=${a.id}">${esc(a.property_id)}</a>
+              <span class="bp-meta">${esc(STATUS_FA[a.status] || a.status || '')}${a.user_name ? ' · ' + esc(a.user_name) : ''}</span>
+              <input class="form-control bp-input" dir="ltr" inputmode="decimal" value="${esc(edits.has(a.id) ? edits.get(a.id) : (a.price ? Number(a.price).toLocaleString('en-US') : ''))}" placeholder="قیمت" onchange="setOne(${a.id}, this.value)">
+            </div>`).join('')}</div>` : ''}
+        </div>`;
+      }).join('') || '<p class="bulk-help">موردی نیست. 🎉</p>';
+      updateBar();
+    }
+    const STATUS_FA = { active: 'فعال', in_storage: 'در انبار', repair: 'تعمیر', retired: 'اسقاط' };
+
+    function mark(a, text) {
+      const t = String(text).trim();
+      const cur = a.price ? String(a.price) : '';
+      const p = parsePrice(t);
+      if ((p === null ? '' : String(p)) === cur) edits.delete(a.id); else edits.set(a.id, t);
+    }
+    function setGroup(key, v) {
+      const g = groups.find(x => x.key === key);
+      if (!g) return;
+      if (String(v).trim() && Number.isNaN(parsePrice(v))) { alert('قیمت نامعتبر است.'); return render(); }
+      g.items.forEach(a => mark(a, v));
+      render();
+    }
+    function setOne(id, v) {
+      if (String(v).trim() && Number.isNaN(parsePrice(v))) { alert('قیمت نامعتبر است.'); return render(); }
+      mark(assets.find(a => a.id === id), v);
+      render();
+    }
+    function toggle(key) { open.has(key) ? open.delete(key) : open.add(key); render(); }
+
+    function updateBar() {
+      const n = edits.size;
+      document.getElementById('dirty-info').textContent = n ? `${n.toLocaleString('fa-IR')} کالا تغییر کرده — ذخیره نشده` : 'تغییری ثبت نشده';
+      document.getElementById('save-btn').disabled = !n;
+    }
+
+    async function save() {
+      const byPrice = new Map();
+      for (const [id, t] of edits) {
+        const p = parsePrice(t);
+        const k = p ? String(p) : '';
+        if (!byPrice.has(k)) byPrice.set(k, []);
+        byPrice.get(k).push(id);
+      }
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/assets/bulk-price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: [...byPrice].map(([price, ids]) => ({ price, ids })) }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'خطا در ذخیره');
+        edits.clear();
+        await load();
+        alert(`✅ قیمت ${Number(data.changed).toLocaleString('fa-IR')} کالا ذخیره شد.`);
+      } catch (e) { alert('❌ ' + e.message); updateBar(); }
+    }
+
+    window.addEventListener('beforeunload', e => { if (edits.size) { e.preventDefault(); e.returnValue = ''; } });
+
+    async function load() {
+      assets = await (await fetch('/api/assets?limit=100000')).json();
+      build();
+      const cats = [...new Set(assets.map(a => a.category))].sort((x, y) => categoryLabel(x).localeCompare(categoryLabel(y)));
+      const sel = document.getElementById('cat'), keep = sel.value;
+      sel.innerHTML = '<option value="">همه</option>' + cats.map(c => `<option value="${esc(c)}">${categoryIcon(c)} ${esc(categoryLabel(c))}</option>`).join('');
+      sel.value = keep;
+      render();
+    }
+    let t;
+    document.getElementById('q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 200); });
+    document.getElementById('cat').addEventListener('change', render);
+    document.getElementById('show').addEventListener('change', render);
+    load();
+  </script>
+</body>
+</html>

@@ -7,6 +7,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const {
   queries,
+  parsePrice,
   getNextPropertyId,
   DB_PATH,
   BACKUPS_DIR,
@@ -2040,6 +2041,24 @@ Note: ${text}`, null, { timeoutMs: 45000, maxTokens: 600 });
       const asset = queries.getAssetById(id);
       if (!asset) return sendJson(res, 404, { error: 'Asset not found' });
       return sendJson(res, 200, asset);
+    }
+
+    // POST /api/assets/bulk-price { items: [{ ids: [..], price }] } — set the price of many items at once (empty price clears it)
+    if (method === 'POST' && pathname === '/api/assets/bulk-price') {
+      const d = await parseRequestBody(req);
+      const items = Array.isArray(d.items) ? d.items : [];
+      let changed = 0;
+      for (const it of items) {
+        const raw = String(it.price ?? '').trim();
+        const price = raw ? parsePrice(raw) : null;
+        if (raw && !price) return sendJson(res, 400, { error: `قیمت «${raw}» نامعتبر است` });
+        for (const id of (Array.isArray(it.ids) ? it.ids : []).slice(0, 5000)) {
+          const cur = queries.getAssetById(Number(id));
+          if (cur && (cur.price ?? null) !== price && queries.updateAsset(cur.id, { price })) changed++;
+        }
+      }
+      queries.addLog('INFO', 'PRICE', `قیمت‌گذاری جمعی: ${changed} کالا`, '', req.socket?.remoteAddress || '');
+      return sendJson(res, 200, { success: true, changed });
     }
 
     // POST /api/assets/bulk { count, ...asset fields } — N identical items without a property tag
