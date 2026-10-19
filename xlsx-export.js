@@ -176,9 +176,9 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
 
   // ---- sheet 1: all assets ----
   const COLS = [
-    ['عکس', 13], ['شماره اموال', 14], ['دسته', 16], ['سازنده / مدل', 30], ['وضعیت', 12], ['سلامت', 15],
+    ['عکس', 13], ['شماره اموال', 14], ['دسته', 16], ['سازنده / مدل', 30], ['قیمت (تومان)', 16], ['وضعیت', 12], ['سلامت', 15],
     ['کاربر', 18], ['محل', 16], ['واحد', 14], ['پردازنده', 30], ['رم', 14], ['هاردها', 36], ['گرافیک', 24],
-    ['سلامت دیسک', 12], ['سریال', 20], ['نام کامپیوتر', 18], ['IP', 15], ['سیستم‌عامل', 22], ['قیمت (تومان)', 16], ['توضیحات', 30]
+    ['سلامت دیسک', 12], ['سریال', 20], ['نام کامپیوتر', 18], ['IP', 15], ['سیستم‌عامل', 22], ['توضیحات', 30]
   ];
   if (!withPhotos) COLS.shift();
   const off = withPhotos ? 1 : 0;
@@ -200,10 +200,10 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
     const he = HEALTH[a.health || 'healthy'] || [a.health, C];
     const dk = DISK[a.disk_health_status] || ['', C];
     const vals = [
-      [a.property_id, alt ? S.linkAlt : S.link], [categoryLabel(a.category), C], [a.manufacturer_model, T],
+      [a.property_id, alt ? S.linkAlt : S.link], [categoryLabel(a.category), C], [a.manufacturer_model, T], [a.price ? Number(a.price) : '', alt ? S.priceAlt : S.price],
       [st[0], st[1]], [he[0], he[1]], [a.user_name, T], [a.location, T], [a.department, T], [a.cpu, T], [a.ram, C],
       [String(a.storage_drives || '').split(' / ').join('\n'), T], [a.gpu, T], [dk[0], dk[1]], [a.serial_number, C],
-      [a.computer_name, C], [a.ip_address, C], [a.os_version, T], [a.price ? Number(a.price) : '', alt ? S.priceAlt : S.price], [a.notes, T]
+      [a.computer_name, C], [a.ip_address, C], [a.os_version, T], [a.notes, T]
     ];
     const cells = [];
     if (withPhotos) cells.push(cell(`A${r}`, '', C));
@@ -230,7 +230,8 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
     if (baseUrl) hyperlinks.push({ ref: `${colName(off)}${r}`, url: `${baseUrl}/asset.html?id=${a.id}` });
   });
   const last = first + assets.length - 1;
-  const priceCol = colName(COLS.length - 2);
+  const priceIdx = COLS.findIndex(c => c[0] === 'قیمت (تومان)');
+  const priceCol = colName(priceIdx);
   const tr = last + 1;
   rows.push({ h: 28, cells: [
     cell(`A${tr}`, `جمع کل (${assets.length.toLocaleString('fa-IR')} مورد)`, S.totalLabel),
@@ -239,7 +240,7 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
       return colName(i + 1) === priceCol ? cell(ref, { f: `SUBTOTAL(9,${priceCol}${first}:${priceCol}${last})` }, S.totalPrice) : cell(ref, '', S.totalLabel);
     })
   ] });
-  merges.push(`A${tr}:${colName(COLS.length - 3)}${tr}`);
+  merges.push(`A${tr}:${colName(priceIdx - 1)}${tr}`);
 
   const sheet1 = sheetXml({ cols: COLS.map(c => c[1]), rows, merges, freezeRow: 4, filter: `A4:${lastCol}${Math.max(last, 5)}`, hyperlinks, drawing: anchors.length > 0 });
 
