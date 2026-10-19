@@ -2334,3 +2334,33 @@ body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
   .bp-input { width: 100%; }
   .bp-item { flex-wrap: wrap; padding-inline-start: 0.5rem; }
 }
+
+/* Photo viewer (asset page) */
+.lightbox.pv { flex-direction: column; align-items: stretch; justify-content: stretch; background: rgba(2, 6, 23, 0.96); backdrop-filter: blur(6px); }
+.pv-top { display: flex; align-items: center; gap: 0.8rem; padding: 0.7rem 1rem; color: #e2e8f0; }
+.pv-count { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3.5rem; }
+.pv-caption { flex: 1; min-width: 0; font-size: 0.85rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-tools { display: flex; gap: 0.4rem; }
+.pv-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #fff; font-size: 1rem; text-decoration: none; cursor: pointer; transition: background 0.15s; }
+.pv-btn:hover { background: rgba(255,255,255,0.16); }
+.pv-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 3.5rem; }
+.lightbox.pv .pv-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); cursor: zoom-in; transition: transform 0.25s ease; user-select: none; -webkit-user-drag: none; }
+.lightbox.pv .pv-stage img.is-zoomed { transform: scale(2.2); cursor: zoom-out; }
+.pv-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border: none; border-radius: 12px; background: rgba(255,255,255,0.08); color: #fff; font-size: 2.2rem; line-height: 1; cursor: pointer; z-index: 2; transition: background 0.15s; }
+.pv-nav:hover { background: rgba(255,255,255,0.2); }
+.pv-prev { right: 0.6rem; }
+.pv-next { left: 0.6rem; }
+.pv-spin { position: absolute; top: 1rem; left: 50%; width: 26px; height: 26px; margin-left: -13px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; opacity: 0; animation: pv-rot 0.8s linear infinite; pointer-events: none; }
+.pv-spin.active { opacity: 1; }
+@keyframes pv-rot { to { transform: rotate(360deg); } }
+.pv-strip { display: flex; gap: 0.45rem; justify-content: center; padding: 0.7rem 1rem 1rem; overflow-x: auto; scrollbar-width: thin; }
+.pv-strip:empty { display: none; }
+.lightbox.pv .pv-strip img { width: 64px; height: 64px; flex-shrink: 0; object-fit: cover; border-radius: 8px; border: 2px solid transparent; opacity: 0.55; cursor: pointer; box-shadow: none; transition: opacity 0.15s, border-color 0.15s; }
+.lightbox.pv .pv-strip img.active, .lightbox.pv .pv-strip img:hover { opacity: 1; border-color: #60a5fa; }
+@media (max-width: 600px) {
+  .pv-stage { padding: 0 0.3rem; }
+  .pv-nav { width: 38px; height: 52px; font-size: 1.8rem; background: rgba(0,0,0,0.35); }
+  .pv-caption { display: none; }
+  .lightbox.pv .pv-strip img { width: 52px; height: 52px; }
+}
+@media (prefers-reduced-motion: reduce) { .lightbox.pv .pv-stage img, .pv-spin { transition: none; animation: none; } }

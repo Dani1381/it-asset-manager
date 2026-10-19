@@ -468,7 +468,7 @@ function renderAssets(assets) {
 
   const cardHtml = asset => {
     const hasPhoto = asset.primary_photo;
-    const photoUrl = hasPhoto ? `/uploads/${encodeURIComponent(asset.primary_photo)}` : null;
+    const photoUrl = hasPhoto ? `/thumbs/${encodeURIComponent(asset.primary_photo)}` : null;
     // Photos taken with a phone fill the card; catalog images are shown whole
     const isCameraPhoto = hasPhoto && /^(asset_|photo_)/.test(asset.primary_photo);
     
@@ -601,7 +601,7 @@ function groupCardHtml(key, list, open) {
   return `
     <div class="asset-card asset-group-card${open ? ' is-open' : ''}" onclick='toggleAssetGroup(${JSON.stringify(key).replace(/'/g, '&#39;')})' role="button" tabindex="0">
       <div class="asset-header">
-        ${photo ? `<img src="/uploads/${encodeURIComponent(photo.primary_photo)}" alt="" loading="lazy" class="is-stock">`
+        ${photo ? `<img src="/thumbs/${encodeURIComponent(photo.primary_photo)}" alt="" loading="lazy" class="is-stock">`
                 : `<div class="no-photo"><span class="no-photo-icon">${categoryIcon(a.category)}</span></div>`}
         <div class="group-count">× ${list.length.toLocaleString('fa-IR')}</div>
         <div class="asset-status-badge badge-${a.status || 'active'}"><span class="status-dot"></span><span>${statusText}</span></div>

@@ -349,9 +349,24 @@
   </main>
 
   <!-- Lightbox Modal -->
-  <div id="lightbox" class="lightbox" onclick="closeLightbox()">
-    <span class="lightbox-close">&times;</span>
-    <img id="lightbox-img" src="" alt="Full view">
+  <div id="lightbox" class="lightbox pv" onclick="if (event.target === this || event.target.id === 'pv-stage') closeLightbox()">
+    <div class="pv-top">
+      <span id="pv-count" class="pv-count"></span>
+      <span id="pv-caption" class="pv-caption"></span>
+      <div class="pv-tools">
+        <button type="button" class="pv-btn" onclick="pvZoom()" title="بزرگ‌نمایی">🔍</button>
+        <a id="pv-open" class="pv-btn" href="#" target="_blank" rel="noopener" title="باز کردن عکس اصلی">⤢</a>
+        <a id="pv-download" class="pv-btn" href="#" download title="دانلود">⬇</a>
+        <button type="button" class="pv-btn" onclick="closeLightbox()" title="بستن">✕</button>
+      </div>
+    </div>
+    <div id="pv-stage" class="pv-stage">
+      <button type="button" class="pv-nav pv-prev" onclick="pvGo(-1)" aria-label="قبلی">‹</button>
+      <img id="lightbox-img" src="" alt="Full view" ondblclick="pvZoom()">
+      <div id="pv-spin" class="pv-spin"></div>
+      <button type="button" class="pv-nav pv-next" onclick="pvGo(1)" aria-label="بعدی">›</button>
+    </div>
+    <div id="pv-strip" class="pv-strip"></div>
   </div>
 
   <script>
@@ -648,7 +663,7 @@
       }
 
       container.innerHTML = photos.map((p, i) => {
-        const url = `/uploads/${encodeURIComponent(p.file_name)}`;
+        const url = `/thumbs/${encodeURIComponent(p.file_name)}`;
         return `
         <div class="photo-thumb ${i === 0 ? 'is-cover' : ''}">
           <img src="${url}" alt="${escapeHtml(p.caption || 'Photo')}" loading="lazy" onclick="openLightbox(this.src)">
@@ -812,14 +827,71 @@
       }
     }
 
+    // ===== Photo viewer: all photos of the device, arrows / keys / swipe, zoom, thumbnail strip =====
+    let pvList = [], pvIndex = 0, pvZoomed = false;
     function openLightbox(src) {
-      document.getElementById('lightbox-img').src = src;
+      const photos = (currentAsset && currentAsset.photos) || [];
+      pvList = photos.length ? photos.map(p => ({ full: '/uploads/' + encodeURIComponent(p.file_name), thumb: '/thumbs/' + encodeURIComponent(p.file_name), caption: p.caption || '' }))
+        : [{ full: src, thumb: src, caption: '' }];
+      const name = decodeURIComponent(String(src).split('/').pop());
+      pvIndex = Math.max(0, pvList.findIndex(p => decodeURIComponent(p.full.split('/').pop()) === name));
+      document.getElementById('pv-strip').innerHTML = pvList.length > 1
+        ? pvList.map((p, i) => `<img src="${p.thumb}" alt="" loading="lazy" onclick="pvShow(${i})">`).join('') : '';
       document.getElementById('lightbox').classList.add('active');
+      document.body.style.overflow = 'hidden';
+      pvShow(pvIndex);
     }
-
+    function pvShow(i) {
+      if (!pvList.length) return;
+      pvIndex = (i + pvList.length) % pvList.length;
+      const p = pvList[pvIndex];
+      const img = document.getElementById('lightbox-img');
+      const spin = document.getElementById('pv-spin');
+      pvZoomed = false; img.classList.remove('is-zoomed'); img.style.transformOrigin = '';
+      // show the small version at once, swap in the full photo when it has loaded
+      img.src = p.thumb; spin.classList.add('active');
+      const full = new Image();
+      full.onload = () => { if (pvList[pvIndex] === p) { img.src = p.full; spin.classList.remove('active'); } };
+      full.onerror = () => spin.classList.remove('active');
+      full.src = p.full;
+      document.getElementById('pv-count').textContent = pvList.length > 1 ? `${(pvIndex + 1).toLocaleString('fa-IR')} / ${pvList.length.toLocaleString('fa-IR')}` : '';
+      document.getElementById('pv-caption').textContent = p.caption;
+      document.getElementById('pv-open').href = p.full;
+      document.getElementById('pv-download').href = p.full;
+      document.querySelectorAll('.pv-nav').forEach(b => b.style.display = pvList.length > 1 ? '' : 'none');
+      document.querySelectorAll('#pv-strip img').forEach((t, k) => t.classList.toggle('active', k === pvIndex));
+      const act = document.querySelector('#pv-strip img.active');
+      if (act) act.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }
+    // RTL: "next" sits on the left
+    function pvGo(d) { pvShow(pvIndex + d); }
+    function pvZoom(e) {
+      const img = document.getElementById('lightbox-img');
+      pvZoomed = !pvZoomed;
+      img.classList.toggle('is-zoomed', pvZoomed);
+    }
     function closeLightbox() {
       document.getElementById('lightbox').classList.remove('active');
+      document.body.style.overflow = '';
     }
+    document.addEventListener('keydown', e => {
+      if (!document.getElementById('lightbox').classList.contains('active')) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') pvGo(1);
+      else if (e.key === 'ArrowRight') pvGo(-1);
+    });
+    (() => {
+      let x0 = null, y0 = 0;
+      const stage = () => document.getElementById('pv-stage');
+      document.addEventListener('touchstart', e => { if (stage() && stage().contains(e.target) && !pvZoomed) { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; } }, { passive: true });
+      document.addEventListener('touchend', e => {
+        if (x0 === null) return;
+        const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+        x0 = null;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) pvGo(dx > 0 ? 1 : -1);
+        else if (dy > 90 && Math.abs(dy) > Math.abs(dx)) closeLightbox();
+      });
+    })();
 
     function openEditModal() {
       if (!currentAsset) return;

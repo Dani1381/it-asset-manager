@@ -1,6 +1,17 @@
 // server.js - Zero-dependency IT Asset Management HTTP Server
 const http = require('node:http');
 const zlib = require('node:zlib');
+const vm = require('node:vm');
+const { buildAssetsXlsx } = require('./xlsx-export');
+// Persian category names come from the same list the pages use
+const categoryLabelFa = (() => {
+  try {
+    const ctx = { window: {}, document: { readyState: 'complete', addEventListener() {}, querySelectorAll: () => [] }, localStorage: { getItem: () => null }, CURRENT_LANG: 'fa' };
+    vm.createContext(ctx);
+    vm.runInContext(require('node:fs').readFileSync(require('node:path').join(__dirname, 'public', 'categories.js'), 'utf8'), ctx);
+    return v => ctx.categoryLabel(v);
+  } catch (e) { return v => v || '-'; }
+})();
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -1431,6 +1442,21 @@ const USB_KIT_README =`﻿کیت اسکن دارایی با فلش — مدیر�
 سرور: {{SERVER_URL}}
 `;
 
+// Thumbnails for new photos: one background PowerShell run at a time, a few seconds after the last request
+let thumbTimer = null, thumbRunning = false;
+function scheduleThumbs(delay = 3000) {
+  if (process.platform !== 'win32') return;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(() => {
+    if (thumbRunning) return scheduleThumbs(10000);
+    thumbRunning = true;
+    const { execFile } = require('node:child_process');
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'tools', 'make-thumbs.ps1'), '-Uploads', UPLOADS_DIR],
+      { windowsHide: true, timeout: 300000 }, () => { thumbRunning = false; });
+  }, delay);
+}
+scheduleThumbs(15000);
+
 // HTTP Server
 const server = http.createServer(async (req, res) => {
   // CORS Preflight
@@ -2691,6 +2717,25 @@ Respond ONLY in JSON format:
       return sendJson(res, 200, buildSummaryReport(assets));
     }
 
+    // GET /api/export/xlsx?photos=0|1&category=&status= — styled Excel workbook with photo thumbnails and a summary sheet
+    if (method === 'GET' && pathname === '/api/export/xlsx') {
+      const sp = parsedUrl.searchParams;
+      const assets = queries.getAllAssets({ limit: 100000, category: sp.get('category') || undefined, status: sp.get('status') || undefined })
+        .sort((a, b) => String(a.category).localeCompare(String(b.category)) || String(a.property_id).localeCompare(String(b.property_id), undefined, { numeric: true }));
+      const settings = queries.getSettings();
+      const buf = buildAssetsXlsx({
+        assets, uploadsDir: UPLOADS_DIR, categoryLabel: categoryLabelFa,
+        company: settings.company_name || 'Arka', baseUrl: lanServerUrl(req), withPhotos: sp.get('photos') !== '0'
+      });
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="arka_assets_${stamp}.xlsx"; filename*=UTF-8''${encodeURIComponent(`دارایی‌های-ارکا_${stamp}.xlsx`)}`,
+        'Content-Length': buf.length
+      });
+      return res.end(buf);
+    }
+
     // GET /api/export/csv
     if (method === 'GET' && pathname === '/api/export/csv') {
       const assets = queries.getAllAssets({ limit: 10000 });
@@ -2906,6 +2951,18 @@ Respond ONLY in JSON format:
     // -------------------------------------------------------------
     // STATIC FILES (Uploads & Public UI)
     // -------------------------------------------------------------
+
+    // Serve /thumbs/<photo> — small JPEG made by tools/make-thumbs.ps1, falls back to the full photo
+    if (pathname.startsWith('/thumbs/')) {
+      let fileName;
+      try { fileName = path.basename(decodeURIComponent(pathname)); } catch (e) { fileName = ''; }
+      if (!fileName || fileName.startsWith('.')) { res.writeHead(404); return res.end(); }
+      const thumb = path.join(UPLOADS_DIR, '_thumbs', path.parse(fileName).name + '.jpg');
+      const full = path.join(UPLOADS_DIR, fileName);
+      if (fs.existsSync(thumb)) return sendStatic(req, res, thumb, 'public, max-age=2592000, immutable');
+      if (fs.existsSync(full)) { scheduleThumbs(); return sendStatic(req, res, full, 'no-cache'); }
+      res.writeHead(404); return res.end();
+    }
 
     // Serve /uploads/*
     if (pathname.startsWith('/uploads/')) {
