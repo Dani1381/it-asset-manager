@@ -1,3 +1,14 @@
+// "۳۸ میلیون تومان" -> big number + small unit, full amount on hover
+function priceTagHtml(price) {
+  const short = formatPrice(price, true);
+  const m = short.match(/^([d۰-۹٫.,٬]+)s*(.*)$/);
+  return `<div class="card-price" title="${escapeHtml(formatPrice(price))}">
+    <span class="cp-icon" aria-hidden="true">💰</span>
+    <span class="cp-num">${escapeHtml(m ? m[1] : short)}</span>
+    ${m ? `<span class="cp-unit">${escapeHtml(m[2])}</span>` : ''}
+  </div>`;
+}
+
 // app.js - Frontend application logic for Arka Asset Management (مدیریت دارایی ارکا)
 
 // State
@@ -514,7 +525,7 @@ function renderAssets(assets) {
             <span class="user-name-text">${escapeHtml(asset.user_name || getTranslation('unassigned'))}</span>
           </div>
 
-          ${asset.price && typeof formatPrice === 'function' ? `<div class="card-price" title="${escapeHtml(formatPrice(asset.price))}">💰 ${escapeHtml(formatPrice(asset.price, true))}</div>` : ''}
+          ${asset.price && typeof formatPrice === 'function' ? priceTagHtml(asset.price) : ''}
           ${keySpecsHtml(asset)}
 
           <div class="asset-specs-list">
