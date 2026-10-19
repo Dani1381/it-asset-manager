@@ -48,6 +48,7 @@
       const cached = (() => { try { return JSON.parse(localStorage.getItem('arka_user') || 'null'); } catch (e) { return null; } })();
       const fresh = { id: data.user.id, username: data.user.username, full_name: data.user.full_name, role: data.user.role, is_admin: !!data.user.is_admin };
       localStorage.setItem('arka_user', JSON.stringify(fresh));
+      applyRole(fresh);
       if (!cached || cached.id !== fresh.id || cached.role !== fresh.role) {
         location.reload();
         return;
@@ -57,6 +58,21 @@
       // Network hiccup: leave the page as is
     }
   }
+
+  // Guests (viewer role) are read-only: hide every .admin-only control and lock admin-only pages
+  function applyRole(user) {
+    const viewer = !!user && !user.is_admin;
+    document.documentElement.classList.toggle('is-viewer', viewer);
+    if (viewer && document.documentElement.dataset.adminPage) {
+      const show = () => {
+        const main = document.querySelector('main');
+        if (main) main.innerHTML = '<div class="report-card viewer-locked">🔒 <strong>این بخش فقط برای مدیر سیستم است.</strong><br>با حساب مهمان فقط می‌توانید اطلاعات را ببینید. <a href="/">بازگشت به لیست</a></div>';
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+    }
+  }
+  try { applyRole(JSON.parse(localStorage.getItem('arka_user') || 'null')); } catch (e) {}
+  window.applyRole = applyRole;
 
   verify();
 })();

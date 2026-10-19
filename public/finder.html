@@ -306,7 +306,7 @@
         <div class="finder-chips">${partHtml}</div>
         ${facts ? `<div class="finder-meta">${facts}</div>` : ''}
         <div class="finder-meta">${a.location ? '📍 ' + esc(a.location) + ' · ' : ''}همه هاردهای این سیستم: ${diskChipsHtml(a.storage_drives) || '-'}</div>
-        <button type="button" class="btn btn-warning btn-sm part-take" onclick="${takeJs}">🔧 برداشتن</button>
+        <button type="button" class="btn btn-warning btn-sm part-take admin-only" onclick="${takeJs}">🔧 برداشتن</button>
       </div>`;
     }
 

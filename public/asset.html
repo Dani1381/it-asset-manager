@@ -55,7 +55,7 @@
           <button onclick="window.print()" class="btn btn-secondary btn-sm">
             🏷️ <span data-i18n="btn_print_sticker">چاپ برچسب اموال</span>
           </button>
-          <button id="transfer-btn" onclick="location.href='/transfer.html?from=' + encodeURIComponent(currentAsset ? currentAsset.property_id : '')" class="btn btn-warning btn-sm viewer-hide" style="display: none;">
+          <button id="transfer-btn" onclick="location.href='/transfer.html?from=' + encodeURIComponent(currentAsset ? currentAsset.property_id : '')" class="btn btn-warning btn-sm viewer-hide admin-only" style="display: none;">
             🔁 <span id="transfer-btn-text">انتقال قطعه</span>
           </button>
           <button onclick="location.href='/history.html?asset=' + assetId" class="btn btn-secondary btn-sm">

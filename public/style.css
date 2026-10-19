@@ -2375,3 +2375,8 @@ body.light-mode .server-disk-warning.is-critical { color: #991b1b; }
   .lightbox.pv .pv-strip img { width: 52px; height: 52px; }
 }
 @media (prefers-reduced-motion: reduce) { .lightbox.pv .pv-stage img, .pv-spin { transition: none; animation: none; } }
+
+/* Guest (viewer) accounts: read-only */
+html.is-viewer .admin-only { display: none !important; }
+.viewer-locked { margin-top: 2rem; text-align: center; line-height: 2.2; padding: 2rem 1rem; }
+.viewer-locked a { color: var(--primary, #3b82f6); }
