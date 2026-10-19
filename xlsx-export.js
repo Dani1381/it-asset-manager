@@ -68,12 +68,12 @@ function imageSize(buf, ext) {
 const S = {
   normal: 0, title: 1, subtitle: 2, header: 3, text: 4, textAlt: 5, price: 6, priceAlt: 7,
   stActive: 8, stStorage: 9, stRepair: 10, stRetired: 11, link: 12, linkAlt: 13,
-  hOk: 14, hWarn: 15, hBad: 16, totalLabel: 17, totalPrice: 18, num: 19, numAlt: 20, kpiLabel: 21, kpiValue: 22, center: 23, centerAlt: 24
+  hOk: 14, hWarn: 15, hBad: 16, totalLabel: 17, totalPrice: 18, num: 19, numAlt: 20, kpiLabel: 21, kpiValue: 22, center: 23, centerAlt: 24, priceHead: 25, priceCell: 26, priceCellAlt: 27, priceNone: 28, priceNoneAlt: 29, totalMoney: 30
 };
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts>
-<fonts count="8">
+<numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0"/><numFmt numFmtId="165" formatCode="#,##0 &quot;تومان&quot;"/></numFmts>
+<fonts count="10">
   <font><sz val="11"/><name val="Tahoma"/></font>
   <font><b/><sz val="18"/><color rgb="FF1E3A8A"/><name val="Tahoma"/></font>
   <font><sz val="10"/><color rgb="FF64748B"/><name val="Tahoma"/></font>
@@ -82,8 +82,10 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <font><b/><sz val="11"/><name val="Tahoma"/></font>
   <font><b/><sz val="12"/><color rgb="FF0F172A"/><name val="Tahoma"/></font>
   <font><b/><sz val="20"/><color rgb="FF1E40AF"/><name val="Tahoma"/></font>
+  <font><b/><sz val="11"/><color rgb="FF166534"/><name val="Tahoma"/></font>
+  <font><sz val="10"/><color rgb="FF94A3B8"/><name val="Tahoma"/></font>
 </fonts>
-<fills count="13">
+<fills count="16">
   <fill><patternFill patternType="none"/></fill>
   <fill><patternFill patternType="gray125"/></fill>
   <fill><patternFill patternType="solid"><fgColor rgb="FF1E3A8A"/></patternFill></fill>
@@ -97,14 +99,18 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/></patternFill></fill>
   <fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/></patternFill></fill>
   <fill><patternFill patternType="solid"><fgColor rgb="FFE0E7FF"/></patternFill></fill>
+  <fill><patternFill patternType="solid"><fgColor rgb="FF15803D"/></patternFill></fill>
+  <fill><patternFill patternType="solid"><fgColor rgb="FFF0FDF4"/></patternFill></fill>
+  <fill><patternFill patternType="solid"><fgColor rgb="FFDCFCE7"/></patternFill></fill>
 </fills>
-<borders count="3">
+<borders count="4">
   <border/>
   <border><left style="thin"><color rgb="FFE2E8F0"/></left><right style="thin"><color rgb="FFE2E8F0"/></right><top style="thin"><color rgb="FFE2E8F0"/></top><bottom style="thin"><color rgb="FFE2E8F0"/></bottom></border>
   <border><top style="medium"><color rgb="FF1E3A8A"/></top><bottom style="medium"><color rgb="FF1E3A8A"/></bottom></border>
+  <border><left style="thin"><color rgb="FF86EFAC"/></left><right style="thin"><color rgb="FF86EFAC"/></right><top style="thin"><color rgb="FFBBF7D0"/></top><bottom style="thin"><color rgb="FFBBF7D0"/></bottom></border>
 </borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="25">
+<cellXfs count="31">
   <xf fontId="0" fillId="0" borderId="0"/>
   <xf fontId="1" fillId="0" borderId="0" applyFont="1"><alignment horizontal="right" vertical="center"/></xf>
   <xf fontId="2" fillId="0" borderId="0" applyFont="1"><alignment horizontal="right" vertical="center"/></xf>
@@ -130,6 +136,12 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <xf fontId="7" fillId="10" borderId="1" numFmtId="164" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
   <xf fontId="0" fillId="11" borderId="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
   <xf fontId="0" fillId="3" borderId="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+  <xf fontId="3" fillId="13" borderId="3" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+  <xf fontId="8" fillId="14" borderId="3" numFmtId="165" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  <xf fontId="8" fillId="15" borderId="3" numFmtId="165" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  <xf fontId="9" fillId="14" borderId="3" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  <xf fontId="9" fillId="15" borderId="3" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+  <xf fontId="3" fillId="13" borderId="2" numFmtId="165" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -176,7 +188,7 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
 
   // ---- sheet 1: all assets ----
   const COLS = [
-    ['عکس', 13], ['شماره اموال', 14], ['دسته', 16], ['سازنده / مدل', 30], ['قیمت (تومان)', 16], ['وضعیت', 12], ['سلامت', 15],
+    ['عکس', 13], ['شماره اموال', 14], ['دسته', 16], ['سازنده / مدل', 30], ['💰 قیمت', 20], ['وضعیت', 12], ['سلامت', 15],
     ['کاربر', 18], ['محل', 16], ['واحد', 14], ['پردازنده', 30], ['رم', 14], ['هاردها', 36], ['گرافیک', 24],
     ['سلامت دیسک', 12], ['سریال', 20], ['نام کامپیوتر', 18], ['IP', 15], ['سیستم‌عامل', 22], ['توضیحات', 30]
   ];
@@ -188,7 +200,7 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
   rows.push({ h: 34, cells: [cell('A1', `📦 فهرست دارایی‌های IT — ${company}`, S.title)] });
   rows.push({ h: 20, cells: [cell('A2', `تاریخ گزارش: ${dateFa} · تعداد: ${assets.length.toLocaleString('fa-IR')} مورد`, S.subtitle)] });
   rows.push({ h: 8, cells: [] });
-  rows.push({ h: 30, cells: COLS.map((c, i) => cell(`${colName(i)}4`, c[0], S.header)) });
+  rows.push({ h: 30, cells: COLS.map((c, i) => cell(`${colName(i)}4`, c[0], c[0] === '💰 قیمت' ? S.priceHead : S.header)) });
   const hyperlinks = [];
   const anchors = [];
   const first = 5;
@@ -200,7 +212,7 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
     const he = HEALTH[a.health || 'healthy'] || [a.health, C];
     const dk = DISK[a.disk_health_status] || ['', C];
     const vals = [
-      [a.property_id, alt ? S.linkAlt : S.link], [categoryLabel(a.category), C], [a.manufacturer_model, T], [a.price ? Number(a.price) : '', alt ? S.priceAlt : S.price],
+      [a.property_id, alt ? S.linkAlt : S.link], [categoryLabel(a.category), C], [a.manufacturer_model, T], a.price ? [Number(a.price), alt ? S.priceCellAlt : S.priceCell] : ['—', alt ? S.priceNoneAlt : S.priceNone],
       [st[0], st[1]], [he[0], he[1]], [a.user_name, T], [a.location, T], [a.department, T], [a.cpu, T], [a.ram, C],
       [String(a.storage_drives || '').split(' / ').join('\n'), T], [a.gpu, T], [dk[0], dk[1]], [a.serial_number, C],
       [a.computer_name, C], [a.ip_address, C], [a.os_version, T], [a.notes, T]
@@ -230,14 +242,14 @@ function buildAssetsXlsx({ assets, uploadsDir, categoryLabel = c => c, company =
     if (baseUrl) hyperlinks.push({ ref: `${colName(off)}${r}`, url: `${baseUrl}/asset.html?id=${a.id}` });
   });
   const last = first + assets.length - 1;
-  const priceIdx = COLS.findIndex(c => c[0] === 'قیمت (تومان)');
+  const priceIdx = COLS.findIndex(c => c[0] === '💰 قیمت');
   const priceCol = colName(priceIdx);
   const tr = last + 1;
   rows.push({ h: 28, cells: [
     cell(`A${tr}`, `جمع کل (${assets.length.toLocaleString('fa-IR')} مورد)`, S.totalLabel),
     ...COLS.slice(1).map((_, i) => {
       const ref = `${colName(i + 1)}${tr}`;
-      return colName(i + 1) === priceCol ? cell(ref, { f: `SUBTOTAL(9,${priceCol}${first}:${priceCol}${last})` }, S.totalPrice) : cell(ref, '', S.totalLabel);
+      return colName(i + 1) === priceCol ? cell(ref, { f: `SUBTOTAL(9,${priceCol}${first}:${priceCol}${last})` }, S.totalMoney) : cell(ref, '', S.totalLabel);
     })
   ] });
   merges.push(`A${tr}:${colName(priceIdx - 1)}${tr}`);
