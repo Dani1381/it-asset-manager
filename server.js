@@ -1022,7 +1022,8 @@ function getLocalIpAddresses() {
   const addresses = [];
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
+      // 169.254.x = Windows self-assigned (no DHCP yet / unplugged adapter): useless to other devices
+      if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('169.254.')) {
         addresses.push(iface.address);
       }
     }
